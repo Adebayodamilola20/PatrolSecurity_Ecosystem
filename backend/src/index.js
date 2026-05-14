@@ -25,6 +25,8 @@ const allowedOrigins = [
   /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:5173$/,
   /^http:\/\/172\.\d{1,3}\.\d{1,3}\.\d{1,3}:5173$/,
   /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}:5173$/,
+  ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()) : []),
+  ...(process.env.VERCEL_URL ? [new RegExp(`https://${process.env.VERCEL_URL.replace(/\./g, '\\.')}`), `https://${process.env.VERCEL_URL}`] : []),
 ]
 
 const io = new Server(server, {
