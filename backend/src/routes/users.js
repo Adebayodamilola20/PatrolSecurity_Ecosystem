@@ -8,19 +8,19 @@ const router = Router()
 
 router.use(authMiddleware)
 
-router.get('/', (req, res) => {
-  const users = db.prepare('SELECT id, name, email, role, phone, active, createdAt FROM users ORDER BY createdAt DESC').all()
+router.get('/', async (req, res) => {
+  const users = await db.all('SELECT id, name, email, role, phone, active, createdAt FROM users ORDER BY createdAt DESC')
   res.json(users.map(u => ({ ...u, active: !!u.active })))
 })
 
-router.post('/', adminOnly, (req, res) => {
+router.post('/', adminOnly, async (req, res) => {
   const { name, email, password, role, phone } = req.body
 
   if (!name || !email || !password) {
     return res.status(400).json({ message: 'name, email, password are required' })
   }
 
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email)
+  const existing = await db.get('SELECT id FROM users WHERE email = ?', [email])
   if (existing) {
     return res.status(409).json({ message: 'Email already in use' })
   }
@@ -39,10 +39,10 @@ router.post('/', adminOnly, (req, res) => {
     active: 1,
   }
 
-  db.prepare(`
+  await db.run(`
     INSERT INTO users (id, name, email, password, role, phone, active)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(...Object.values(user))
+  `, Object.values(user))
 
   const { password: _, ...safeUser } = user
   res.status(201).json({ ...safeUser, active: !!safeUser.active })

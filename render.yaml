@@ -16,6 +16,8 @@ services:
         generateValue: true
       - key: ALLOWED_ORIGINS
         value: https://patrol-web.vercel.app
+      - key: DATABASE_URL
+        sync: false
       - key: MISTRAL_API_KEY
         sync: false
     disk:

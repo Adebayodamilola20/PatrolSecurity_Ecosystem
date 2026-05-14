@@ -7,12 +7,12 @@ const router = Router()
 
 router.use(authMiddleware)
 
-router.get('/', (req, res) => {
-  const reports = db.prepare('SELECT * FROM reports ORDER BY createdAt DESC').all()
+router.get('/', async (req, res) => {
+  const reports = await db.all('SELECT * FROM reports ORDER BY createdAt DESC')
   res.json(reports)
 })
 
-router.post('/generate', (req, res) => {
+router.post('/generate', async (req, res) => {
   const { clientEmail, periodStart, periodEnd, format } = req.body
   if (!clientEmail || !periodStart || !periodEnd) {
     return res.status(400).json({ message: 'clientEmail, periodStart, periodEnd are required' })
@@ -27,37 +27,37 @@ router.post('/generate', (req, res) => {
     status: 'pending',
   }
 
-  db.prepare(`
+  await db.run(`
     INSERT INTO reports (id, clientEmail, periodStart, periodEnd, format, status)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(...Object.values(report))
+  `, Object.values(report))
 
   setTimeout(() => {
-    db.prepare("UPDATE reports SET status = 'sent', sentAt = datetime('now') WHERE id = ?")
+    await db.get("UPDATE reports SET status = 'sent', sentAt = datetime('now') WHERE id = ?")
       .run(report.id)
   }, 2000)
 
   res.status(201).json(report)
 })
 
-router.get('/:id/pdf', (req, res) => {
-  const report = db.prepare('SELECT * FROM reports WHERE id = ?').get(req.params.id)
+router.get('/:id/pdf', async (req, res) => {
+  const report = db.prepare('SELECT * FROM reports WHERE id = ?', [req.params.id])
   if (!report) return res.status(404).json({ message: 'Report not found' })
 
-  const scans = db.prepare(`
+  const scans = await db.all(`
     SELECT s.*, u.name as officerName, c.name as checkpointName, c.code as checkpointCode
     FROM scans s
     JOIN users u ON s.officerId = u.id
     JOIN checkpoints c ON s.checkpointId = c.id
     WHERE s.scannedAt >= ? AND s.scannedAt <= ?
     ORDER BY s.scannedAt DESC
-  `).all(report.periodStart, report.periodEnd)
+  `, [report.periodStart, report.periodEnd])
 
-  const shifts = db.prepare(`
+  const shifts = await db.all(`
     SELECT s.*, u.name as userName FROM shifts s
     JOIN users u ON s.userId = u.id
     WHERE s.clockIn >= ? AND (s.clockOut IS NULL OR s.clockOut <= ?)
-  `).all(report.periodStart, report.periodEnd)
+  `, [report.periodStart, report.periodEnd])
 
   const totalHours = shifts.reduce((acc, s) => {
     if (!s.clockOut) return acc

@@ -6,7 +6,7 @@ const router = Router()
 
 router.use(authMiddleware)
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const { officer, start, end, limit = 50, offset = 0 } = req.query
 
   const conditions = []
@@ -31,13 +31,13 @@ router.get('/', (req, res) => {
 
   const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : ''
 
-  const shifts = db.prepare(`
+  const shifts = await db.all(`
     SELECT s.*, u.name as userName, u.email as userEmail, u.phone as userPhone
     FROM shifts s
     JOIN users u ON s.userId = u.id
     ${where}
     ORDER BY s.clockIn DESC LIMIT ? OFFSET ?
-  `).all(...params, Number(limit), Number(offset))
+  `, params, Number(limit), Number(offset))
 
   const result = shifts.map((s) => {
     const clockIn = new Date(s.clockIn).getTime()
@@ -46,13 +46,13 @@ router.get('/', (req, res) => {
     const hours = Math.floor(durationMs / 3600000)
     const minutes = Math.floor((durationMs % 3600000) / 60000)
 
-    const scans = db.prepare(`
+    const scans = await db.all(`
       SELECT s.*, c.name as checkpointName, c.code as checkpointCode
       FROM scans s
       JOIN checkpoints c ON s.checkpointId = c.id
       WHERE s.officerId = ? AND s.scannedAt >= ? AND (s.scannedAt <= ? OR ? IS NULL)
       ORDER BY s.scannedAt ASC
-    `).all(s.userId, s.clockIn, s.clockOut, s.clockOut)
+    `, [s.userId, s.clockIn, s.clockOut, s.clockOut])
 
     return {
       shiftId: s.id,
@@ -79,17 +79,17 @@ router.get('/', (req, res) => {
   res.json(result)
 })
 
-router.get('/summary', (req, res) => {
+router.get('/summary', async (req, res) => {
   const today = new Date()
   const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString()
   const weekAgo = new Date(today.getTime() - 7 * 86400000).toISOString()
 
-  const shifts = db.prepare(`
+  const shifts = await db.all(`
     SELECT s.*, u.name as userName FROM shifts s
     JOIN users u ON s.userId = u.id
     WHERE s.clockIn >= ?
     ORDER BY s.clockIn ASC
-  `).all(weekAgo)
+  `, [weekAgo])
 
   const totalHours = shifts.reduce((acc, s) => {
     if (!s.clockOut) return acc

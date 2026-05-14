@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import { FileText, Download, Mail, Calendar, Plus, X } from 'lucide-react'
+import { FileText, Download, Mail, Calendar, Plus, X, FileBarChart } from 'lucide-react'
 import { api } from '../services/api'
 import type { Report } from '../types'
+import { TableSkeleton } from '../components/ui/Skeleton'
+import { EmptyState } from '../components/ui/EmptyState'
 
 const statusColor: Record<string, string> = {
   sent: 'bg-success/15 text-success',
@@ -11,11 +13,13 @@ const statusColor: Record<string, string> = {
 
 export default function Reports() {
   const [reports, setReports] = useState<Report[]>([])
+  const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ clientEmail: '', periodStart: '', periodEnd: '' })
 
   useEffect(() => {
-    api.reports.list().then(setReports).catch(() => {})
+    setLoading(true)
+    api.reports.list().then(setReports).finally(() => setLoading(false))
   }, [])
 
   const handleGenerate = async (e: React.FormEvent) => {
@@ -63,44 +67,59 @@ export default function Reports() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-border bg-card divide-y divide-border">
-        {reports.map((r) => (
-          <div key={r.id} className="flex items-center gap-4 p-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15 text-primary">
-              <FileText className="h-5 w-5" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="font-medium">Patrol Report — {r.clientEmail}</div>
-              <div className="text-xs text-muted-foreground">
-                {r.id.slice(0, 8).toUpperCase()} · {r.format?.toUpperCase() || 'PDF'}
+      {loading ? (
+        <TableSkeleton rows={4} />
+      ) : reports.length === 0 ? (
+        <EmptyState
+          icon={<FileBarChart className="h-7 w-7" />}
+          title="No reports yet"
+          description="Generate your first patrol report to send to clients."
+          action={
+            <button
+              onClick={() => setShowForm(true)}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+            >
+              <Plus className="h-4 w-4" /> Generate New
+            </button>
+          }
+        />
+      ) : (
+        <div className="rounded-xl border border-border bg-card divide-y divide-border">
+          {reports.map((r) => (
+            <div key={r.id} className="flex items-center gap-4 p-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15 text-primary">
+                <FileText className="h-5 w-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium">Patrol Report — {r.clientEmail}</div>
+                <div className="text-xs text-muted-foreground">
+                  {r.id.slice(0, 8).toUpperCase()} · {r.format?.toUpperCase() || 'PDF'}
+                </div>
+              </div>
+              <div className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Calendar className="h-3.5 w-3.5" /> {new Date(r.createdAt).toLocaleDateString()}
+              </div>
+              <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase ${statusColor[r.status]}`}>
+                {r.status}
+              </span>
+              <div className="flex gap-1">
+                <a
+                  href={api.reports.pdf(r.id)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-lg border border-border p-2 hover:bg-accent inline-flex items-center justify-center"
+                  title="Download PDF"
+                >
+                  <Download className="h-4 w-4" />
+                </a>
+                <button className="rounded-lg border border-border p-2 hover:bg-accent" title="Resend">
+                  <Mail className="h-4 w-4" />
+                </button>
               </div>
             </div>
-            <div className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Calendar className="h-3.5 w-3.5" /> {new Date(r.createdAt).toLocaleDateString()}
-            </div>
-            <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase ${statusColor[r.status]}`}>
-              {r.status}
-            </span>
-            <div className="flex gap-1">
-              <a
-                href={api.reports.pdf(r.id)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-lg border border-border p-2 hover:bg-accent inline-flex items-center justify-center"
-                title="Download PDF"
-              >
-                <Download className="h-4 w-4" />
-              </a>
-              <button className="rounded-lg border border-border p-2 hover:bg-accent" title="Resend">
-                <Mail className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        ))}
-        {reports.length === 0 && (
-          <div className="p-8 text-center text-sm text-muted-foreground">No reports yet</div>
-        )}
-      </div>
+          ))}
+        </div>
+      )}
 
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">

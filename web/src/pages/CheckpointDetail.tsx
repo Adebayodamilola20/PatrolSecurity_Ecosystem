@@ -5,6 +5,7 @@ import QRCodeLib from 'qrcode'
 import L from 'leaflet'
 import { api } from '../services/api'
 import type { Scan } from '../types'
+import { Skeleton } from '../components/ui/Skeleton'
 
 interface CheckpointData {
   id: string; name: string; code: string; latitude: number; longitude: number
@@ -68,7 +69,17 @@ export default function CheckpointDetail() {
   })
 
   if (!cp) {
-    return <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>
+    return (
+      <div className="pb-8 space-y-4">
+        <Skeleton className="h-5 w-32" />
+        <Skeleton className="h-44 w-full rounded-xl" />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
+        </div>
+        <Skeleton className="h-48 w-full rounded-xl" />
+        <Skeleton className="h-64 w-full rounded-xl" />
+      </div>
+    )
   }
 
   return (

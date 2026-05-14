@@ -10,13 +10,13 @@ function createIncident(officerId, checkpointId, title, description, severity, a
     title, description: description || '',
     severity, status: 'open',
   }
-  db.prepare(`
+  await db.run(`
     INSERT INTO incidents (id, officerId, checkpointId, title, description, severity, status)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(...Object.values(incident))
-  const full = db.prepare(`
+  `, Object.values(incident))
+  const full = await db.get(`
     SELECT i.*, u.name as officerName FROM incidents i JOIN users u ON i.officerId = u.id WHERE i.id = ?
-  `).get(incident.id)
+  `, [incident.id])
   if (app?.get('io')) app.get('io').emit('incident:new', full)
 }
 
@@ -24,7 +24,7 @@ const router = Router()
 
 router.use(authMiddleware)
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const { limit = 100, offset = 0, officer, checkpoint } = req.query
   let query = `
     SELECT s.*, u.name as officerName, u.phone as officerPhone,
@@ -49,44 +49,44 @@ router.get('/', (req, res) => {
   query += ' ORDER BY s.receivedAt DESC LIMIT ? OFFSET ?'
   params.push(Number(limit), Number(offset))
 
-    const scans = db.prepare(query).all(...params)
+    const scans = await db.all(query, params)
   res.json(scans.map(s => ({ ...s, gpsValid: !!s.gpsValid })))
 })
 
-router.get('/recent', (req, res) => {
-  const scans = db.prepare(`
+router.get('/recent', async (req, res) => {
+  const scans = await db.all(`
     SELECT s.*, u.name as officerName, u.phone as officerPhone,
            c.name as checkpointName, c.code as checkpointCode
     FROM scans s
     JOIN users u ON s.officerId = u.id
     JOIN checkpoints c ON s.checkpointId = c.id
     ORDER BY s.receivedAt DESC LIMIT 20
-  `).all()
+  `)
   res.json(scans.map(s => ({ ...s, gpsValid: !!s.gpsValid })))
 })
 
-router.get('/:id', (req, res) => {
-  const scan = db.prepare(`
+router.get('/:id', async (req, res) => {
+  const scan = await db.get(`
     SELECT s.*, u.name as officerName, u.phone as officerPhone,
            c.name as checkpointName, c.code as checkpointCode
     FROM scans s
     JOIN users u ON s.officerId = u.id
     JOIN checkpoints c ON s.checkpointId = c.id
     WHERE s.id = ?
-  `).get(req.params.id)
+  `, [req.params.id])
 
   if (!scan) return res.status(404).json({ message: 'Scan not found' })
   res.json({ ...scan, gpsValid: !!scan.gpsValid })
 })
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { checkpointId, gpsLatitude, gpsLongitude, notes } = req.body
 
   if (!checkpointId) {
     return res.status(400).json({ message: 'checkpointId is required' })
   }
 
-  const checkpoint = db.prepare('SELECT * FROM checkpoints WHERE id = ?').get(checkpointId)
+  const checkpoint = await db.get('SELECT * FROM checkpoints WHERE id = ?', [checkpointId])
   if (!checkpoint) {
     return res.status(404).json({ message: 'Checkpoint not found' })
   }
@@ -127,19 +127,19 @@ router.post('/', (req, res) => {
     notes: notes || '',
   }
 
-  db.prepare(`
+  await db.run(`
     INSERT INTO scans (id, officerId, checkpointId, scannedAt, gpsLatitude, gpsLongitude, gpsValid, distanceMeters, notes)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(...Object.values(scan))
+  `, Object.values(scan))
 
-  const fullScan = db.prepare(`
+  const fullScan = await db.get(`
     SELECT s.*, u.name as officerName, u.phone as officerPhone,
            c.name as checkpointName, c.code as checkpointCode
     FROM scans s
     JOIN users u ON s.officerId = u.id
     JOIN checkpoints c ON s.checkpointId = c.id
     WHERE s.id = ?
-  `).get(scan.id)
+  `, [scan.id])
 
   const scanResult = { ...fullScan, gpsValid: !!fullScan.gpsValid }
 

@@ -1,18 +1,22 @@
 import { useEffect, useState } from 'react'
-import { Phone, Mail, MoreHorizontal, Plus, X } from 'lucide-react'
+import { Phone, Mail, MoreHorizontal, Plus, X, UsersIcon } from 'lucide-react'
 import { api } from '../services/api'
 import type { User } from '../types'
+import { CardSkeleton } from '../components/ui/Skeleton'
+import { EmptyState } from '../components/ui/EmptyState'
 
 export default function Users() {
   const [officers, setOfficers] = useState<User[]>([])
+  const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'officer', phone: '' })
   const [saving, setSaving] = useState(false)
 
   const load = () => {
+    setLoading(true)
     api.users.list().then((users) => {
       setOfficers(users.filter((u: User) => u.role === 'officer' || u.role === 'supervisor'))
-    }).catch(() => {})
+    }).catch(() => {}).finally(() => setLoading(false))
   }
 
   useEffect(() => { load() }, [])
@@ -103,45 +107,65 @@ export default function Users() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {officers.map((o) => (
-          <div key={o.id} className="rounded-xl border border-border bg-card p-4">
-            <div className="flex items-start gap-3">
-              <div className="h-12 w-12 rounded-full bg-gradient-to-br from-primary to-info" />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between">
-                  <div className="font-semibold truncate">{o.name}</div>
-                  <button className="text-muted-foreground hover:text-foreground">
-                    <MoreHorizontal className="h-4 w-4" />
-                  </button>
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => <CardSkeleton key={i} />)}
+        </div>
+      ) : officers.length === 0 ? (
+        <EmptyState
+          icon={<UsersIcon className="h-7 w-7" />}
+          title="No officers yet"
+          description="Add your first officer or supervisor to get started."
+          action={
+            <button
+              onClick={() => setShowForm(true)}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+            >
+              <Plus className="h-4 w-4" /> Add Officer
+            </button>
+          }
+        />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {officers.map((o) => (
+            <div key={o.id} className="rounded-xl border border-border bg-card p-4">
+              <div className="flex items-start gap-3">
+                <div className="h-12 w-12 rounded-full bg-gradient-to-br from-primary to-info" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <div className="font-semibold truncate">{o.name}</div>
+                    <button className="text-muted-foreground hover:text-foreground">
+                      <MoreHorizontal className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="text-xs text-muted-foreground capitalize">{o.role} · {o.id.slice(0, 6).toUpperCase()}</div>
+                  <span className="mt-2 inline-block rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase bg-success/15 text-success">
+                    {o.active ? 'Active' : 'Inactive'}
+                  </span>
                 </div>
-                <div className="text-xs text-muted-foreground capitalize">{o.role} · {o.id.slice(0, 6).toUpperCase()}</div>
-                <span className="mt-2 inline-block rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase bg-success/15 text-success">
-                  {o.active ? 'Active' : 'Inactive'}
-                </span>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <div className="text-muted-foreground">Email</div>
+                  <div className="text-sm font-medium truncate">{o.email}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Phone</div>
+                  <div className="text-sm font-medium">{o.phone || '-'}</div>
+                </div>
+              </div>
+              <div className="mt-4 flex gap-2">
+                <button className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-border py-1.5 text-xs hover:bg-accent">
+                  <Phone className="h-3.5 w-3.5" /> Call
+                </button>
+                <button className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-border py-1.5 text-xs hover:bg-accent">
+                  <Mail className="h-3.5 w-3.5" /> Message
+                </button>
               </div>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
-              <div>
-                <div className="text-muted-foreground">Email</div>
-                <div className="text-sm font-medium truncate">{o.email}</div>
-              </div>
-              <div>
-                <div className="text-muted-foreground">Phone</div>
-                <div className="text-sm font-medium">{o.phone || '-'}</div>
-              </div>
-            </div>
-            <div className="mt-4 flex gap-2">
-              <button className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-border py-1.5 text-xs hover:bg-accent">
-                <Phone className="h-3.5 w-3.5" /> Call
-              </button>
-              <button className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-border py-1.5 text-xs hover:bg-accent">
-                <Mail className="h-3.5 w-3.5" /> Message
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

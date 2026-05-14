@@ -8,7 +8,7 @@ const router = Router()
 
 router.use(authMiddleware)
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const { status } = req.query
   let query = `
     SELECT i.*, u.name as officerName, c.name as checkpointName
@@ -22,7 +22,7 @@ router.get('/', (req, res) => {
     params.push(status)
   }
   query += ' ORDER BY i.reportedAt DESC'
-  const incidents = db.prepare(query).all(...params)
+  const incidents = await db.all(query, params)
   res.json(incidents)
 })
 
@@ -54,17 +54,17 @@ router.post('/', async (req, res) => {
     status: 'open',
   }
 
-  db.prepare(`
+  await db.run(`
     INSERT INTO incidents (id, officerId, checkpointId, title, description, severity, status)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(...Object.values(incident))
+  `, Object.values(incident))
 
-  const full = db.prepare(`
+  const full = await db.get(`
     SELECT i.*, u.name as officerName
     FROM incidents i
     JOIN users u ON i.officerId = u.id
     WHERE i.id = ?
-  `).get(incident.id)
+  `, [incident.id])
 
   if (req.app.get('io')) {
     req.app.get('io').emit('incident:new', full)
@@ -73,18 +73,18 @@ router.post('/', async (req, res) => {
   res.status(201).json(full)
 })
 
-router.patch('/:id/status', (req, res) => {
+router.patch('/:id/status', async (req, res) => {
   const { status } = req.body
   const valid = ['open', 'investigating', 'resolved']
   if (!valid.includes(status)) {
     return res.status(400).json({ message: 'Invalid status' })
   }
 
-  const existing = db.prepare('SELECT * FROM incidents WHERE id = ?').get(req.params.id)
+  const existing = await db.get('SELECT * FROM incidents WHERE id = ?', [req.params.id])
   if (!existing) return res.status(404).json({ message: 'Incident not found' })
 
   const resolvedAt = status === 'resolved' ? new Date().toISOString() : null
-  db.prepare('UPDATE incidents SET status = ?, resolvedAt = ? WHERE id = ?')
+  await db.get('UPDATE incidents SET status = ?, resolvedAt = ? WHERE id = ?')
     .run(status, resolvedAt, req.params.id)
 
   const updated = db.prepare(`
@@ -93,24 +93,24 @@ router.patch('/:id/status', (req, res) => {
     JOIN users u ON i.officerId = u.id
     LEFT JOIN checkpoints c ON i.checkpointId = c.id
     WHERE i.id = ?
-  `).get(req.params.id)
+  `, [req.params.id])
 
   res.json(updated)
 })
 
-router.get('/missed-patrols', (req, res) => {
-  const checkpoints = db.prepare('SELECT * FROM checkpoints WHERE active = 1').all()
+router.get('/missed-patrols', async (req, res) => {
+  const checkpoints = await db.all('SELECT * FROM checkpoints WHERE active = 1')
   const missed = []
 
   for (const cp of checkpoints) {
-    const lastScan = db.prepare(`
+    const lastScan = await db.get(`
       SELECT s.*, u.name as officerName
       FROM scans s
       JOIN users u ON s.officerId = u.id
       WHERE s.checkpointId = ?
       ORDER BY s.scannedAt DESC
       LIMIT 1
-    `).get(cp.id)
+    `, [cp.id])
 
     const interval = cp.expectedIntervalMinutes || 30
     const now = Date.now()

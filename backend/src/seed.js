@@ -14,12 +14,12 @@ const admin = {
   active: 1,
 }
 
-const existingAdmin = db.prepare('SELECT id FROM users WHERE email = ?').get('admin@securecorp.com')
+const existingAdmin = await db.get('SELECT id FROM users WHERE email = ?', ['admin@securecorp.com'])
 if (!existingAdmin) {
-  db.prepare(`
+  await db.run(`
     INSERT INTO users (id, name, email, password, role, phone, active)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(...Object.values(admin))
+  `, Object.values(admin))
   console.log('Admin user created: admin@securecorp.com / 123456')
 } else {
   console.log('Admin user already exists')
@@ -35,12 +35,12 @@ const checkpoint = {
   active: 1,
 }
 
-const existingCheckpoint = db.prepare('SELECT id FROM checkpoints WHERE code = ?').get('SHOPRITE-001')
+const existingCheckpoint = await db.get('SELECT id FROM checkpoints WHERE code = ?', ['SHOPRITE-001'])
 if (!existingCheckpoint) {
-  db.prepare(`
+  await db.run(`
     INSERT INTO checkpoints (id, name, code, latitude, longitude, radiusMeters, active)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(...Object.values(checkpoint))
+  `, Object.values(checkpoint))
   console.log('Checkpoint created: Shoprite Mall (SHOPRITE-001)')
 } else {
   console.log('Checkpoint already exists')

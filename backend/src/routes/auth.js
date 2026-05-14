@@ -6,14 +6,14 @@ import { generateToken } from '../middleware/auth.js'
 
 const router = Router()
 
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   const { email, password } = req.body
 
   if (!email || !password) {
     return res.status(400).json({ message: 'Email and password are required' })
   }
 
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email)
+  const user = await db.get('SELECT * FROM users WHERE email = ?', [email])
   if (!user) {
     return res.status(401).json({ message: 'Invalid credentials' })
   }

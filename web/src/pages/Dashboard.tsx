@@ -14,6 +14,7 @@ import { useNavigate } from 'react-router-dom'
 import { PatrolMap } from '../components/PatrolMap'
 import { useScanStore, useScanWebSocket } from '../stores/useScanStore'
 import { api } from '../services/api'
+import { StatsCardSkeleton } from '../components/ui/Skeleton'
 
 const toneBg: Record<string, string> = {
   info: 'bg-info/15 text-info',
@@ -33,19 +34,28 @@ const statusBadge = (s: string) => {
 }
 
 export default function Dashboard() {
-  const { scans, stats, fetchScans, fetchStats } = useScanStore()
+  const { scans, stats, loading, fetchScans, fetchStats } = useScanStore()
   const [missedPatrols, setMissedPatrols] = useState<any[]>([])
   const [incidents, setIncidents] = useState<any[]>([])
   const [missingClockins, setMissingClockins] = useState<any[]>([])
   const [timesheetSummary, setTimesheetSummary] = useState<any>(null)
+  const [loadingData, setLoadingData] = useState(true)
   const navigate = useNavigate()
   useScanWebSocket()
 
   useEffect(() => {
-    api.incidents.missedPatrols().then(setMissedPatrols).catch(() => {})
-    api.incidents.list().then(setIncidents).catch(() => {})
-    api.shifts.missingClockins().then(setMissingClockins).catch(() => {})
-    api.timesheets.summary().then(setTimesheetSummary).catch(() => {})
+    Promise.all([
+      api.incidents.missedPatrols().catch(() => []),
+      api.incidents.list().catch(() => []),
+      api.shifts.missingClockins().catch(() => []),
+      api.timesheets.summary().catch(() => null),
+    ]).then(([mp, inc, mc, ts]) => {
+      setMissedPatrols(mp as any[])
+      setIncidents(inc as any[])
+      setMissingClockins(mc as any[])
+      setTimesheetSummary(ts)
+      setLoadingData(false)
+    })
   }, [])
 
   useEffect(() => {
@@ -92,25 +102,29 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {statCards.map((s) => {
-          const Icon = s.icon
-          return (
-            <button
-              key={s.label}
-              onClick={() => navigate(s.to)}
-              className="rounded-xl border border-border bg-card p-4 text-left hover:bg-accent/50 transition-colors cursor-pointer"
-            >
-              <div className="flex items-center justify-between">
-                <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${toneBg[s.tone]}`}>
-                  <Icon className="h-4 w-4" />
+        {loading || loadingData ? (
+          Array.from({ length: 4 }).map((_, i) => <StatsCardSkeleton key={i} />)
+        ) : (
+          statCards.map((s) => {
+            const Icon = s.icon
+            return (
+              <button
+                key={s.label}
+                onClick={() => navigate(s.to)}
+                className="rounded-xl border border-border bg-card p-4 text-left hover:bg-accent/50 transition-colors cursor-pointer"
+              >
+                <div className="flex items-center justify-between">
+                  <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${toneBg[s.tone]}`}>
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <span className="text-xs text-muted-foreground">{s.delta}</span>
                 </div>
-                <span className="text-xs text-muted-foreground">{s.delta}</span>
-              </div>
-              <div className="mt-3 text-2xl font-semibold">{s.value}</div>
-              <div className="text-xs text-muted-foreground">{s.label}</div>
-            </button>
-          )
-        })}
+                <div className="mt-3 text-2xl font-semibold">{s.value}</div>
+                <div className="text-xs text-muted-foreground">{s.label}</div>
+              </button>
+            )
+          })
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
