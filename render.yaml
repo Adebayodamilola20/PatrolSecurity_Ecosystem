@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: patrol-backend
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install
+    startCommand: node src/seed.js && node src/index.js
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: PORT
+        value: 3000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ALLOWED_ORIGINS
+        value: https://patrol-web.vercel.app
+      - key: MISTRAL_API_KEY
+        sync: false
+    disk:
+      name: patrol-data
+      mountPath: /data
+      sizeGB: 1
