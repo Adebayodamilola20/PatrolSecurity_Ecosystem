@@ -33,6 +33,12 @@ const statusBadge = (s: string) => {
   return map[s] ?? 'bg-muted text-muted-foreground'
 }
 
+const officerInitials = (name?: string) => {
+  const safeName = (name || '').trim()
+  if (!safeName) return 'Unknown Officer'
+  return safeName.split(/\s+/).map((n: string) => n[0]).join('. ')
+}
+
 export default function Dashboard() {
   const { scans, stats, loading, fetchScans, fetchStats } = useScanStore()
   const [missedPatrols, setMissedPatrols] = useState<any[]>([])
@@ -73,8 +79,8 @@ export default function Dashboard() {
   const recentScans = scans.slice(0, 5).map((s) => ({
     id: s.id,
     displayId: `#SC-${s.id.slice(0, 4).toUpperCase()}`,
-    cp: `${s.checkpointCode} ${s.checkpointName}`,
-    officer: s.officerName.split(' ').map((n: string) => n[0]).join('. '),
+    cp: [s.checkpointCode, s.checkpointName].filter(Boolean).join(' ') || 'Unknown checkpoint',
+    officer: officerInitials(s.officerName),
     time: (() => {
       const diff = Date.now() - new Date(s.scannedAt).getTime()
       const mins = Math.floor(diff / 60000)

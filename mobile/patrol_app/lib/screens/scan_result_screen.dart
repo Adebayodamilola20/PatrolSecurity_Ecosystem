@@ -1,8 +1,10 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import '../models/checkpoint.dart';
 import '../providers/scan_provider.dart';
+import '../services/location_service.dart';
 import '../utils/routes.dart';
 import '../utils/theme.dart';
 import 'package:intl/intl.dart';
@@ -85,7 +87,8 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
     _checkpointName = checkpoint.name;
     _timestamp = DateTime.now();
     if (gpsLat == null || gpsLng == null) {
-      _errorMessage = 'Location unavailable. Enable GPS permission and try again.';
+      _errorMessage = data['locationError'] as String? ??
+          'Location unavailable. Enable GPS permission and try again.';
       _gpsValid = false;
     } else {
       _distance = _haversine(
@@ -100,6 +103,28 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
     setState(() => _loading = false);
   }
 
+  Future<void> _retryLocation() async {
+    setState(() => _loading = true);
+    final location = await LocationService.getCurrentLocation();
+    final pos = location.position;
+
+    if (!mounted) return;
+    final updatedData = <String, dynamic>{
+      ...?widget.scanData,
+      'gpsLatitude': pos?.latitude,
+      'gpsLongitude': pos?.longitude,
+      'locationCaptured': pos != null,
+      'locationError': location.error,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+
+    Navigator.pushReplacementNamed(
+      context,
+      AppRoutes.scanResult,
+      arguments: {'scanData': updatedData},
+    );
+  }
+
   Future<void> _verify() async {
     if (_checkpoint == null) return;
     final data = widget.scanData!;
@@ -107,7 +132,8 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
     final gpsLngValue = data['gpsLongitude'];
     if (gpsLatValue == null || gpsLngValue == null) {
       setState(() {
-        _errorMessage = 'Location unavailable. Verification requires GPS.';
+        _errorMessage = data['locationError'] as String? ??
+            'Location unavailable. Verification requires GPS.';
       });
       return;
     }
@@ -335,6 +361,26 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                     ),
                   ],
                 ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _retryLocation,
+                      icon: const Icon(Icons.my_location),
+                      label: const Text('Retry GPS'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: Geolocator.openAppSettings,
+                      icon: const Icon(Icons.settings),
+                      label: const Text('App Settings'),
+                    ),
+                  ),
+                ],
               ),
             ],
             const SizedBox(height: 16),

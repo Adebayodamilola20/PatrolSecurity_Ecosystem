@@ -12,6 +12,11 @@ interface CheckpointData {
   radiusMeters: number; expectedIntervalMinutes: number; active: boolean; createdAt: string
 }
 
+function safeNumber(value: unknown, fallback: number) {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
 export default function CheckpointDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -22,6 +27,9 @@ export default function CheckpointDetail() {
   const [scans, setScans] = useState<Scan[]>([])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'flagged'>('all')
+  const safeRadius = safeNumber(cp?.radiusMeters, 50)
+  const safeLatitude = safeNumber(cp?.latitude, 0)
+  const safeLongitude = safeNumber(cp?.longitude, 0)
 
   useEffect(() => {
     if (!id) return
@@ -34,23 +42,23 @@ export default function CheckpointDetail() {
 
   useEffect(() => {
     if (!mapRef.current || mapInstance.current || !cp) return
-    const map = L.map(mapRef.current, { center: [cp.latitude, cp.longitude], zoom: 17, zoomControl: false })
+    const map = L.map(mapRef.current, { center: [safeLatitude, safeLongitude], zoom: 17, zoomControl: false })
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
       attribution: '&copy; OpenStreetMap &copy; CARTO',
       subdomains: 'abcd', maxZoom: 19,
     }).addTo(map)
     L.control.zoom({ position: 'bottomright' }).addTo(map)
-    L.circle([cp.latitude, cp.longitude], {
-      color: 'oklch(0.62 0.20 265)', fillColor: 'oklch(0.62 0.20 265 / 0.15)', fillOpacity: 0.15, radius: cp.radiusMeters, weight: 2,
+    L.circle([safeLatitude, safeLongitude], {
+      color: 'oklch(0.62 0.20 265)', fillColor: 'oklch(0.62 0.20 265 / 0.15)', fillOpacity: 0.15, radius: safeRadius, weight: 2,
     }).addTo(map)
     const cpIcon = L.divIcon({
       className: '',
       html: '<div style="width:18px;height:18px;background:oklch(0.62 0.20 265);border:3px solid white;border-radius:4px;transform:rotate(45deg);box-shadow:0 2px 8px rgba(0,0,0,0.3);"></div>',
       iconSize: [18, 18], iconAnchor: [9, 9],
     })
-    L.marker([cp.latitude, cp.longitude], { icon: cpIcon }).addTo(map)
+    L.marker([safeLatitude, safeLongitude], { icon: cpIcon }).addTo(map)
     return () => { map.remove(); mapInstance.current = null }
-  }, [cp])
+  }, [cp, safeLatitude, safeLongitude, safeRadius])
 
   useEffect(() => {
     if (qrRef.current && cp) {
@@ -107,7 +115,7 @@ export default function CheckpointDetail() {
             </div>
             <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg px-3 py-2">
               <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />
-              {cp.latitude.toFixed(6)}, {cp.longitude.toFixed(6)}
+              {safeLatitude.toFixed(6)}, {safeLongitude.toFixed(6)}
             </div>
           </div>
         </div>
@@ -116,7 +124,7 @@ export default function CheckpointDetail() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: 'Scans', value: scans.length, icon: QrCode, color: 'text-info' },
-          { label: 'Radius', value: `${cp.radiusMeters}m`, icon: Ruler, color: 'text-warning' },
+          { label: 'Radius', value: `${safeRadius}m`, icon: Ruler, color: 'text-warning' },
           { label: 'Interval', value: `Every ${cp.expectedIntervalMinutes}min`, icon: Clock, color: 'text-primary' },
           { label: 'Officers', value: new Set(scans.map(s => s.officerId)).size, icon: Camera, color: 'text-success' },
         ].map((item, i) => {
@@ -144,7 +152,7 @@ export default function CheckpointDetail() {
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full border-2 border-primary shrink-0" />
-            {cp.radiusMeters}m Zone
+            {safeRadius}m Zone
           </span>
         </div>
       </div>

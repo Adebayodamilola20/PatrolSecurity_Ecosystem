@@ -32,7 +32,8 @@ class _ScannerScreenState extends State<ScannerScreen> {
     }
 
     controller.stop();
-    final pos = await LocationService.getCurrentLocation();
+    final location = await LocationService.getCurrentLocation();
+    final pos = location.position;
 
     if (!mounted) return;
     Navigator.pushReplacementNamed(
@@ -44,6 +45,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
           'gpsLatitude': pos?.latitude,
           'gpsLongitude': pos?.longitude,
           'locationCaptured': pos != null,
+          'locationError': location.error,
           'timestamp': DateTime.now().toIso8601String(),
         },
       },
@@ -100,7 +102,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                     color: Colors.white.withOpacity(0.8), size: 18),
                 const SizedBox(height: 4),
                 Text(
-                  'GPS: Active',
+                  'GPS captured during scan',
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.8),
                     fontSize: 13,

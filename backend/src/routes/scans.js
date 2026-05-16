@@ -3,6 +3,29 @@ import { v4 as uuidv4 } from 'uuid'
 import db from '../db.js'
 import { authMiddleware } from '../middleware/auth.js'
 
+function normalizeScan(scan) {
+  if (!scan) return scan
+
+  const normalized = {
+    id: scan.id,
+    officerId: scan.officerId ?? scan.officerid ?? '',
+    officerName: scan.officerName ?? scan.officername ?? '',
+    officerPhone: scan.officerPhone ?? scan.officerphone ?? '',
+    checkpointId: scan.checkpointId ?? scan.checkpointid ?? '',
+    checkpointName: scan.checkpointName ?? scan.checkpointname ?? '',
+    checkpointCode: scan.checkpointCode ?? scan.checkpointcode ?? '',
+    scannedAt: scan.scannedAt ?? scan.scannedat ?? null,
+    receivedAt: scan.receivedAt ?? scan.receivedat ?? null,
+    gpsLatitude: scan.gpsLatitude ?? scan.gpslatitude ?? null,
+    gpsLongitude: scan.gpsLongitude ?? scan.gpslongitude ?? null,
+    gpsValid: !!(scan.gpsValid ?? scan.gpsvalid),
+    distanceMeters: scan.distanceMeters ?? scan.distancemeters ?? null,
+    notes: scan.notes ?? '',
+  }
+
+  return normalized
+}
+
 async function createIncident(officerId, checkpointId, title, description, severity, app) {
   const incident = {
     id: uuidv4(),
@@ -49,8 +72,8 @@ router.get('/', async (req, res) => {
   query += ' ORDER BY s.receivedAt DESC LIMIT ? OFFSET ?'
   params.push(Number(limit), Number(offset))
 
-    const scans = await db.all(query, params)
-  res.json(scans.map(s => ({ ...s, gpsValid: !!s.gpsValid })))
+  const scans = await db.all(query, params)
+  res.json(scans.map(normalizeScan))
 })
 
 router.get('/recent', async (req, res) => {
@@ -62,7 +85,7 @@ router.get('/recent', async (req, res) => {
     JOIN checkpoints c ON s.checkpointId = c.id
     ORDER BY s.receivedAt DESC LIMIT 20
   `)
-  res.json(scans.map(s => ({ ...s, gpsValid: !!s.gpsValid })))
+  res.json(scans.map(normalizeScan))
 })
 
 router.get('/:id', async (req, res) => {
@@ -76,7 +99,7 @@ router.get('/:id', async (req, res) => {
   `, [req.params.id])
 
   if (!scan) return res.status(404).json({ message: 'Scan not found' })
-  res.json({ ...scan, gpsValid: !!scan.gpsValid })
+  res.json(normalizeScan(scan))
 })
 
 router.post('/', async (req, res) => {
@@ -141,7 +164,7 @@ router.post('/', async (req, res) => {
     WHERE s.id = ?
   `, [scan.id])
 
-  const scanResult = { ...fullScan, gpsValid: !!fullScan.gpsValid }
+  const scanResult = normalizeScan(fullScan)
 
   if (req.app.get('io')) {
     req.app.get('io').emit('scan:new', scanResult)
