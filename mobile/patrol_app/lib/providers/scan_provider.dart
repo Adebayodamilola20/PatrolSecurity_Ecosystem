@@ -39,11 +39,13 @@ class ScanProvider extends ChangeNotifier {
 
   Future<void> loadCheckpoints() async {
     try {
+      _error = null;
       final data = await ApiService.getCheckpoints();
       _checkpoints = data.map((j) => Checkpoint.fromJson(j)).toList();
     } catch (e) {
-      _error = e.toString();
+      _error = e.toString().replaceFirst('Exception: ', '');
     }
+    notifyListeners();
   }
 
   Future<bool> submitScan(Map<String, dynamic> data) async {

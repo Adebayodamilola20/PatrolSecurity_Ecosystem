@@ -23,8 +23,13 @@ class _ScannerScreenState extends State<ScannerScreen> {
 
   void _onDetect(BarcodeCapture capture) async {
     if (capture.barcodes.isEmpty) return;
-    final code = capture.barcodes.first.rawValue;
-    if (code == null) return;
+    String? code = capture.barcodes.first.rawValue;
+    if (code == null || code.isEmpty) return;
+    
+    // If the scanned QR code is a URL, extract the ID from the end of it
+    if (code.startsWith('http') && code.contains('/')) {
+      code = code.split('/').last;
+    }
 
     controller.stop();
     final pos = await LocationService.getCurrentLocation();
@@ -36,8 +41,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
       arguments: {
         'scanData': {
           'checkpointCode': code,
-          'gpsLatitude': pos?.latitude ?? 0,
-          'gpsLongitude': pos?.longitude ?? 0,
+          'gpsLatitude': pos?.latitude,
+          'gpsLongitude': pos?.longitude,
+          'locationCaptured': pos != null,
           'timestamp': DateTime.now().toIso8601String(),
         },
       },

@@ -3,10 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/checkpoint.dart';
 import '../providers/scan_provider.dart';
-import '../providers/auth_provider.dart';
 import '../utils/routes.dart';
 import '../utils/theme.dart';
-import '../utils/constants.dart';
 import 'package:intl/intl.dart';
 
 class ScanResultScreen extends StatefulWidget {
@@ -26,6 +24,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
   bool _gpsValid = false;
   DateTime _timestamp = DateTime.now();
   Checkpoint? _checkpoint;
+  String? _errorMessage;
   final _notesCtrl = TextEditingController();
 
   @override
@@ -61,8 +60,8 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
       return;
     }
 
-    final gpsLat = data['gpsLatitude'] as double;
-    final gpsLng = data['gpsLongitude'] as double;
+    final gpsLat = (data['gpsLatitude'] as num?)?.toDouble();
+    final gpsLng = (data['gpsLongitude'] as num?)?.toDouble();
     final code = data['checkpointCode'] as String? ?? '';
 
     final scanProvider = context.read<ScanProvider>();
@@ -70,12 +69,13 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
 
     Checkpoint? checkpoint;
     try {
-      checkpoint = scanProvider.checkpoints.firstWhere((c) => c.code == code);
+      checkpoint = scanProvider.checkpoints.firstWhere((c) => c.id == code || c.code == code);
     } catch (_) {}
 
     if (checkpoint == null) {
       setState(() {
         _checkpointName = code;
+        _errorMessage = scanProvider.error ?? 'Checkpoint not found in API.';
         _loading = false;
       });
       return;
@@ -84,22 +84,37 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
     _checkpoint = checkpoint;
     _checkpointName = checkpoint.name;
     _timestamp = DateTime.now();
-    _distance = _haversine(
-      gpsLat, gpsLng,
-      checkpoint.latitude, checkpoint.longitude,
-    );
-    _gpsValid = _distance <= gpsRadiusMeters;
+    if (gpsLat == null || gpsLng == null) {
+      _errorMessage = 'Location unavailable. Enable GPS permission and try again.';
+      _gpsValid = false;
+    } else {
+      _distance = _haversine(
+        gpsLat,
+        gpsLng,
+        checkpoint.latitude,
+        checkpoint.longitude,
+      );
+      _gpsValid = _distance <= checkpoint.radiusMeters;
+    }
 
     setState(() => _loading = false);
   }
 
   Future<void> _verify() async {
     if (_checkpoint == null) return;
-    setState(() => _submitting = true);
-
     final data = widget.scanData!;
-    final gpsLat = data['gpsLatitude'] as double;
-    final gpsLng = data['gpsLongitude'] as double;
+    final gpsLatValue = data['gpsLatitude'];
+    final gpsLngValue = data['gpsLongitude'];
+    if (gpsLatValue == null || gpsLngValue == null) {
+      setState(() {
+        _errorMessage = 'Location unavailable. Verification requires GPS.';
+      });
+      return;
+    }
+
+    setState(() => _submitting = true);
+    final gpsLat = (gpsLatValue as num).toDouble();
+    final gpsLng = (gpsLngValue as num).toDouble();
 
     final scanProvider = context.read<ScanProvider>();
     final ok = await scanProvider.submitScan({
@@ -112,6 +127,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
     if (!mounted) return;
     setState(() {
       _success = ok;
+      _errorMessage = ok ? null : scanProvider.error;
       _submitting = false;
     });
   }
@@ -216,6 +232,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                   Text(
                     _checkpointName ?? 'Unknown Checkpoint',
                     style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.text),
+                    textAlign: TextAlign.center,
                   ),
                   if (_checkpoint != null)
                     Text(
@@ -233,11 +250,22 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
-                    _DetailRow(label: 'Latitude', value: '${widget.scanData?['gpsLatitude'] ?? 0}'),
+                    _DetailRow(
+                      label: 'Latitude',
+                      value: widget.scanData?['gpsLatitude']?.toString() ?? 'Unavailable',
+                    ),
                     const Divider(height: 16),
-                    _DetailRow(label: 'Longitude', value: '${widget.scanData?['gpsLongitude'] ?? 0}'),
+                    _DetailRow(
+                      label: 'Longitude',
+                      value: widget.scanData?['gpsLongitude']?.toString() ?? 'Unavailable',
+                    ),
                     const Divider(height: 16),
-                    _DetailRow(label: 'Distance', value: '${_distance.toStringAsFixed(0)}m'),
+                    _DetailRow(
+                      label: 'Distance',
+                      value: widget.scanData?['gpsLatitude'] == null
+                          ? 'Unavailable'
+                          : '${_distance.toStringAsFixed(0)}m',
+                    ),
                     const Divider(height: 16),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -245,13 +273,32 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                         const Text('Status', style: TextStyle(color: AppTheme.textSecondary)),
                         Row(
                           children: [
-                            Icon(_gpsValid ? Icons.check_circle : Icons.warning_amber, size: 16,
-                                color: _gpsValid ? AppTheme.verified : AppTheme.flagged),
+                            Icon(
+                              widget.scanData?['gpsLatitude'] == null
+                                  ? Icons.location_off
+                                  : _gpsValid
+                                      ? Icons.check_circle
+                                      : Icons.warning_amber,
+                              size: 16,
+                              color: widget.scanData?['gpsLatitude'] == null
+                                  ? Colors.orange
+                                  : _gpsValid
+                                      ? AppTheme.verified
+                                      : AppTheme.flagged,
+                            ),
                             const SizedBox(width: 4),
                             Text(
-                              _gpsValid ? 'Within Range' : 'Out of Range',
+                              widget.scanData?['gpsLatitude'] == null
+                                  ? 'Location Required'
+                                  : _gpsValid
+                                      ? 'Within Range'
+                                      : 'Out of Range',
                               style: TextStyle(
-                                color: _gpsValid ? AppTheme.verified : AppTheme.flagged,
+                                color: widget.scanData?['gpsLatitude'] == null
+                                    ? Colors.orange
+                                    : _gpsValid
+                                        ? AppTheme.verified
+                                        : AppTheme.flagged,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -263,6 +310,33 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                 ),
               ),
             ),
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange.withOpacity(0.25)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.info_outline, color: Colors.orange, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(
+                          color: AppTheme.text,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
             const Text('Patrol Notes', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
@@ -278,7 +352,12 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
             SizedBox(
               width: double.infinity, height: 52,
               child: ElevatedButton.icon(
-                onPressed: _submitting ? null : _verify,
+                onPressed: _submitting ||
+                        _checkpoint == null ||
+                        widget.scanData?['gpsLatitude'] == null ||
+                        widget.scanData?['gpsLongitude'] == null
+                    ? null
+                    : _verify,
                 icon: _submitting
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                     : const Icon(Icons.verified),

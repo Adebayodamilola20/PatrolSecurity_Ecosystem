@@ -37,9 +37,9 @@ router.get('/', async (req, res) => {
     JOIN users u ON s.userId = u.id
     ${where}
     ORDER BY s.clockIn DESC LIMIT ? OFFSET ?
-  `, params, Number(limit), Number(offset))
+  `, [...params, Number(limit), Number(offset)])
 
-  const result = shifts.map((s) => {
+  const result = await Promise.all(shifts.map(async (s) => {
     const clockIn = new Date(s.clockIn).getTime()
     const clockOut = s.clockOut ? new Date(s.clockOut).getTime() : Date.now()
     const durationMs = clockOut - clockIn
@@ -74,7 +74,7 @@ router.get('/', async (req, res) => {
       scanCount: scans.length,
       verifiedScans: scans.filter(sc => sc.gpsValid).length,
     }
-  })
+  }))
 
   res.json(result)
 })

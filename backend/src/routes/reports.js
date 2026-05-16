@@ -32,16 +32,22 @@ router.post('/generate', async (req, res) => {
     VALUES (?, ?, ?, ?, ?, ?)
   `, Object.values(report))
 
-  setTimeout(() => {
-    await db.get("UPDATE reports SET status = 'sent', sentAt = datetime('now') WHERE id = ?")
-      .run(report.id)
+  setTimeout(async () => {
+    try {
+      await db.run(
+        "UPDATE reports SET status = 'sent', sentAt = CURRENT_TIMESTAMP WHERE id = ?",
+        [report.id]
+      )
+    } catch (err) {
+      console.error('[reports] Failed to mark report as sent:', err.message)
+    }
   }, 2000)
 
   res.status(201).json(report)
 })
 
 router.get('/:id/pdf', async (req, res) => {
-  const report = db.prepare('SELECT * FROM reports WHERE id = ?', [req.params.id])
+  const report = await db.get('SELECT * FROM reports WHERE id = ?', [req.params.id])
   if (!report) return res.status(404).json({ message: 'Report not found' })
 
   const scans = await db.all(`

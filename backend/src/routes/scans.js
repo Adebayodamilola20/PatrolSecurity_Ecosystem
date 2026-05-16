@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 import db from '../db.js'
 import { authMiddleware } from '../middleware/auth.js'
 
-function createIncident(officerId, checkpointId, title, description, severity, app) {
+async function createIncident(officerId, checkpointId, title, description, severity, app) {
   const incident = {
     id: uuidv4(),
     officerId, checkpointId: checkpointId || null,
@@ -105,7 +105,7 @@ router.post('/', async (req, res) => {
     distanceMeters = Math.round(R * c)
     gpsValid = distanceMeters <= (checkpoint.radiusMeters || 50)
     if (!gpsValid) {
-      createIncident(
+      await createIncident(
         req.user.id, checkpointId,
         'Geofence Breach',
         `Guard scanned ${checkpoint.name} from ${distanceMeters}m away (radius: ${checkpoint.radiusMeters}m)`,

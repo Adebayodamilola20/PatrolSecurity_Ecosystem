@@ -71,6 +71,7 @@ app.use('/api/v1/scans', scanRoutes)
 app.use('/api/v1/checkpoints', checkpointRoutes)
 app.use('/api/v1/reports', reportRoutes)
 app.use('/api/v1/users', userRoutes)
+app.use('/api/v1/shifts', shiftRoutes)
 app.use('/api/v1/incidents', incidentRoutes)
 app.use('/api/v1/timesheets', timesheetRoutes)
 

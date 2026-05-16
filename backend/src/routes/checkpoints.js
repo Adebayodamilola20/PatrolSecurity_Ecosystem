@@ -58,14 +58,14 @@ router.put('/:id', adminOnly, async (req, res) => {
     WHERE id=?
   `, [
     name ?? existing.name,
-    code?.toUpperCase(]) ?? existing.code,
+    code?.toUpperCase() ?? existing.code,
     latitude ?? existing.latitude,
     longitude ?? existing.longitude,
     radiusMeters ?? existing.radiusMeters,
     expectedIntervalMinutes ?? existing.expectedIntervalMinutes,
     active !== undefined ? (active ? 1 : 0) : existing.active,
     req.params.id
-  )
+  ])
 
   const updated = await db.get('SELECT * FROM checkpoints WHERE id = ?', [req.params.id])
   res.json({ ...updated, active: !!updated.active })
