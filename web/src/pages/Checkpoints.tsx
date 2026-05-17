@@ -3,6 +3,7 @@ import { X, MapPin, ScanLine, Download, Edit, Trash2, MapIcon } from 'lucide-rea
 import { useNavigate } from 'react-router-dom'
 import QRCode from 'qrcode'
 import { api } from '../services/api'
+import { loadGoogleMaps } from '../services/googleMaps'
 import type { Checkpoint } from '../types'
 import { CardSkeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
@@ -14,9 +15,10 @@ const statusColor: Record<string, string> = {
 }
 
 interface AddressSuggestion {
-  display_name: string
-  lat: string
-  lon: string
+  placeId: string
+  mainText: string
+  secondaryText: string
+  description: string
 }
 
 function getStatus(cp: Checkpoint): string {
@@ -50,6 +52,7 @@ export default function Checkpoints() {
   const [addressQuery, setAddressQuery] = useState('')
   const [addressResults, setAddressResults] = useState<AddressSuggestion[]>([])
   const [searchingAddress, setSearchingAddress] = useState(false)
+  const [addressError, setAddressError] = useState('')
 
   useEffect(() => {
     setLoading(true)
@@ -60,31 +63,59 @@ export default function Checkpoints() {
     if (!showModal) return
     if (addressQuery.trim().length < 3) {
       setAddressResults([])
+      setAddressError('')
       return
     }
 
-    const controller = new AbortController()
+    let active = true
     const timer = window.setTimeout(async () => {
       try {
         setSearchingAddress(true)
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=ng&limit=5&q=${encodeURIComponent(addressQuery)}`,
-          {
-            signal: controller.signal,
-            headers: { Accept: 'application/json' },
-          }
+        setAddressError('')
+        const maps = await loadGoogleMaps()
+        const service = new maps.places.AutocompleteService()
+        const sessionToken = new maps.places.AutocompleteSessionToken()
+
+        const response = await service.getPlacePredictions({
+          input: addressQuery,
+          componentRestrictions: { country: 'ng' },
+          types: ['geocode', 'establishment'],
+          sessionToken,
+        })
+
+        if (!active) return
+        const predictions = Array.isArray(response?.predictions)
+          ? response.predictions
+          : Array.isArray(response)
+              ? response
+              : []
+
+        setAddressResults(
+          predictions.map((prediction: any) => ({
+            placeId: prediction.place_id,
+            mainText:
+              prediction.structured_formatting?.main_text ||
+              prediction.description,
+            secondaryText:
+              prediction.structured_formatting?.secondary_text || '',
+            description: prediction.description,
+          })),
         )
-        const data = await res.json()
-        setAddressResults(Array.isArray(data) ? data : [])
-      } catch {
+      } catch (error) {
+        if (!active) return
         setAddressResults([])
+        setAddressError(
+          error instanceof Error
+            ? error.message
+            : 'Could not load place suggestions.',
+        )
       } finally {
-        setSearchingAddress(false)
+        if (active) setSearchingAddress(false)
       }
     }, 400)
 
     return () => {
-      controller.abort()
+      active = false
       window.clearTimeout(timer)
     }
   }, [addressQuery, showModal])
@@ -112,9 +143,52 @@ export default function Checkpoints() {
       setForm({ name: '', code: '', latitude: '', longitude: '', radiusMeters: '50', expectedIntervalMinutes: '30' })
       setAddressQuery('')
       setAddressResults([])
+      setAddressError('')
       const list = await api.checkpoints.list()
       setCheckpoints(list)
     } catch {}
+  }
+
+  const handleAddressSelect = async (result: AddressSuggestion) => {
+    try {
+      const maps = await loadGoogleMaps()
+      const service = new maps.places.PlacesService(document.createElement('div'))
+
+      const details = await new Promise<any>((resolve, reject) => {
+        service.getDetails(
+          {
+            placeId: result.placeId,
+            fields: ['name', 'formatted_address', 'geometry', 'place_id'],
+          },
+          (place: any, status: any) => {
+            if (status !== maps.places.PlacesServiceStatus.OK || !place) {
+              reject(new Error('Could not load the selected place details.'))
+              return
+            }
+            resolve(place)
+          },
+        )
+      })
+
+      const lat = details.geometry?.location?.lat?.()
+      const lng = details.geometry?.location?.lng?.()
+
+      setForm((f) => ({
+        ...f,
+        name: f.name || details.name || result.mainText,
+        latitude: lat != null ? String(lat) : f.latitude,
+        longitude: lng != null ? String(lng) : f.longitude,
+      }))
+      setAddressQuery(details.formatted_address || result.description)
+      setAddressResults([])
+      setAddressError('')
+    } catch (error) {
+      setAddressError(
+        error instanceof Error
+          ? error.message
+          : 'Could not use the selected place.',
+      )
+    }
   }
 
   return (
@@ -239,28 +313,23 @@ export default function Checkpoints() {
                 />
                 <div className="mt-2 rounded-lg border border-border bg-background">
                   {searchingAddress ? (
-                    <div className="px-3 py-2 text-xs text-muted-foreground">Searching address...</div>
+                    <div className="px-3 py-2 text-xs text-muted-foreground">Searching places...</div>
+                  ) : addressError ? (
+                    <div className="px-3 py-2 text-xs text-destructive">{addressError}</div>
                   ) : addressResults.length === 0 ? (
                     <div className="px-3 py-2 text-xs text-muted-foreground">No address selected yet.</div>
                   ) : (
                     addressResults.map((result) => (
                       <button
-                        key={`${result.lat}-${result.lon}`}
+                        key={result.placeId}
                         type="button"
-                        onClick={() => {
-                          const label = result.display_name.split(',')[0]?.trim() || result.display_name
-                          setForm(f => ({
-                            ...f,
-                            name: f.name || label,
-                            latitude: result.lat,
-                            longitude: result.lon,
-                          }))
-                          setAddressQuery(result.display_name)
-                          setAddressResults([])
-                        }}
+                        onClick={() => handleAddressSelect(result)}
                         className="block w-full border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent"
                       >
-                        {result.display_name}
+                        <div className="font-medium">{result.mainText}</div>
+                        {result.secondaryText ? (
+                          <div className="text-xs text-muted-foreground">{result.secondaryText}</div>
+                        ) : null}
                       </button>
                     ))
                   )}

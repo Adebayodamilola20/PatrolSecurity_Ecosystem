@@ -50,3 +50,10 @@ export function subscribeToShiftUpdates(callback: (data: any) => void) {
     socket?.off('shift:update', callback)
   }
 }
+
+export function subscribeToIncidents(callback: (data: any) => void) {
+  socket?.on('incident:new', callback)
+  return () => {
+    socket?.off('incident:new', callback)
+  }
+}

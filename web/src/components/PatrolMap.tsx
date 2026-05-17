@@ -1,100 +1,275 @@
-import { useEffect, useRef } from 'react'
-import L from 'leaflet'
+import { useEffect, useRef, useState } from 'react'
+import { api } from '../services/api'
+import { loadGoogleMaps } from '../services/googleMaps'
+import {
+  subscribeToIncidents,
+  subscribeToScans,
+  subscribeToShiftUpdates,
+} from '../services/websocket'
+import type { Checkpoint, Scan, User } from '../types'
+
+interface LiveOfficer {
+  id: string
+  name: string
+  onDuty: boolean
+  lat: number | null
+  lng: number | null
+  lastSeenAt?: string | null
+}
+
+interface LiveIncident {
+  id: string
+  title: string
+  severity: string
+  checkpointName?: string
+}
 
 export function PatrolMap() {
   const ref = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<L.Map | null>(null)
+  const mapRef = useRef<any>(null)
+  const checkpointMarkersRef = useRef<any[]>([])
+  const officerMarkersRef = useRef<any[]>([])
+  const scanMarkersRef = useRef<any[]>([])
+  const [summary, setSummary] = useState({
+    activeOfficers: 0,
+    checkpoints: 0,
+    recentScans: 0,
+  })
+  const [latestIncident, setLatestIncident] = useState<LiveIncident | null>(null)
+  const [mapError, setMapError] = useState('')
 
   useEffect(() => {
-    if (!ref.current || mapRef.current) return
-    if (!ref.current.isConnected) return
+    if (!ref.current || mapRef.current || !ref.current.isConnected) return
 
-    const map = L.map(ref.current, {
-      center: [6.5248, 3.3795],
-      zoom: 16,
-      zoomControl: false,
-      attributionControl: true,
-    })
-    mapRef.current = map
+    let disposed = false
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; OpenStreetMap &copy; CARTO',
-      subdomains: 'abcd',
-      maxZoom: 19,
-    }).addTo(map)
+    const clearMarkers = (markers: any[]) => {
+      markers.forEach((marker) => marker.setMap(null))
+      markers.length = 0
+    }
 
-    L.control.zoom({ position: 'bottomright' }).addTo(map)
+    const renderMapData = (maps: any, checkpoints: Checkpoint[], users: User[], scans: Scan[]) => {
+      const map = mapRef.current
+      if (!map) return
 
-    const checkpoints = [
-      { id: 'CP-01', name: 'Main Gate', lat: 6.5244, lng: 3.3792 },
-      { id: 'CP-02', name: 'Warehouse A', lat: 6.5260, lng: 3.3820 },
-      { id: 'CP-03', name: 'Perimeter East', lat: 6.5225, lng: 3.3835 },
-      { id: 'CP-04', name: 'Loading Dock', lat: 6.5238, lng: 3.3760 },
-      { id: 'CP-05', name: 'Staff Quarters', lat: 6.5275, lng: 3.3780 },
-    ]
+      clearMarkers(checkpointMarkersRef.current)
+      clearMarkers(officerMarkersRef.current)
+      clearMarkers(scanMarkersRef.current)
 
-    checkpoints.forEach((cp) => {
-      const icon = L.divIcon({
-        className: '',
-        html: `<div style="width:14px;height:14px;border-radius:4px;background:oklch(0.62 0.20 265);box-shadow:0 0 0 3px rgba(99,102,241,0.25);border:2px solid white"></div>`,
-        iconSize: [14, 14],
-        iconAnchor: [7, 7],
+      const bounds = new maps.LatLngBounds()
+
+      checkpoints.forEach((checkpoint) => {
+        const marker = new maps.Marker({
+          map,
+          position: { lat: checkpoint.latitude, lng: checkpoint.longitude },
+          title: checkpoint.name,
+          icon: {
+            path: maps.SymbolPath.CIRCLE,
+            scale: 8,
+            fillColor: '#4f7cff',
+            fillOpacity: 1,
+            strokeColor: '#ffffff',
+            strokeWeight: 2,
+          },
+        })
+        marker.addListener('click', () => {
+          new maps.InfoWindow({
+            content: `<div style="min-width:160px"><strong>${checkpoint.name}</strong><br/>${checkpoint.code}<br/>Radius: ${checkpoint.radiusMeters}m</div>`,
+          }).open({ map, anchor: marker })
+        })
+        checkpointMarkersRef.current.push(marker)
+        bounds.extend(marker.getPosition())
       })
-      L.marker([cp.lat, cp.lng], { icon })
-        .addTo(map)
-        .bindPopup(`<b>${cp.name}</b><br/>${cp.id}`)
-    })
 
-    const officers = [
-      { id: 'OF-101', name: 'A. Bello', lat: 6.5250, lng: 3.3805, status: 'active' as const },
-      { id: 'OF-102', name: 'K. Okafor', lat: 6.5232, lng: 3.3825, status: 'active' },
-      { id: 'OF-103', name: 'S. Yusuf', lat: 6.5268, lng: 3.3775, status: 'alert' },
-    ]
-
-    officers.forEach((of) => {
-      const color =
-        of.status === 'alert'
-          ? 'oklch(0.65 0.22 25)'
-          : of.status === 'idle'
-          ? 'oklch(0.78 0.16 75)'
-          : 'oklch(0.70 0.16 150)'
-      const icon = L.divIcon({
-        className: '',
-        html: `
-          <div style="position:relative;width:28px;height:28px;">
-            <div style="position:absolute;inset:0;border-radius:9999px;background:${color};opacity:0.25;animation:pulse 1.8s infinite"></div>
-            <div style="position:absolute;inset:6px;border-radius:9999px;background:${color};border:2px solid white"></div>
-          </div>
-          <style>@keyframes pulse{0%{transform:scale(1);opacity:.4}100%{transform:scale(2);opacity:0}}</style>
-        `,
-        iconSize: [28, 28],
-        iconAnchor: [14, 14],
+      const latestByOfficer = new Map<string, Scan>()
+      scans.forEach((scan) => {
+        if (
+          scan.gpsLatitude == null ||
+          scan.gpsLongitude == null ||
+          latestByOfficer.has(scan.officerId)
+        ) {
+          return
+        }
+        latestByOfficer.set(scan.officerId, scan)
       })
-      L.marker([of.lat, of.lng], { icon })
-        .addTo(map)
-        .bindPopup(`<b>${of.name}</b><br/>${of.id} — ${of.status}`)
-    })
 
-    L.polyline(
-      [
-        [6.5238, 3.3760],
-        [6.5244, 3.3792],
-        [6.5260, 3.3820],
-        [6.5232, 3.3825],
-        [6.5275, 3.3780],
-      ],
-      { color: 'oklch(0.62 0.20 265)', weight: 3, opacity: 0.7, dashArray: '6 6' }
-    ).addTo(map)
+      const liveOfficers: LiveOfficer[] = users
+        .filter((user) => user.role === 'officer' && user.onDuty)
+        .map((user) => {
+          const lastScan = latestByOfficer.get(user.id)
+          return {
+            id: user.id,
+            name: user.name,
+            onDuty: !!user.onDuty,
+            lat: lastScan?.gpsLatitude ?? null,
+            lng: lastScan?.gpsLongitude ?? null,
+            lastSeenAt: lastScan?.scannedAt ?? user.lastClockIn ?? null,
+          }
+        })
+
+      liveOfficers.forEach((officer) => {
+        if (officer.lat == null || officer.lng == null) return
+        const marker = new maps.Marker({
+          map,
+          position: { lat: officer.lat, lng: officer.lng },
+          title: officer.name,
+          icon: {
+            path: maps.SymbolPath.CIRCLE,
+            scale: 10,
+            fillColor: '#14b86a',
+            fillOpacity: 1,
+            strokeColor: '#ffffff',
+            strokeWeight: 3,
+          },
+        })
+        marker.addListener('click', () => {
+          new maps.InfoWindow({
+            content: `<div style="min-width:180px"><strong>${officer.name}</strong><br/>On duty<br/>Last seen: ${officer.lastSeenAt ? new Date(officer.lastSeenAt).toLocaleString() : 'Unknown'}</div>`,
+          }).open({ map, anchor: marker })
+        })
+        officerMarkersRef.current.push(marker)
+        bounds.extend(marker.getPosition())
+      })
+
+      scans.slice(0, 30).forEach((scan) => {
+        if (scan.gpsLatitude == null || scan.gpsLongitude == null) return
+        const marker = new maps.Marker({
+          map,
+          position: { lat: scan.gpsLatitude, lng: scan.gpsLongitude },
+          title: `${scan.officerName} at ${scan.checkpointName}`,
+          icon: {
+            path: maps.SymbolPath.CIRCLE,
+            scale: 6,
+            fillColor: scan.gpsValid ? '#fbbf24' : '#ef4444',
+            fillOpacity: 0.95,
+            strokeColor: '#0b1220',
+            strokeWeight: 2,
+          },
+        })
+        scanMarkersRef.current.push(marker)
+      })
+
+      if (!bounds.isEmpty()) {
+        map.fitBounds(bounds, 80)
+      }
+
+      setSummary({
+        activeOfficers: liveOfficers.length,
+        checkpoints: checkpoints.length,
+        recentScans: scans.length,
+      })
+    }
+
+    const init = async () => {
+      try {
+        const maps = await loadGoogleMaps()
+        if (disposed || !ref.current) return
+
+        const map = new maps.Map(ref.current, {
+          center: { lat: 6.5244, lng: 3.3792 },
+          zoom: 13,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+          styles: [
+            { elementType: 'geometry', stylers: [{ color: '#111827' }] },
+            { elementType: 'labels.text.stroke', stylers: [{ color: '#111827' }] },
+            { elementType: 'labels.text.fill', stylers: [{ color: '#9ca3af' }] },
+            { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#1f2937' }] },
+            { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0f172a' }] },
+          ],
+        })
+        mapRef.current = map
+
+        const fetchAll = async () => {
+          const [checkpoints, users, scans] = await Promise.all([
+            api.checkpoints.list(),
+            api.users.list(),
+            api.scans.recent(),
+          ])
+          renderMapData(maps, checkpoints, users, scans)
+        }
+
+        await fetchAll()
+
+        const unsubScans = subscribeToScans(async () => {
+          await fetchAll()
+        })
+        const unsubShifts = subscribeToShiftUpdates(async () => {
+          await fetchAll()
+        })
+        const unsubIncidents = subscribeToIncidents((incident: any) => {
+          setLatestIncident({
+            id: incident.id,
+            title: incident.title,
+            severity: incident.severity,
+            checkpointName: incident.checkpointName,
+          })
+        })
+
+        const poll = window.setInterval(fetchAll, 30000)
+
+        ;(mapRef.current as any).__cleanup = () => {
+          unsubScans()
+          unsubShifts()
+          unsubIncidents()
+          window.clearInterval(poll)
+        }
+      } catch (error) {
+        setMapError(
+          error instanceof Error
+            ? error.message
+            : 'Could not load live monitoring map.',
+        )
+      }
+    }
+
+    void init()
 
     return () => {
-      map.remove()
-      const parent = ref.current?.parentNode
-      if (parent && ref.current) {
-        parent.appendChild(ref.current)
+      disposed = true
+      if (mapRef.current?.__cleanup) {
+        mapRef.current.__cleanup()
       }
+      clearMarkers(checkpointMarkersRef.current)
+      clearMarkers(officerMarkersRef.current)
+      clearMarkers(scanMarkersRef.current)
       mapRef.current = null
     }
   }, [])
 
-  return <div ref={ref} className="h-full w-full rounded-xl overflow-hidden" />
+  return (
+    <div className="relative h-full w-full overflow-hidden rounded-xl">
+      <div ref={ref} className="h-full w-full" />
+      <div className="pointer-events-none absolute left-4 top-4 flex gap-2">
+        <div className="rounded-lg border border-white/10 bg-black/65 px-3 py-2 text-xs text-white backdrop-blur">
+          <div className="text-[10px] uppercase tracking-wide text-white/60">Active officers</div>
+          <div className="mt-1 text-lg font-semibold">{summary.activeOfficers}</div>
+        </div>
+        <div className="rounded-lg border border-white/10 bg-black/65 px-3 py-2 text-xs text-white backdrop-blur">
+          <div className="text-[10px] uppercase tracking-wide text-white/60">Checkpoints</div>
+          <div className="mt-1 text-lg font-semibold">{summary.checkpoints}</div>
+        </div>
+        <div className="rounded-lg border border-white/10 bg-black/65 px-3 py-2 text-xs text-white backdrop-blur">
+          <div className="text-[10px] uppercase tracking-wide text-white/60">Recent scans</div>
+          <div className="mt-1 text-lg font-semibold">{summary.recentScans}</div>
+        </div>
+      </div>
+      {latestIncident ? (
+        <div className="pointer-events-none absolute bottom-4 left-4 max-w-sm rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm text-white backdrop-blur">
+          <div className="text-[10px] uppercase tracking-wide text-red-200">Latest incident</div>
+          <div className="mt-1 font-medium">{latestIncident.title}</div>
+          <div className="text-xs text-red-100/80">
+            {latestIncident.severity}
+            {latestIncident.checkpointName ? ` · ${latestIncident.checkpointName}` : ''}
+          </div>
+        </div>
+      ) : null}
+      {mapError ? (
+        <div className="absolute inset-0 flex items-center justify-center bg-background/90 p-6 text-center text-sm text-muted-foreground">
+          {mapError}
+        </div>
+      ) : null}
+    </div>
+  )
 }

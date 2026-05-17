@@ -32,6 +32,10 @@ function loadFromStorage(): { token: string | null; user: AuthUser | null } {
 
 const saved = loadFromStorage()
 
+if (saved.token) {
+  connectSocket(saved.token)
+}
+
 export const useAuthStore = create<AuthStore>((set) => ({
   user: saved.user,
   token: saved.token,

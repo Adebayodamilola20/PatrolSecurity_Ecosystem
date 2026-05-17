@@ -12,15 +12,43 @@ class ShiftProvider extends ChangeNotifier {
   String? get error => _error;
   DateTime? get clockInTime => _clockInTime;
 
+  void _applyShiftPayload(Map<String, dynamic> data) {
+    final shift = data['shift'] is Map<String, dynamic>
+        ? data['shift'] as Map<String, dynamic>
+        : data['data'] is Map<String, dynamic> &&
+                (data['data'] as Map<String, dynamic>)['shift']
+                    is Map<String, dynamic>
+            ? (data['data'] as Map<String, dynamic>)['shift']
+                as Map<String, dynamic>
+            : null;
+
+    final active = data['active'] ??
+        data['onDuty'] ??
+        data['isClockedIn'] ??
+        shift?['active'] ??
+        shift?['onDuty'] ??
+        shift?['isClockedIn'] ??
+        (shift?['clockOut'] == null && shift != null);
+
+    _onDuty = active == true || active == 1 || active == 'true';
+
+    final clockIn = data['clockIn'] ??
+        shift?['clockIn'] ??
+        shift?['clockInTime'] ??
+        shift?['createdAt'];
+    _clockInTime = clockIn is String ? DateTime.tryParse(clockIn) : null;
+  }
+
   Future<void> loadStatus() async {
     try {
       final data = await ApiService.getShiftStatus();
-      _onDuty = data['active'] == true;
-      if (data['shift'] != null && data['shift']['clockIn'] != null) {
-        _clockInTime = DateTime.tryParse(data['shift']['clockIn']);
-      }
+      _error = null;
+      _applyShiftPayload(data);
       notifyListeners();
-    } catch (_) {}
+    } catch (e) {
+      _error = e.toString().replaceFirst('Exception: ', '');
+      notifyListeners();
+    }
   }
 
   Future<bool> clockIn() async {
@@ -29,9 +57,9 @@ class ShiftProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await ApiService.clockIn();
-      _onDuty = true;
-      _clockInTime = DateTime.now();
+      final data = await ApiService.clockIn();
+      _applyShiftPayload(data);
+      await loadStatus();
       _loading = false;
       notifyListeners();
       return true;
@@ -49,9 +77,9 @@ class ShiftProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await ApiService.clockOut();
-      _onDuty = false;
-      _clockInTime = null;
+      final data = await ApiService.clockOut();
+      _applyShiftPayload(data);
+      await loadStatus();
       _loading = false;
       notifyListeners();
       return true;

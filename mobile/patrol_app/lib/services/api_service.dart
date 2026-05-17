@@ -7,6 +7,7 @@ import '../utils/constants.dart';
 class ApiService {
   static final _storage = FlutterSecureStorage();
   static final _client = http.Client();
+  static const _timeout = Duration(seconds: 20);
 
   static Future<void> _ensureOnline() async {
     try {
@@ -52,8 +53,8 @@ class ApiService {
       Uri.parse('$baseUrl/auth/login'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'email': email, 'password': password}),
-    );
-    if (res.statusCode != 200) {
+    ).timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Unable to sign in');
     }
     final data = jsonDecode(res.body);
@@ -64,8 +65,12 @@ class ApiService {
   static Future<List<dynamic>> getScans({Map<String, String>? params}) async {
     await _ensureOnline();
     final uri = Uri.parse('$baseUrl/scans').replace(queryParameters: params);
-    final res = await _client.get(uri, headers: await _headers());
-    if (res.statusCode != 200) throw _apiException(res, 'Failed to load scans');
+    final res = await _client
+        .get(uri, headers: await _headers())
+        .timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to load scans');
+    }
     return jsonDecode(res.body);
   }
 
@@ -76,8 +81,8 @@ class ApiService {
       Uri.parse('$baseUrl/scans'),
       headers: await _headers(),
       body: jsonEncode(scanData),
-    );
-    if (res.statusCode != 201) {
+    ).timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to submit scan');
     }
     return jsonDecode(res.body);
@@ -88,8 +93,8 @@ class ApiService {
     final res = await _client.get(
       Uri.parse('$baseUrl/checkpoints'),
       headers: await _headers(),
-    );
-    if (res.statusCode != 200) {
+    ).timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to load checkpoints');
     }
     return jsonDecode(res.body);
@@ -104,8 +109,10 @@ class ApiService {
     final res = await _client.post(
       Uri.parse('$baseUrl/shifts/clock-in'),
       headers: await _headers(),
-    );
-    if (res.statusCode != 201) throw _apiException(res, 'Failed to clock in');
+    ).timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to clock in');
+    }
     return jsonDecode(res.body);
   }
 
@@ -114,8 +121,8 @@ class ApiService {
     final res = await _client.post(
       Uri.parse('$baseUrl/shifts/clock-out'),
       headers: await _headers(),
-    );
-    if (res.statusCode != 200) {
+    ).timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to clock out');
     }
     return jsonDecode(res.body);
@@ -126,8 +133,8 @@ class ApiService {
     final res = await _client.get(
       Uri.parse('$baseUrl/shifts/status'),
       headers: await _headers(),
-    );
-    if (res.statusCode != 200) {
+    ).timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to get shift status');
     }
     return jsonDecode(res.body);
