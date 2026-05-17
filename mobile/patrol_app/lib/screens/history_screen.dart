@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/scan_provider.dart';
 import '../utils/routes.dart';
 import '../utils/theme.dart';
+import '../widgets/network_error_state.dart';
 import '../widgets/scan_tile.dart';
 
 class HistoryScreen extends StatelessWidget {
@@ -14,7 +15,14 @@ class HistoryScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Scan History')),
-      body: scan.scans.isEmpty
+      body: scan.scansLoading && scan.scans.isEmpty
+          ? const Center(child: CircularProgressIndicator())
+          : scan.scansError != null && scan.scans.isEmpty
+              ? NetworkErrorState(
+                  message: scan.scansError!,
+                  onRetry: scan.loadScans,
+                )
+              : scan.scans.isEmpty
           ? Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -29,21 +37,21 @@ class HistoryScreen extends StatelessWidget {
                 ],
               ),
             )
-          : RefreshIndicator(
-              onRefresh: () => scan.loadScans(),
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                itemCount: scan.scans.length,
-                itemBuilder: (_, i) => ScanTile(
-                  scan: scan.scans[i],
-                  onTap: () => Navigator.pushNamed(
-                    context,
-                    AppRoutes.scanDetail,
-                    arguments: {'scanId': scan.scans[i].id},
+              : RefreshIndicator(
+                  onRefresh: () => scan.loadScans(),
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    itemCount: scan.scans.length,
+                    itemBuilder: (_, i) => ScanTile(
+                      scan: scan.scans[i],
+                      onTap: () => Navigator.pushNamed(
+                        context,
+                        AppRoutes.scanDetail,
+                        arguments: {'scanId': scan.scans[i].id},
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
     );
   }
 }

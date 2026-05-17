@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/scan_provider.dart';
 import '../utils/theme.dart';
+import '../widgets/network_error_state.dart';
 
 class CheckpointDetailScreen extends StatelessWidget {
   final String? checkpointId;
@@ -19,10 +20,15 @@ class CheckpointDetailScreen extends StatelessWidget {
     if (cp == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Checkpoint')),
-        body: const Center(
-          child: Text('Checkpoint not found',
-              style: TextStyle(color: AppTheme.textSecondary)),
-        ),
+        body: scan.checkpointsError != null && scan.checkpoints.isEmpty
+            ? NetworkErrorState(
+                message: scan.checkpointsError!,
+                onRetry: scan.loadCheckpoints,
+              )
+            : const Center(
+                child: Text('Checkpoint not found',
+                    style: TextStyle(color: AppTheme.textSecondary)),
+              ),
       );
     }
 

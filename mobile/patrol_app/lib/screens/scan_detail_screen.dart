@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/scan_provider.dart';
 import '../utils/theme.dart';
+import '../widgets/network_error_state.dart';
 import '../widgets/status_badge.dart';
 import 'package:intl/intl.dart';
 
@@ -11,7 +12,8 @@ class ScanDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scan = context.watch<ScanProvider>().scans;
+    final provider = context.watch<ScanProvider>();
+    final scan = provider.scans;
     final item = scanId != null
         ? scan.where((s) => s.id == scanId).firstOrNull
         : scan.isNotEmpty
@@ -21,10 +23,15 @@ class ScanDetailScreen extends StatelessWidget {
     if (item == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Scan Detail')),
-        body: const Center(
-          child: Text('Scan not found',
-              style: TextStyle(color: AppTheme.textSecondary)),
-        ),
+        body: provider.scansError != null && provider.scans.isEmpty
+            ? NetworkErrorState(
+                message: provider.scansError!,
+                onRetry: provider.loadScans,
+              )
+            : const Center(
+                child: Text('Scan not found',
+                    style: TextStyle(color: AppTheme.textSecondary)),
+              ),
       );
     }
 
