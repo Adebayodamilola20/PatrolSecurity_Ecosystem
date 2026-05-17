@@ -176,20 +176,26 @@ class _DashboardTab extends StatelessWidget {
                 onPressed: shift.loading
                     ? null
                     : () async {
-                        if (shift.onDuty) {
-                          await shift.clockOut();
-                        } else {
-                          await shift.clockIn();
-                        }
+                        final wasOnDuty = shift.onDuty;
+                        final ok = wasOnDuty
+                            ? await shift.clockOut()
+                            : await shift.clockIn();
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text(shift.onDuty
-                                  ? 'Clocked in successfully'
-                                  : 'Clocked out successfully'),
-                              backgroundColor: shift.onDuty
-                                  ? AppTheme.verified
-                                  : AppTheme.textSecondary,
+                              content: Text(
+                                ok
+                                    ? (wasOnDuty
+                                        ? 'Clocked out successfully'
+                                        : 'Clocked in successfully')
+                                    : (shift.error ??
+                                        'Action failed. Check your connection and try again.'),
+                              ),
+                              backgroundColor: ok
+                                  ? (wasOnDuty
+                                      ? AppTheme.textSecondary
+                                      : AppTheme.verified)
+                                  : AppTheme.error,
                             ),
                           );
                         }

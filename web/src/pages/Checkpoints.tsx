@@ -13,6 +13,12 @@ const statusColor: Record<string, string> = {
   inactive: 'bg-destructive/15 text-destructive',
 }
 
+interface AddressSuggestion {
+  display_name: string
+  lat: string
+  lon: string
+}
+
 function getStatus(cp: Checkpoint): string {
   if (!cp.active) return 'inactive'
   if (cp.lastScan) {
@@ -41,11 +47,47 @@ export default function Checkpoints() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState({ name: '', code: '', latitude: '', longitude: '', radiusMeters: '50', expectedIntervalMinutes: '30' })
+  const [addressQuery, setAddressQuery] = useState('')
+  const [addressResults, setAddressResults] = useState<AddressSuggestion[]>([])
+  const [searchingAddress, setSearchingAddress] = useState(false)
 
   useEffect(() => {
     setLoading(true)
     api.checkpoints.list().then(setCheckpoints).finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    if (!showModal) return
+    if (addressQuery.trim().length < 3) {
+      setAddressResults([])
+      return
+    }
+
+    const controller = new AbortController()
+    const timer = window.setTimeout(async () => {
+      try {
+        setSearchingAddress(true)
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=ng&limit=5&q=${encodeURIComponent(addressQuery)}`,
+          {
+            signal: controller.signal,
+            headers: { Accept: 'application/json' },
+          }
+        )
+        const data = await res.json()
+        setAddressResults(Array.isArray(data) ? data : [])
+      } catch {
+        setAddressResults([])
+      } finally {
+        setSearchingAddress(false)
+      }
+    }, 400)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(timer)
+    }
+  }, [addressQuery, showModal])
 
   const handleDelete = async (id: string, name: string) => {
     if (!window.confirm(`Delete checkpoint "${name}"?`)) return
@@ -68,6 +110,8 @@ export default function Checkpoints() {
       })
       setShowModal(false)
       setForm({ name: '', code: '', latitude: '', longitude: '', radiusMeters: '50', expectedIntervalMinutes: '30' })
+      setAddressQuery('')
+      setAddressResults([])
       const list = await api.checkpoints.list()
       setCheckpoints(list)
     } catch {}
@@ -186,25 +230,41 @@ export default function Checkpoints() {
             </div>
             <form onSubmit={handleCreate} className="space-y-3">
               <div>
-                <label className="text-xs text-muted-foreground">Preset Location</label>
-                <select
-                  onChange={e => {
-                    if (!e.target.value) return
-                    const [name, code, lat, lng, radius, interval] = e.target.value.split('|')
-                    setForm(f => ({ ...f, name: name || f.name, code: code || f.code, latitude: lat || f.latitude, longitude: lng || f.longitude, radiusMeters: radius || f.radiusMeters, expectedIntervalMinutes: interval || f.expectedIntervalMinutes }))
-                  }}
+                <label className="text-xs text-muted-foreground">Search Address in Nigeria</label>
+                <input
+                  value={addressQuery}
+                  onChange={e => setAddressQuery(e.target.value)}
+                  placeholder="Start typing a real address, estate, gate, or landmark"
                   className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                >
-                  <option value="">Pick a demo location...</option>
-                  <option value="Caleb University|CALEB-UNI|6.6326|3.3435|50|30">Caleb University, Lagos</option>
-                  <option value="Mall of Nigeria|MALL-NG|6.5244|3.3792|50|30">Mall of Nigeria, Lagos</option>
-                  <option value="Airport Terminal A|AIR-T1|6.5775|3.3211|100|20">Airport Terminal A, Lagos</option>
-                  <option value="Airport Terminal B|AIR-T2|6.5800|3.3250|100|20">Airport Terminal B, Lagos</option>
-                  <option value="Warehouse District|WRHS-DT|6.5100|3.3650|75|45">Warehouse District, Lagos</option>
-                  <option value="Downtown Office|DT-OFF|6.4531|3.3958|50|30">Downtown Office, Lagos</option>
-                  <option value="University of Lagos Main Gate|UNILAG-MG|6.5183|3.3850|50|30">University of Lagos Main Gate</option>
-                  <option value="Lekki Phase 1 Gate|LEKKI-GT|6.4486|3.4639|50|30">Lekki Phase 1 Gate</option>
-                </select>
+                />
+                <div className="mt-2 rounded-lg border border-border bg-background">
+                  {searchingAddress ? (
+                    <div className="px-3 py-2 text-xs text-muted-foreground">Searching address...</div>
+                  ) : addressResults.length === 0 ? (
+                    <div className="px-3 py-2 text-xs text-muted-foreground">No address selected yet.</div>
+                  ) : (
+                    addressResults.map((result) => (
+                      <button
+                        key={`${result.lat}-${result.lon}`}
+                        type="button"
+                        onClick={() => {
+                          const label = result.display_name.split(',')[0]?.trim() || result.display_name
+                          setForm(f => ({
+                            ...f,
+                            name: f.name || label,
+                            latitude: result.lat,
+                            longitude: result.lon,
+                          }))
+                          setAddressQuery(result.display_name)
+                          setAddressResults([])
+                        }}
+                        className="block w-full border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent"
+                      >
+                        {result.display_name}
+                      </button>
+                    ))
+                  )}
+                </div>
               </div>
               <div>
                 <label className="text-xs text-muted-foreground">Name</label>

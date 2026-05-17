@@ -1,6 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Filter, Download, QrCode } from 'lucide-react'
+import { Download, QrCode, Search } from 'lucide-react'
 import { useScanStore, useScanWebSocket } from '../stores/useScanStore'
 import { TableSkeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
@@ -8,11 +8,28 @@ import { EmptyState } from '../components/ui/EmptyState'
 export default function Scans() {
   const { scans, loading, fetchScans } = useScanStore()
   const navigate = useNavigate()
+  const [query, setQuery] = useState('')
+  const [status, setStatus] = useState<'all' | 'verified' | 'flagged'>('all')
   useScanWebSocket()
 
   useEffect(() => {
     fetchScans()
   }, [])
+
+  const filteredScans = useMemo(() => {
+    return scans.filter((s) => {
+      const matchesQuery = !query || [
+        s.officerName,
+        s.checkpointName,
+        s.checkpointCode,
+        s.id,
+      ].filter(Boolean).some((value) => value.toLowerCase().includes(query.toLowerCase()))
+      const matchesStatus =
+        status === 'all' ||
+        (status === 'verified' ? s.gpsValid : !s.gpsValid)
+      return matchesQuery && matchesStatus
+    })
+  }, [scans, query, status])
 
   return (
     <div className="space-y-5">
@@ -26,21 +43,47 @@ export default function Scans() {
         </div>
         <div className="flex gap-2">
           <button className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm hover:bg-accent">
-            <Filter className="h-4 w-4" /> Filter
-          </button>
-          <button className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm hover:bg-accent">
             <Download className="h-4 w-4" /> Export
           </button>
         </div>
       </div>
 
+      <div className="flex flex-col gap-3 md:flex-row md:items-center">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by officer, checkpoint, code, or scan ID"
+            className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-3 text-sm"
+          />
+        </div>
+        <div className="flex gap-2">
+          {(['all', 'verified', 'flagged'] as const).map((item) => (
+            <button
+              key={item}
+              onClick={() => setStatus(item)}
+              className={`rounded-lg px-3 py-2 text-sm font-medium ${
+                status === item
+                  ? 'bg-primary text-primary-foreground'
+                  : 'border border-border bg-card text-muted-foreground hover:bg-accent'
+              }`}
+            >
+              {item === 'all' ? 'All' : item[0].toUpperCase() + item.slice(1)}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {loading ? (
         <TableSkeleton rows={8} />
-      ) : scans.length === 0 ? (
+      ) : filteredScans.length === 0 ? (
         <EmptyState
           icon={<QrCode className="h-7 w-7" />}
-          title="No patrol scans yet"
-          description="Scans will appear here once officers start patrolling checkpoints."
+          title={scans.length === 0 ? 'No patrol scans yet' : 'No scans match this filter'}
+          description={scans.length === 0
+            ? 'Scans will appear here once officers start patrolling checkpoints.'
+            : 'Try a different search term or status filter.'}
         />
       ) : (
         <div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -57,7 +100,7 @@ export default function Scans() {
                 </tr>
               </thead>
               <tbody>
-                {scans.map((s) => (
+                {filteredScans.map((s) => (
                   <tr
                     key={s.id}
                     onClick={() => navigate(`/scans/${s.id}`)}

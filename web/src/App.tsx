@@ -6,6 +6,7 @@ import Scans from './pages/Scans'
 import Checkpoints from './pages/Checkpoints'
 import Reports from './pages/Reports'
 import Users from './pages/Users'
+import UserDetail from './pages/UserDetail'
 import Settings from './pages/Settings'
 import Alerts from './pages/Alerts'
 import Profile from './pages/Profile'
@@ -42,6 +43,7 @@ export default function App() {
           <Route path="/checkpoints/:id" element={<CheckpointDetail />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/users" element={<Users />} />
+          <Route path="/users/:id" element={<UserDetail />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/alerts" element={<Alerts />} />

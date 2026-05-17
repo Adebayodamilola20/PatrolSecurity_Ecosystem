@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Phone, Mail, MoreHorizontal, Plus, X, UsersIcon } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
 import type { User } from '../types'
 import { CardSkeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
 
 export default function Users() {
+  const navigate = useNavigate()
   const [officers, setOfficers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -128,7 +130,11 @@ export default function Users() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {officers.map((o) => (
-            <div key={o.id} className="rounded-xl border border-border bg-card p-4">
+            <button
+              key={o.id}
+              onClick={() => navigate(`/users/${o.id}`)}
+              className="rounded-xl border border-border bg-card p-4 text-left hover:bg-accent/30 transition-colors"
+            >
               <div className="flex items-start gap-3">
                 <div className="h-12 w-12 rounded-full bg-gradient-to-br from-primary to-info" />
                 <div className="flex-1 min-w-0">
@@ -139,8 +145,10 @@ export default function Users() {
                     </button>
                   </div>
                   <div className="text-xs text-muted-foreground capitalize">{o.role} · {o.id.slice(0, 6).toUpperCase()}</div>
-                  <span className="mt-2 inline-block rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase bg-success/15 text-success">
-                    {o.active ? 'Active' : 'Inactive'}
+                  <span className={`mt-2 inline-block rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                    o.onDuty ? 'bg-success/15 text-success' : 'bg-muted text-muted-foreground'
+                  }`}>
+                    {o.onDuty ? 'Clocked In' : 'Clocked Out'}
                   </span>
                 </div>
               </div>
@@ -162,7 +170,7 @@ export default function Users() {
                   <Mail className="h-3.5 w-3.5" /> Message
                 </button>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       )}

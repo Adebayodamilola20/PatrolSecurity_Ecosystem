@@ -75,7 +75,7 @@ export const useScanStore = create<ScanStore>((set) => ({
         stats: {
           totalScans: scans.length,
           scansToday,
-          activeOfficers: users.filter((u: any) => u.active && u.role === 'officer').length,
+          activeOfficers: users.filter((u: any) => u.onDuty && u.role === 'officer').length,
           totalCheckpoints: checkpoints.length,
           verifiedScans: scans.filter((s: Scan) => s.gpsValid).length,
           flaggedScans: scans.filter((s: Scan) => !s.gpsValid).length,

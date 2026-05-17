@@ -5,6 +5,9 @@ export interface User {
   role: 'admin' | 'supervisor' | 'officer'
   phone?: string
   active: boolean
+  onDuty?: boolean
+  lastClockIn?: string | null
+  lastClockOut?: string | null
   createdAt: string
 }
 

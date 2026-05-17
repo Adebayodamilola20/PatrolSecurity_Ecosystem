@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../utils/constants.dart';
@@ -6,6 +7,22 @@ import '../utils/constants.dart';
 class ApiService {
   static final _storage = FlutterSecureStorage();
   static final _client = http.Client();
+
+  static Future<void> _ensureOnline() async {
+    try {
+      final result =
+          await InternetAddress.lookup('example.com').timeout(
+        const Duration(seconds: 6),
+      );
+      if (result.isEmpty || result.first.rawAddress.isEmpty) {
+        throw const SocketException('No route to internet');
+      }
+    } catch (_) {
+      throw Exception(
+        'No internet or slow connection. Please reconnect and try again.',
+      );
+    }
+  }
 
   static Exception _apiException(http.Response res, String fallback) {
     try {
@@ -30,6 +47,7 @@ class ApiService {
 
   static Future<Map<String, dynamic>> login(
       String email, String password) async {
+    await _ensureOnline();
     final res = await _client.post(
       Uri.parse('$baseUrl/auth/login'),
       headers: {'Content-Type': 'application/json'},
@@ -44,6 +62,7 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getScans({Map<String, String>? params}) async {
+    await _ensureOnline();
     final uri = Uri.parse('$baseUrl/scans').replace(queryParameters: params);
     final res = await _client.get(uri, headers: await _headers());
     if (res.statusCode != 200) throw _apiException(res, 'Failed to load scans');
@@ -52,6 +71,7 @@ class ApiService {
 
   static Future<Map<String, dynamic>> submitScan(
       Map<String, dynamic> scanData) async {
+    await _ensureOnline();
     final res = await _client.post(
       Uri.parse('$baseUrl/scans'),
       headers: await _headers(),
@@ -64,6 +84,7 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getCheckpoints() async {
+    await _ensureOnline();
     final res = await _client.get(
       Uri.parse('$baseUrl/checkpoints'),
       headers: await _headers(),
@@ -79,6 +100,7 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> clockIn() async {
+    await _ensureOnline();
     final res = await _client.post(
       Uri.parse('$baseUrl/shifts/clock-in'),
       headers: await _headers(),
@@ -88,6 +110,7 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> clockOut() async {
+    await _ensureOnline();
     final res = await _client.post(
       Uri.parse('$baseUrl/shifts/clock-out'),
       headers: await _headers(),
@@ -99,6 +122,7 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> getShiftStatus() async {
+    await _ensureOnline();
     final res = await _client.get(
       Uri.parse('$baseUrl/shifts/status'),
       headers: await _headers(),

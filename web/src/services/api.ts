@@ -1,6 +1,9 @@
 const API_BASE = import.meta.env.VITE_API_URL || '/api/v1'
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    throw new Error('No internet connection. Check your network and try again.')
+  }
   const token = localStorage.getItem('patrol_token')
   const headers: Record<string, string> = {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -50,6 +53,7 @@ export const api = {
   },
   users: {
     list: () => request<any[]>('/users'),
+    get: (id: string) => request<any>(`/users/${id}`),
     create: (data: any) =>
       request<any>('/users', { method: 'POST', body: JSON.stringify(data) }),
   },
