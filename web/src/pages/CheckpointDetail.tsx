@@ -1,15 +1,17 @@
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, MapPin, Search, QrCode, Clock, CheckCircle, XCircle, Camera, Ruler } from 'lucide-react'
+import { ArrowLeft, MapPin, Search, QrCode, Clock, CheckCircle, XCircle, Ruler, AlertTriangle, Timer } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import QRCodeLib from 'qrcode'
 import L from 'leaflet'
 import { api } from '../services/api'
 import type { Scan } from '../types'
 import { Skeleton } from '../components/ui/Skeleton'
+import { formatDate } from '../utils/format'
 
 interface CheckpointData {
   id: string; name: string; code: string; latitude: number; longitude: number
   radiusMeters: number; expectedIntervalMinutes: number; active: boolean; createdAt: string
+  scheduledTimeIn?: string; scheduledTimeOut?: string
 }
 
 function safeNumber(value: unknown, fallback: number) {
@@ -125,8 +127,8 @@ export default function CheckpointDetail() {
         {[
           { label: 'Scans', value: scans.length, icon: QrCode, color: 'text-info' },
           { label: 'Radius', value: `${safeRadius}m`, icon: Ruler, color: 'text-warning' },
-          { label: 'Interval', value: `Every ${cp.expectedIntervalMinutes}min`, icon: Clock, color: 'text-primary' },
-          { label: 'Officers', value: new Set(scans.map(s => s.officerId)).size, icon: Camera, color: 'text-success' },
+          { label: 'Scheduled In', value: cp.scheduledTimeIn || '—', icon: Timer, color: 'text-primary' },
+          { label: 'Scheduled Out', value: cp.scheduledTimeOut || '—', icon: Clock, color: 'text-success' },
         ].map((item, i) => {
           const Icon = item.icon
           return (
@@ -180,28 +182,45 @@ export default function CheckpointDetail() {
           </div>
         </div>
         <div className="divide-y divide-border">
-          {filteredScans.map((scan) => (
-            <button key={scan.id} onClick={() => navigate(`/scans/${scan.id}`)}
-              className="w-full p-4 flex items-start gap-3 hover:bg-accent/30 transition-colors text-left"
-            >
-              <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${scan.gpsValid ? 'bg-success/15' : 'bg-destructive/15'}`}>
-                {scan.gpsValid ? <CheckCircle className="h-4 w-4 text-success" /> : <XCircle className="h-4 w-4 text-destructive" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="font-medium text-sm">{scan.officerName}</div>
-                  <span className="text-[11px] text-muted-foreground shrink-0">{new Date(scan.scannedAt).toLocaleDateString()}</span>
+          {filteredScans.map((scan) => {
+            const scanTime = new Date(scan.scannedAt)
+            let lateMins = 0
+            if (cp.scheduledTimeIn) {
+              const [sh, sm] = cp.scheduledTimeIn.split(':').map(Number)
+              const sched = new Date(scanTime)
+              sched.setHours(sh, sm, 0, 0)
+              lateMins = Math.round((scanTime.getTime() - sched.getTime()) / 60000)
+            }
+            const isLate = lateMins > 0
+            return (
+              <button key={scan.id} onClick={() => navigate(`/scans/${scan.id}`)}
+                className={`w-full p-4 flex items-start gap-3 hover:bg-accent/30 transition-colors text-left ${isLate ? 'bg-destructive/5' : ''}`}
+              >
+                <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${scan.gpsValid ? 'bg-success/15' : 'bg-destructive/15'}`}>
+                  {scan.gpsValid ? <CheckCircle className="h-4 w-4 text-success" /> : <XCircle className="h-4 w-4 text-destructive" />}
                 </div>
-                <div className="text-xs text-muted-foreground mt-0.5">{scan.notes || 'No notes'}</div>
-                <div className="flex items-center gap-3 mt-2 text-[11px]">
-                  <span className="text-muted-foreground">{new Date(scan.scannedAt).toLocaleTimeString()}</span>
-                  <span className={scan.gpsValid ? 'text-success' : 'text-destructive'}>
-                    {scan.gpsValid ? `${scan.distanceMeters}m` : 'GPS Flagged'}
-                  </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-medium text-sm">{scan.officerName}</div>
+                    <span className="text-[11px] text-muted-foreground shrink-0">{formatDate(scan.scannedAt)}</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{scan.notes || 'No notes'}</div>
+                  <div className="flex items-center gap-3 mt-2 text-[11px]">
+                    <span className="text-muted-foreground">{new Date(scan.scannedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span className={scan.gpsValid ? 'text-success' : 'text-destructive'}>
+                      {scan.gpsValid ? `${scan.distanceMeters}m` : 'GPS Flagged'}
+                    </span>
+                    {isLate && (
+                      <span className="flex items-center gap-1 text-destructive font-semibold">
+                        <AlertTriangle className="h-3 w-3" />
+                        {lateMins}min late
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </button>
-          ))}
+              </button>
+            )
+          })}
           {filteredScans.length === 0 && (
             <div className="p-8 text-sm text-muted-foreground text-center">
               {scans.length === 0 ? 'No scans yet at this checkpoint.' : 'No scans match your filters.'}

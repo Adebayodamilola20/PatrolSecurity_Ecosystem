@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Clock3, Mail, Phone, ShieldCheck, User2 } from 'lucide-react'
+import { ArrowLeft, Clock3, Mail, Phone, ShieldCheck, User2, AlertTriangle } from 'lucide-react'
 import { api } from '../services/api'
+import { subscribeToShiftUpdates } from '../services/websocket'
 import { Skeleton } from '../components/ui/Skeleton'
+import { formatDate, formatDuration, formatLateStatus } from '../utils/format'
 
 export default function UserDetail() {
   const { id } = useParams()
@@ -11,7 +13,16 @@ export default function UserDetail() {
 
   useEffect(() => {
     if (!id) return
-    api.users.get(id).then(setUser).catch(() => {})
+    const load = () => {
+      api.users.get(id).then(setUser).catch(() => {})
+    }
+    load()
+    const unsub = subscribeToShiftUpdates((payload: any) => {
+      if (payload?.userId === id) {
+        load()
+      }
+    })
+    return unsub
   }, [id])
 
   if (!user) {
@@ -61,8 +72,8 @@ export default function UserDetail() {
         <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
           <InfoRow icon={<Mail className="h-4 w-4" />} label="Email" value={user.email || 'N/A'} />
           <InfoRow icon={<Phone className="h-4 w-4" />} label="Phone" value={user.phone || 'N/A'} />
-          <InfoRow icon={<Clock3 className="h-4 w-4" />} label="Last Clock In" value={user.lastClockIn ? new Date(user.lastClockIn).toLocaleString() : 'None'} />
-          <InfoRow icon={<ShieldCheck className="h-4 w-4" />} label="Last Clock Out" value={user.lastClockOut ? new Date(user.lastClockOut).toLocaleString() : 'None'} />
+          <InfoRow icon={<Clock3 className="h-4 w-4" />} label="Last Clock In" value={user.onDuty ? formatDate(user.lastClockIn, 'Now') : formatDate(user.lastClockIn, 'None')} />
+          <InfoRow icon={<ShieldCheck className="h-4 w-4" />} label="Last Clock Out" value={formatDate(user.lastClockOut, 'None')} />
         </div>
       </div>
 
@@ -72,19 +83,29 @@ export default function UserDetail() {
           <div className="mt-4 space-y-3">
             {(user.shifts || []).length === 0 ? (
               <div className="text-sm text-muted-foreground">No shifts yet.</div>
-            ) : user.shifts.map((shift: any) => (
-              <div key={shift.id} className="rounded-lg border border-border/60 bg-background/40 p-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">{new Date(shift.clockIn).toLocaleString()}</span>
-                  <span className={`text-xs font-semibold uppercase ${shift.status === 'active' ? 'text-success' : 'text-muted-foreground'}`}>
-                    {shift.status}
-                  </span>
+            ) : user.shifts.map((shift: any) => {
+              const late = formatLateStatus(shift.scheduledStart, shift.clockIn)
+              return (
+                <div key={shift.id} className="rounded-lg border border-border/60 bg-background/40 p-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{formatDate(shift.clockIn)}</span>
+                    <span className={`flex items-center gap-1 text-xs font-semibold uppercase ${shift.status === 'active' ? 'text-success' : 'text-muted-foreground'}`}>
+                      {late.late && <AlertTriangle className="h-3 w-3 text-warning" />}
+                      {shift.status}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between text-muted-foreground">
+                    <span>
+                      {shift.clockOut ? `Clocked out ${formatDate(shift.clockOut)}` : 'Still on duty'}
+                    </span>
+                    <span className="text-xs">
+                      {formatDuration(shift.clockIn, shift.clockOut)}
+                      {late.late && <span className="ml-1 text-warning">({late.label})</span>}
+                    </span>
+                  </div>
                 </div>
-                <div className="mt-1 text-muted-foreground">
-                  {shift.clockOut ? `Clocked out ${new Date(shift.clockOut).toLocaleString()}` : 'Still on duty'}
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
 
@@ -106,7 +127,7 @@ export default function UserDetail() {
                   </span>
                 </div>
                 <div className="mt-1 text-muted-foreground">
-                  {scan.scannedAt ? new Date(scan.scannedAt).toLocaleString() : 'Unknown time'}
+                  {formatDate(scan.scannedAt, 'Unknown time')}
                 </div>
               </button>
             ))}

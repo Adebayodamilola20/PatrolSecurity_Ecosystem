@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Phone, Mail, MoreHorizontal, Plus, X, UsersIcon } from 'lucide-react'
+import { Phone, Mail, MoreHorizontal, Plus, X, UsersIcon, Clock3 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
+import { subscribeToShiftUpdates } from '../services/websocket'
 import type { User } from '../types'
 import { CardSkeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
+import { formatDate } from '../utils/format'
 
 export default function Users() {
   const navigate = useNavigate()
@@ -21,7 +23,13 @@ export default function Users() {
     }).catch(() => {}).finally(() => setLoading(false))
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    const unsub = subscribeToShiftUpdates(() => {
+      load()
+    })
+    return unsub
+  }, [])
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -145,11 +153,19 @@ export default function Users() {
                     </button>
                   </div>
                   <div className="text-xs text-muted-foreground capitalize">{o.role} · {o.id.slice(0, 6).toUpperCase()}</div>
-                  <span className={`mt-2 inline-block rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase ${
-                    o.onDuty ? 'bg-success/15 text-success' : 'bg-muted text-muted-foreground'
-                  }`}>
-                    {o.onDuty ? 'Clocked In' : 'Clocked Out'}
-                  </span>
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                      o.onDuty ? 'bg-success/15 text-success' : 'bg-muted text-muted-foreground'
+                    }`}>
+                      {o.onDuty ? 'Clocked In' : 'Clocked Out'}
+                    </span>
+                    {o.lastClockIn && (
+                      <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <Clock3 className="h-3 w-3" />
+                        {formatDate(o.lastClockIn)}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="mt-4 grid grid-cols-2 gap-3 text-xs">

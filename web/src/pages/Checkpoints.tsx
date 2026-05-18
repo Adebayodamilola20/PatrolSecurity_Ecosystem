@@ -48,7 +48,7 @@ export default function Checkpoints() {
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [form, setForm] = useState({ name: '', code: '', latitude: '', longitude: '', radiusMeters: '50', expectedIntervalMinutes: '30' })
+  const [form, setForm] = useState({ name: '', code: '', latitude: '', longitude: '', radiusMeters: '50', expectedIntervalMinutes: '30', scheduledTimeIn: '', scheduledTimeOut: '' })
   const [addressQuery, setAddressQuery] = useState('')
   const [addressResults, setAddressResults] = useState<AddressSuggestion[]>([])
   const [searchingAddress, setSearchingAddress] = useState(false)
@@ -84,6 +84,14 @@ export default function Checkpoints() {
         })
 
         if (!active) return
+
+        if (response?.status === 'REQUEST_DENIED') {
+          setAddressResults([])
+          setAddressError('Places API is not enabled. Go to https://console.cloud.google.com/apis/library/places-backend.googleapis.com and enable "Places API", then ensure billing is set up.')
+          setSearchingAddress(false)
+          return
+        }
+
         const predictions = Array.isArray(response?.predictions)
           ? response.predictions
           : Array.isArray(response)
@@ -138,9 +146,11 @@ export default function Checkpoints() {
         longitude: parseFloat(form.longitude),
         radiusMeters: parseInt(form.radiusMeters),
         expectedIntervalMinutes: parseInt(form.expectedIntervalMinutes),
+        scheduledTimeIn: form.scheduledTimeIn,
+        scheduledTimeOut: form.scheduledTimeOut,
       })
       setShowModal(false)
-      setForm({ name: '', code: '', latitude: '', longitude: '', radiusMeters: '50', expectedIntervalMinutes: '30' })
+      setForm({ name: '', code: '', latitude: '', longitude: '', radiusMeters: '50', expectedIntervalMinutes: '30', scheduledTimeIn: '', scheduledTimeOut: '' })
       setAddressQuery('')
       setAddressResults([])
       setAddressError('')
@@ -162,7 +172,11 @@ export default function Checkpoints() {
           },
           (place: any, status: any) => {
             if (status !== maps.places.PlacesServiceStatus.OK || !place) {
-              reject(new Error('Could not load the selected place details.'))
+              if (status === 'REQUEST_DENIED') {
+                reject(new Error('Places API is not enabled. Enable it at https://console.cloud.google.com/apis/library/places-backend.googleapis.com'))
+              } else {
+                reject(new Error('Could not load the selected place details.'))
+              }
               return
             }
             resolve(place)
@@ -366,6 +380,18 @@ export default function Checkpoints() {
                 <div>
                   <label className="text-xs text-muted-foreground">Expected Interval (min)</label>
                   <input type="number" value={form.expectedIntervalMinutes} onChange={e => setForm(f => ({ ...f, expectedIntervalMinutes: e.target.value }))}
+                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-muted-foreground">Scheduled Time In</label>
+                  <input type="time" value={form.scheduledTimeIn} onChange={e => setForm(f => ({ ...f, scheduledTimeIn: e.target.value }))}
+                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Scheduled Time Out</label>
+                  <input type="time" value={form.scheduledTimeOut} onChange={e => setForm(f => ({ ...f, scheduledTimeOut: e.target.value }))}
                     className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
                 </div>
               </div>

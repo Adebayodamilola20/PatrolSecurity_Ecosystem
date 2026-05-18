@@ -21,6 +21,8 @@ export interface Checkpoint {
   expectedIntervalMinutes: number
   active: boolean
   lastScan?: string
+  scheduledTimeIn?: string
+  scheduledTimeOut?: string
 }
 
 export interface Incident {

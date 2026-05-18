@@ -90,7 +90,9 @@ const sqliteSchema = `
     radiusMeters REAL DEFAULT 50,
     expectedIntervalMinutes INTEGER DEFAULT 30,
     active INTEGER DEFAULT 1,
-    createdAt TEXT DEFAULT (datetime('now'))
+    createdAt TEXT DEFAULT (datetime('now')),
+    scheduledTimeIn TEXT DEFAULT '',
+    scheduledTimeOut TEXT DEFAULT ''
   );
   CREATE TABLE IF NOT EXISTS incidents (
     id TEXT PRIMARY KEY,
@@ -167,7 +169,9 @@ const pgSchema = `
     radiusMeters DOUBLE PRECISION DEFAULT 50,
     expectedIntervalMinutes INTEGER DEFAULT 30,
     active INTEGER DEFAULT 1,
-    createdAt TIMESTAMPTZ DEFAULT NOW()
+    createdAt TIMESTAMPTZ DEFAULT NOW(),
+    scheduledTimeIn TEXT DEFAULT '',
+    scheduledTimeOut TEXT DEFAULT ''
   );
   CREATE TABLE IF NOT EXISTS incidents (
     id TEXT PRIMARY KEY,
@@ -235,6 +239,8 @@ async function initDb() {
     try { db.exec("ALTER TABLE shifts ADD COLUMN scheduledStart TEXT"); } catch {}
     try { db.exec("ALTER TABLE shifts ADD COLUMN scheduledEnd TEXT"); } catch {}
     try { db.exec("ALTER TABLE checkpoints ADD COLUMN expectedIntervalMinutes INTEGER DEFAULT 30"); } catch {}
+    try { db.exec("ALTER TABLE checkpoints ADD COLUMN scheduledTimeIn TEXT DEFAULT ''"); } catch {}
+    try { db.exec("ALTER TABLE checkpoints ADD COLUMN scheduledTimeOut TEXT DEFAULT ''"); } catch {}
   } else {
     await db.exec(pgSchema)
     try { await db.exec("ALTER TABLE shifts ADD COLUMN IF NOT EXISTS clockInPhoto TEXT DEFAULT ''"); } catch {}
@@ -245,6 +251,8 @@ async function initDb() {
     try { await db.exec("ALTER TABLE shifts ADD COLUMN IF NOT EXISTS scheduledStart TIMESTAMPTZ"); } catch {}
     try { await db.exec("ALTER TABLE shifts ADD COLUMN IF NOT EXISTS scheduledEnd TIMESTAMPTZ"); } catch {}
     try { await db.exec("ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS expectedIntervalMinutes INTEGER DEFAULT 30"); } catch {}
+    try { await db.exec("ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS scheduledTimeIn TEXT DEFAULT ''"); } catch {}
+    try { await db.exec("ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS scheduledTimeOut TEXT DEFAULT ''"); } catch {}
   }
 }
 

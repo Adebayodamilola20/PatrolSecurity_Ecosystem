@@ -65,7 +65,7 @@ router.get('/:id', async (req, res) => {
   if (!user) return res.status(404).json({ message: 'User not found' })
 
   const shifts = await db.all(`
-    SELECT id, clockIn, clockOut, status, createdAt
+    SELECT id, clockIn, clockOut, status, createdAt, scheduledStart, scheduledEnd
     FROM shifts
     WHERE userId = ?
     ORDER BY createdAt DESC

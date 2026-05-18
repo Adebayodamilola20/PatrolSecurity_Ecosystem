@@ -1,4 +1,4 @@
-# System Architecture Document
+1# System Architecture Document
 
 > Technical reference for developers and AI systems building the Patrol Monitoring & Automated Reporting System.
 

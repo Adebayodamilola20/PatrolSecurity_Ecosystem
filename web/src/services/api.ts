@@ -8,7 +8,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   }
-  if (!(options?.body instanceof FormData)) {
+  if (options?.body && !(options.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json'
   }
   const res = await fetch(`${API_BASE}${path}`, {

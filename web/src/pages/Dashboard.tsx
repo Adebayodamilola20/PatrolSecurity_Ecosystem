@@ -14,6 +14,7 @@ import { useNavigate } from 'react-router-dom'
 import { PatrolMap } from '../components/PatrolMap'
 import { useScanStore, useScanWebSocket } from '../stores/useScanStore'
 import { api } from '../services/api'
+import { subscribeToShiftUpdates } from '../services/websocket'
 import { StatsCardSkeleton } from '../components/ui/Skeleton'
 
 const toneBg: Record<string, string> = {
@@ -67,6 +68,10 @@ export default function Dashboard() {
   useEffect(() => {
     fetchScans()
     fetchStats()
+    const unsub = subscribeToShiftUpdates(() => {
+      fetchStats()
+    })
+    return unsub
   }, [])
 
   const statCards = [

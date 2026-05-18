@@ -19,7 +19,7 @@ router.get('/:id', async (req, res) => {
 })
 
 router.post('/', adminOnly, async (req, res) => {
-  const { name, code, latitude, longitude, radiusMeters, expectedIntervalMinutes } = req.body
+  const { name, code, latitude, longitude, radiusMeters, expectedIntervalMinutes, scheduledTimeIn, scheduledTimeOut } = req.body
   if (!name || !code || latitude == null || longitude == null) {
     return res.status(400).json({ message: 'name, code, latitude, longitude are required' })
   }
@@ -37,12 +37,14 @@ router.post('/', adminOnly, async (req, res) => {
     longitude,
     radiusMeters: radiusMeters || 50,
     expectedIntervalMinutes: expectedIntervalMinutes || 30,
+    scheduledTimeIn: scheduledTimeIn || '',
+    scheduledTimeOut: scheduledTimeOut || '',
     active: 1,
   }
 
   await db.run(`
-    INSERT INTO checkpoints (id, name, code, latitude, longitude, radiusMeters, expectedIntervalMinutes, active)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO checkpoints (id, name, code, latitude, longitude, radiusMeters, expectedIntervalMinutes, scheduledTimeIn, scheduledTimeOut, active)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, Object.values(cp))
 
   res.status(201).json({ ...cp, active: !!cp.active })
@@ -52,9 +54,9 @@ router.put('/:id', adminOnly, async (req, res) => {
   const existing = await db.get('SELECT * FROM checkpoints WHERE id = ?', [req.params.id])
   if (!existing) return res.status(404).json({ message: 'Checkpoint not found' })
 
-  const { name, code, latitude, longitude, radiusMeters, expectedIntervalMinutes, active } = req.body
+  const { name, code, latitude, longitude, radiusMeters, expectedIntervalMinutes, scheduledTimeIn, scheduledTimeOut, active } = req.body
   await db.run(`
-    UPDATE checkpoints SET name=?, code=?, latitude=?, longitude=?, radiusMeters=?, expectedIntervalMinutes=?, active=?
+    UPDATE checkpoints SET name=?, code=?, latitude=?, longitude=?, radiusMeters=?, expectedIntervalMinutes=?, scheduledTimeIn=?, scheduledTimeOut=?, active=?
     WHERE id=?
   `, [
     name ?? existing.name,
@@ -63,6 +65,8 @@ router.put('/:id', adminOnly, async (req, res) => {
     longitude ?? existing.longitude,
     radiusMeters ?? existing.radiusMeters,
     expectedIntervalMinutes ?? existing.expectedIntervalMinutes,
+    scheduledTimeIn ?? existing.scheduledTimeIn || '',
+    scheduledTimeOut ?? existing.scheduledTimeOut || '',
     active !== undefined ? (active ? 1 : 0) : existing.active,
     req.params.id
   ])
