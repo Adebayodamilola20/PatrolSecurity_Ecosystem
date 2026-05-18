@@ -14,6 +14,7 @@ class ScannerScreen extends StatefulWidget {
 class _ScannerScreenState extends State<ScannerScreen> {
   final controller = MobileScannerController();
   bool _flashlight = false;
+  bool _processingScan = false;
 
   @override
   void dispose() {
@@ -22,6 +23,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
   }
 
   void _onDetect(BarcodeCapture capture) async {
+    if (_processingScan) return;
     if (capture.barcodes.isEmpty) return;
     String? code = capture.barcodes.first.rawValue;
     if (code == null || code.isEmpty) return;
@@ -31,6 +33,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
       code = code.split('/').last;
     }
 
+    setState(() => _processingScan = true);
     controller.stop();
     final location = await LocationService.getCurrentLocation();
     final pos = location.position;
@@ -120,6 +123,37 @@ class _ScannerScreenState extends State<ScannerScreen> {
               ],
             ),
           ),
+          if (_processingScan)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withOpacity(0.72),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(color: AppTheme.primary),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Processing scan...',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Getting GPS and verifying checkpoint',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.75),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

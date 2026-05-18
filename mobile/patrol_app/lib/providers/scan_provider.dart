@@ -22,6 +22,17 @@ class ScanProvider extends ChangeNotifier {
   String? get checkpointsError => _checkpointsError;
   Scan? get lastScan => _lastScan;
 
+  void clearData() {
+    _scans = [];
+    _checkpoints = [];
+    _lastScan = null;
+    _scansError = null;
+    _checkpointsError = null;
+    _scansLoading = false;
+    _checkpointsLoading = false;
+    notifyListeners();
+  }
+
   int get totalScans => _scans.length;
   int get todayScans => _scans.where((s) {
         final now = DateTime.now();
@@ -33,6 +44,8 @@ class ScanProvider extends ChangeNotifier {
   Future<void> loadScans() async {
     _scansLoading = true;
     _scansError = null;
+    _scans = [];
+    _lastScan = null;
     notifyListeners();
     try {
       final data = await ApiService.getScans();

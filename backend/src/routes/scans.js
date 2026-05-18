@@ -58,6 +58,10 @@ router.get('/', async (req, res) => {
   `
   const conditions = []
   const params = []
+  if (req.user?.role === 'officer') {
+    conditions.push('s.officerId = ?')
+    params.push(req.user.id)
+  }
   if (officer) {
     conditions.push('s.officerId = ?')
     params.push(officer)
@@ -77,26 +81,45 @@ router.get('/', async (req, res) => {
 })
 
 router.get('/recent', async (req, res) => {
-  const scans = await db.all(`
+  const conditions = []
+  const params = []
+  if (req.user?.role === 'officer') {
+    conditions.push('s.officerId = ?')
+    params.push(req.user.id)
+  }
+
+  let query = `
     SELECT s.*, u.name as officerName, u.phone as officerPhone,
            c.name as checkpointName, c.code as checkpointCode
     FROM scans s
     JOIN users u ON s.officerId = u.id
     JOIN checkpoints c ON s.checkpointId = c.id
-    ORDER BY s.receivedAt DESC LIMIT 20
-  `)
+  `
+  if (conditions.isNotEmpty) {
+    query += ' WHERE ' + conditions.join(' AND ')
+  }
+  query += ' ORDER BY s.receivedAt DESC LIMIT 20'
+
+  const scans = await db.all(query, params)
   res.json(scans.map(normalizeScan))
 })
 
 router.get('/:id', async (req, res) => {
-  const scan = await db.get(`
+  let query = `
     SELECT s.*, u.name as officerName, u.phone as officerPhone,
            c.name as checkpointName, c.code as checkpointCode
     FROM scans s
     JOIN users u ON s.officerId = u.id
     JOIN checkpoints c ON s.checkpointId = c.id
     WHERE s.id = ?
-  `, [req.params.id])
+  `
+  const params = [req.params.id]
+  if (req.user?.role === 'officer') {
+    query += ' AND s.officerId = ?'
+    params.push(req.user.id)
+  }
+
+  const scan = await db.get(query, params)
 
   if (!scan) return res.status(404).json({ message: 'Scan not found' })
   res.json(normalizeScan(scan))

@@ -1,8 +1,15 @@
 const API_BASE = import.meta.env.VITE_API_URL || '/api/v1'
 
+function emitAppEvent(name: string, detail?: Record<string, unknown>) {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(name, { detail }))
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    throw new Error('No internet connection. Check your network and try again.')
+    const error = new Error('You have a poor network connection or you are offline. Please try again.')
+    emitAppEvent('app:request-error', { message: error.message, kind: 'network' })
+    throw error
   }
   const token = localStorage.getItem('patrol_token')
   const headers: Record<string, string> = {
@@ -11,14 +18,31 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   if (options?.body && !(options.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json'
   }
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { ...headers, ...options?.headers as Record<string, string> },
-    ...options,
-  })
+
+  let res: Response
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      headers: { ...headers, ...options?.headers as Record<string, string> },
+      ...options,
+    })
+  } catch {
+    const error = new Error('You have a poor network connection or the server is unreachable. Please try again.')
+    emitAppEvent('app:request-error', { message: error.message, kind: 'network' })
+    throw error
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }))
-    throw new Error(err.message || 'Request failed')
+    const message = err.message || 'Request failed'
+    emitAppEvent('app:request-error', {
+      message,
+      kind: res.status >= 500 ? 'server' : 'request',
+      status: res.status,
+    })
+    throw new Error(message)
   }
+
+  emitAppEvent('app:request-success', { path })
   return res.json()
 }
 

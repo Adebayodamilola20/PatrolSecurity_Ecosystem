@@ -12,6 +12,14 @@ class ShiftProvider extends ChangeNotifier {
   String? get error => _error;
   DateTime? get clockInTime => _clockInTime;
 
+  void clearData() {
+    _onDuty = false;
+    _loading = false;
+    _error = null;
+    _clockInTime = null;
+    notifyListeners();
+  }
+
   void _applyShiftPayload(Map<String, dynamic> data) {
     final shift = data['shift'] is Map<String, dynamic>
         ? data['shift'] as Map<String, dynamic>

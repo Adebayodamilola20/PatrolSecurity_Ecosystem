@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/scan_provider.dart';
+import '../providers/shift_provider.dart';
 import '../utils/routes.dart';
 import '../utils/theme.dart';
 
@@ -167,6 +168,8 @@ class ProfileScreen extends StatelessWidget {
             height: 50,
             child: ElevatedButton.icon(
               onPressed: () async {
+                context.read<ScanProvider>().clearData();
+                context.read<ShiftProvider>().clearData();
                 await auth.logout();
                 if (context.mounted) {
                   Navigator.pushNamedAndRemoveUntil(

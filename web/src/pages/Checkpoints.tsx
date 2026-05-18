@@ -10,7 +10,8 @@ import { EmptyState } from '../components/ui/EmptyState'
 const statusColor: Record<string, string> = {
   active: 'bg-success/15 text-success',
   warning: 'bg-warning/15 text-warning',
-  inactive: 'bg-destructive/15 text-destructive',
+  inactive: 'bg-muted text-muted-foreground',
+  deactivated: 'bg-muted text-muted-foreground',
 }
 
 interface AddressSuggestion {
@@ -24,7 +25,7 @@ interface AddressSuggestion {
 }
 
 function getStatus(cp: Checkpoint): string {
-  if (!cp.active) return 'inactive'
+  if (!cp.active) return 'deactivated'
   if (cp.lastScan) {
     const hours = (Date.now() - new Date(cp.lastScan).getTime()) / 3600000
     if (hours > 2) return 'warning'
@@ -154,17 +155,26 @@ export default function Checkpoints() {
     }
   }, [addressQuery, showModal])
 
+  const handleToggleActive = async (cp: Checkpoint) => {
+    try {
+      setActionError('')
+      await api.checkpoints.update(cp.id, { active: !cp.active })
+      setCheckpoints(prev => prev.map(c => c.id === cp.id ? { ...c, active: !cp.active } : c))
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Failed to update checkpoint')
+    }
+  }
+
   const handleDelete = async (id: string, name: string) => {
-    if (!window.confirm(`Delete checkpoint "${name}"?`)) return
+    if (!window.confirm(`Delete checkpoint "${name}"?\n\nNote: Checkpoints with linked incidents, scans, or shifts cannot be deleted. Try deactivating instead.`)) return
     try {
       setActionError('')
       await api.checkpoints.delete(id)
       setCheckpoints(prev => prev.filter(c => c.id !== id))
     } catch (error) {
+      const msg = error instanceof Error ? error.message : ''
       setActionError(
-        error instanceof Error
-          ? error.message
-          : 'Could not delete checkpoint.',
+        msg || 'Cannot delete — this checkpoint has linked records. Deactivate it instead (set "active" to false).',
       )
     }
   }
@@ -319,8 +329,9 @@ export default function Checkpoints() {
           {checkpoints.map((cp) => {
             const status = getStatus(cp)
             const qrData = `${window.location.origin}/checkpoints/${cp.id}`
+            const deactivated = !cp.active
             return (
-              <div key={cp.id} className="rounded-xl border border-border bg-card p-5">
+              <div key={cp.id} className={`rounded-xl border bg-card p-5 transition-opacity ${deactivated ? 'border-muted opacity-40' : 'border-border'}`}>
                 <button
                   onClick={() => navigate(`/checkpoints/${cp.id}`)}
                   className="w-full text-left"
@@ -332,7 +343,7 @@ export default function Checkpoints() {
                       <div className="text-xs text-muted-foreground font-mono">{cp.code}</div>
                     </div>
                     <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase ${statusColor[status]}`}>
-                      {status}
+                      {deactivated ? 'Deactivated' : status}
                     </span>
                   </div>
 
@@ -345,11 +356,15 @@ export default function Checkpoints() {
                 <div className="mt-4 flex items-center justify-center gap-2 border-t border-border pt-4">
                   <button
                     onClick={async () => {
-                      const dlUrl = await QRCode.toDataURL(qrData, { width: 300, margin: 2, color: { dark: '#ffffff', light: '#111827' } })
-                      const a = document.createElement('a')
-                      a.href = dlUrl
-                      a.download = `${cp.code}-qrcode.png`
-                      a.click()
+                      try {
+                        const dlUrl = await QRCode.toDataURL(qrData, { width: 300, margin: 2, color: { dark: '#ffffff', light: '#111827' } })
+                        const a = document.createElement('a')
+                        a.href = dlUrl
+                        a.download = `${cp.code}-qrcode.png`
+                        a.click()
+                      } catch {
+                        setActionError('Could not generate QR code image.')
+                      }
                     }}
                     className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-accent"
                     title="Download QR Code"
@@ -368,6 +383,13 @@ export default function Checkpoints() {
                     title="Edit"
                   >
                     <Edit className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => handleToggleActive(cp)}
+                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs hover:bg-accent ${deactivated ? 'text-success border-success/30 hover:bg-success/10' : 'text-warning border-warning/30 hover:bg-warning/10'}`}
+                    title={deactivated ? 'Activate' : 'Deactivate'}
+                  >
+                    {deactivated ? 'Activate' : 'Deactivate'}
                   </button>
                   <button
                     onClick={() => handleDelete(cp.id, cp.name)}
