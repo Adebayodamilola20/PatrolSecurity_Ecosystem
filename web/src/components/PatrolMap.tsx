@@ -177,6 +177,8 @@ export function PatrolMap() {
             { elementType: 'labels.text.fill', stylers: [{ color: '#9ca3af' }] },
             { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#1f2937' }] },
             { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0f172a' }] },
+            { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+            { featureType: 'transit', stylers: [{ visibility: 'off' }] },
           ],
         })
         mapRef.current = map

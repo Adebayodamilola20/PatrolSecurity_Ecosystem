@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, AlertCircle, Info, Clock, ShieldAlert } from 'lucide-react'
+import { AlertTriangle, AlertCircle, Info, Clock, ShieldAlert, User2, MapPin } from 'lucide-react'
 import { api } from '../services/api'
 import type { Incident, MissedPatrol } from '../types'
+import { formatDate } from '../utils/format'
 
 const severityIcon: Record<string, typeof AlertTriangle> = {
   critical: AlertCircle,
@@ -39,7 +40,7 @@ export default function Alerts() {
     <div className="space-y-5">
       <div>
         <div className="text-xs uppercase tracking-wider text-muted-foreground">Notifications</div>
-        <h1 className="text-2xl font-semibold">Alerts</h1>
+        <h1 className="text-2xl font-semibold">Alerts & Incidents</h1>
       </div>
 
       {(missedPatrols.length > 0 || incidents.length > 0) ? (
@@ -67,12 +68,6 @@ export default function Alerts() {
           {incidents.map((inc) => {
             const Icon = severityIcon[inc.severity] || Info
             const color = severityColor[inc.severity]
-            const timeAgo = (() => {
-              const diff = Date.now() - new Date(inc.reportedAt).getTime()
-              const mins = Math.floor(diff / 60000)
-              if (mins < 60) return `${mins}m ago`
-              return `${Math.floor(mins / 60)}h ago`
-            })()
             return (
               <div key={inc.id} className="rounded-xl border border-border bg-card p-4 flex items-start gap-3">
                 <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${color}`}>
@@ -81,20 +76,36 @@ export default function Alerts() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <div className="font-medium">{inc.title}</div>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Clock className="h-3.5 w-3.5" /> {timeAgo}
-                    </div>
+                    <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase ${color}`}>
+                      {inc.severity}
+                    </span>
                   </div>
-                  <div className="text-sm text-muted-foreground mt-0.5">
-                    {inc.description} {inc.checkpointName ? `· ${inc.checkpointName}` : ''}
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <User2 className="h-3 w-3" /> {inc.officerName}
+                    </span>
+                    {inc.checkpointName && (
+                      <span className="flex items-center gap-1">
+                        <MapPin className="h-3 w-3" /> {inc.checkpointName}
+                      </span>
+                    )}
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" /> {formatDate(inc.reportedAt)}
+                    </span>
+                    <span className={`uppercase ${inc.status === 'resolved' ? 'text-success' : 'text-warning'}`}>
+                      {inc.status}
+                    </span>
                   </div>
+                  {inc.description && (
+                    <div className="mt-2 text-sm text-muted-foreground">{inc.description}</div>
+                  )}
                   <div className="mt-3 flex gap-2">
                     {inc.status !== 'resolved' && (
                       <button
                         onClick={() => handleAcknowledge(inc.id)}
                         className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent"
                       >
-                        Acknowledge
+                        Acknowledge & Resolve
                       </button>
                     )}
                   </div>

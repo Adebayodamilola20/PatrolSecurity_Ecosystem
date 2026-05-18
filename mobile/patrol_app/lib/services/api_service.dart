@@ -139,4 +139,27 @@ class ApiService {
     }
     return jsonDecode(res.body);
   }
+
+  static Future<Map<String, dynamic>> reportIncident({
+    required String title,
+    String? description,
+    String? checkpointId,
+    String severity = 'low',
+  }) async {
+    await _ensureOnline();
+    final res = await _client.post(
+      Uri.parse('$baseUrl/incidents'),
+      headers: await _headers(),
+      body: jsonEncode({
+        'title': title,
+        'description': description ?? '',
+        'checkpointId': checkpointId,
+        'severity': severity,
+      }),
+    ).timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to report incident');
+    }
+    return jsonDecode(res.body);
+  }
 }

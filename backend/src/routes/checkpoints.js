@@ -76,9 +76,24 @@ router.put('/:id', adminOnly, async (req, res) => {
 })
 
 router.delete('/:id', adminOnly, async (req, res) => {
-  const result = await db.run('DELETE FROM checkpoints WHERE id = ?', [req.params.id])
-  if (result.changes === 0) return res.status(404).json({ message: 'Checkpoint not found' })
-  res.json({ message: 'Deleted' })
+  try {
+    const existing = await db.get('SELECT id FROM checkpoints WHERE id = ?', [req.params.id])
+    if (!existing) return res.status(404).json({ message: 'Checkpoint not found' })
+
+    await db.run('UPDATE incidents SET checkpointId = NULL WHERE checkpointId = ?', [req.params.id])
+    await db.run('DELETE FROM scans WHERE checkpointId = ?', [req.params.id])
+    const result = await db.run('DELETE FROM checkpoints WHERE id = ?', [req.params.id])
+
+    if (result.changes === 0) return res.status(404).json({ message: 'Checkpoint not found' })
+    res.json({ message: 'Deleted' })
+  } catch (err) {
+    if (err.code === '23503' || (err.message && err.message.includes('foreign key constraint'))) {
+      return res.status(409).json({
+        message: 'Cannot delete: this checkpoint has linked incidents, scans, or shifts. Remove or reassign them first.'
+      })
+    }
+    res.status(500).json({ message: 'Failed to delete checkpoint' })
+  }
 })
 
 export default router

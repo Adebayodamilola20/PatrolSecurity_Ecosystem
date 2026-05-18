@@ -1,9 +1,11 @@
 import 'dart:math' as math;
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import '../models/checkpoint.dart';
 import '../providers/scan_provider.dart';
+import '../services/api_service.dart';
 import '../services/location_service.dart';
 import '../utils/routes.dart';
 import '../utils/theme.dart';
@@ -158,6 +160,85 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
     });
   }
 
+  Future<void> _reportIncident(BuildContext context) async {
+    final titleCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Report Incident'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: titleCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Title *',
+                hintText: 'e.g. Suspicious activity',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: descCtrl,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Description',
+                hintText: 'Describe what happened...',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (titleCtrl.text.trim().isEmpty) return;
+              Navigator.pop(ctx, {
+                'title': titleCtrl.text.trim(),
+                'description': descCtrl.text.trim(),
+              });
+            },
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == null) return;
+    if (!context.mounted) return;
+
+    try {
+      await ApiService.reportIncident(
+        title: result['title']!,
+        description: result['description'] ?? '',
+        checkpointId: _checkpoint?.id,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Incident reported successfully'),
+            backgroundColor: AppTheme.verified,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to report: $e'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -208,6 +289,20 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600,
                             color: _gpsValid ? AppTheme.verified : AppTheme.flagged)),
                   ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity, height: 48,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _reportIncident(context),
+                    icon: const Icon(Icons.warning_amber_rounded, size: 20),
+                    label: const Text('Report Incident at this Checkpoint'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red.shade700,
+                      side: BorderSide(color: Colors.red.shade700),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                  ),
                 ),
                 const Spacer(),
                 SizedBox(

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Clock3, Mail, Phone, ShieldCheck, User2, AlertTriangle } from 'lucide-react'
 import { api } from '../services/api'
-import { subscribeToShiftUpdates } from '../services/websocket'
+import { subscribeToScans, subscribeToShiftUpdates } from '../services/websocket'
 import { Skeleton } from '../components/ui/Skeleton'
 import { formatDate, formatDuration, formatLateStatus } from '../utils/format'
 
@@ -22,7 +22,15 @@ export default function UserDetail() {
         load()
       }
     })
-    return unsub
+    const unsubScans = subscribeToScans((payload: any) => {
+      if (payload?.officerId === id) {
+        load()
+      }
+    })
+    return () => {
+      unsub()
+      unsubScans()
+    }
   }, [id])
 
   if (!user) {

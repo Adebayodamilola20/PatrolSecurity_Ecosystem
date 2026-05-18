@@ -8,6 +8,52 @@ const router = Router()
 
 router.use(authMiddleware)
 
+function normalizeUser(user) {
+  if (!user) return user
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    phone: user.phone ?? '',
+    active: !!(user.active ?? user.active === 1),
+    createdAt: user.createdAt ?? user.createdat ?? null,
+    onDuty: !!(user.onDuty ?? user.onduty),
+    lastClockIn: user.lastClockIn ?? user.lastclockin ?? null,
+    lastClockOut: user.lastClockOut ?? user.lastclockout ?? null,
+  }
+}
+
+function normalizeShift(shift) {
+  if (!shift) return shift
+  return {
+    id: shift.id,
+    clockIn: shift.clockIn ?? shift.clockin ?? null,
+    clockOut: shift.clockOut ?? shift.clockout ?? null,
+    status: shift.status,
+    createdAt: shift.createdAt ?? shift.createdat ?? null,
+    scheduledStart: shift.scheduledStart ?? shift.scheduledstart ?? null,
+    scheduledEnd: shift.scheduledEnd ?? shift.scheduledend ?? null,
+  }
+}
+
+function normalizeScan(scan) {
+  if (!scan) return scan
+  return {
+    id: scan.id,
+    checkpointId: scan.checkpointId ?? scan.checkpointid ?? '',
+    checkpointName: scan.checkpointName ?? scan.checkpointname ?? '',
+    checkpointCode: scan.checkpointCode ?? scan.checkpointcode ?? '',
+    scannedAt: scan.scannedAt ?? scan.scannedat ?? null,
+    receivedAt: scan.receivedAt ?? scan.receivedat ?? null,
+    gpsLatitude: scan.gpsLatitude ?? scan.gpslatitude ?? null,
+    gpsLongitude: scan.gpsLongitude ?? scan.gpslongitude ?? null,
+    gpsValid: !!(scan.gpsValid ?? scan.gpsvalid),
+    distanceMeters: scan.distanceMeters ?? scan.distancemeters ?? null,
+    notes: scan.notes ?? '',
+  }
+}
+
 router.get('/', async (req, res) => {
   const users = await db.all(`
     SELECT
@@ -31,11 +77,7 @@ router.get('/', async (req, res) => {
     FROM users u
     ORDER BY u.createdAt DESC
   `)
-  res.json(users.map(u => ({
-    ...u,
-    active: !!u.active,
-    onDuty: !!u.onDuty,
-  })))
+  res.json(users.map(normalizeUser))
 })
 
 router.get('/:id', async (req, res) => {
@@ -82,11 +124,9 @@ router.get('/:id', async (req, res) => {
   `, [req.params.id])
 
   res.json({
-    ...user,
-    active: !!user.active,
-    onDuty: !!user.onDuty,
-    shifts,
-    scans,
+    ...normalizeUser(user),
+    shifts: shifts.map(normalizeShift),
+    scans: scans.map(normalizeScan),
   })
 })
 
