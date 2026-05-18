@@ -21,6 +21,7 @@ function normalizeScan(scan) {
     gpsValid: !!(scan.gpsValid ?? scan.gpsvalid),
     distanceMeters: scan.distanceMeters ?? scan.distancemeters ?? null,
     notes: scan.notes ?? '',
+    checkpointActive: !!(scan.checkpointActive ?? scan.checkpointactive),
   }
 
   return normalized
@@ -51,7 +52,7 @@ router.get('/', async (req, res) => {
   const { limit = 100, offset = 0, officer, checkpoint } = req.query
   let query = `
     SELECT s.*, u.name as officerName, u.phone as officerPhone,
-           c.name as checkpointName, c.code as checkpointCode
+           c.name as checkpointName, c.code as checkpointCode, c.active as checkpointActive
     FROM scans s
     JOIN users u ON s.officerId = u.id
     JOIN checkpoints c ON s.checkpointId = c.id
@@ -90,24 +91,19 @@ router.get('/recent', async (req, res) => {
 
   let query = `
     SELECT s.*, u.name as officerName, u.phone as officerPhone,
-           c.name as checkpointName, c.code as checkpointCode
+           c.name as checkpointName, c.code as checkpointCode, c.active as checkpointActive
     FROM scans s
     JOIN users u ON s.officerId = u.id
     JOIN checkpoints c ON s.checkpointId = c.id
-  `
-  if (conditions.isNotEmpty) {
-    query += ' WHERE ' + conditions.join(' AND ')
-  }
-  query += ' ORDER BY s.receivedAt DESC LIMIT 20'
-
-  const scans = await db.all(query, params)
+    ORDER BY s.receivedAt DESC LIMIT 20
+  `)
   res.json(scans.map(normalizeScan))
 })
 
 router.get('/:id', async (req, res) => {
   let query = `
     SELECT s.*, u.name as officerName, u.phone as officerPhone,
-           c.name as checkpointName, c.code as checkpointCode
+           c.name as checkpointName, c.code as checkpointCode, c.active as checkpointActive
     FROM scans s
     JOIN users u ON s.officerId = u.id
     JOIN checkpoints c ON s.checkpointId = c.id
@@ -180,7 +176,7 @@ router.post('/', async (req, res) => {
 
   const fullScan = await db.get(`
     SELECT s.*, u.name as officerName, u.phone as officerPhone,
-           c.name as checkpointName, c.code as checkpointCode
+           c.name as checkpointName, c.code as checkpointCode, c.active as checkpointActive
     FROM scans s
     JOIN users u ON s.officerId = u.id
     JOIN checkpoints c ON s.checkpointId = c.id

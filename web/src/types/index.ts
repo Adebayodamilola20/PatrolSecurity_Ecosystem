@@ -59,6 +59,7 @@ export interface Scan {
   checkpointId: string
   checkpointName: string
   checkpointCode: string
+  checkpointActive?: boolean
   checkpointLocation?: string
   scannedAt: string
   receivedAt: string

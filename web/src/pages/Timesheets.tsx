@@ -11,16 +11,30 @@ export default function Timesheets() {
   const [summary, setSummary] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [officerFilter, setOfficerFilter] = useState('')
+  const [error, setError] = useState('')
 
-  useEffect(() => {
+  const load = () => {
     setLoading(true)
+    setError('')
     Promise.all([
-      api.timesheets.list().catch(() => []),
-      api.timesheets.summary().catch(() => null),
+      api.timesheets.list(),
+      api.timesheets.summary(),
     ]).then(([ts, sm]) => {
       setTimesheets(ts as any[])
       setSummary(sm)
+    }).catch((err) => {
+      setTimesheets([])
+      setSummary(null)
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Could not load timesheets. Please try again.',
+      )
     }).finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    load()
   }, [])
 
   const filtered = officerFilter
@@ -109,8 +123,16 @@ export default function Timesheets() {
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={<Clock className="h-7 w-7" />}
-            title="No timesheets found"
-            description={officerFilter ? 'No officers match your filter.' : 'No shifts have been recorded yet.'}
+            title={error ? 'Timesheets unavailable' : 'No timesheets found'}
+            description={error || (officerFilter ? 'No officers match your filter.' : 'No shifts have been recorded yet.')}
+            action={error ? (
+              <button
+                onClick={load}
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+              >
+                Try again
+              </button>
+            ) : undefined}
           />
         ) : (
           filtered.map((t) => {
@@ -174,7 +196,10 @@ export default function Timesheets() {
                           : <XCircle className="h-3.5 w-3.5 text-destructive shrink-0" />
                         }
                         <span className="text-muted-foreground">{new Date(scan.scannedAt).toLocaleTimeString()}</span>
-                        <span className="font-medium">{scan.checkpointName}</span>
+                        <span className="font-medium">
+                          {scan.checkpointName}
+                          {scan.checkpointActive === false && <span className="ml-1 text-[10px] text-muted-foreground/50">(Deactivated)</span>}
+                        </span>
                         <span className="text-muted-foreground">({scan.checkpointCode})</span>
                         <span className="text-muted-foreground ml-auto">{scan.distanceMeters ? `${scan.distanceMeters}m` : '-'}</span>
                       </div>

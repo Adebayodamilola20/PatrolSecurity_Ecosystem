@@ -129,7 +129,10 @@ export default function UserDetail() {
                 className="w-full rounded-lg border border-border/60 bg-background/40 p-3 text-left text-sm hover:bg-accent/30"
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-medium">{scan.checkpointName}</span>
+                  <span className="font-medium">
+                    {scan.checkpointName}
+                    {scan.checkpointActive === false && <span className="ml-1 text-[10px] text-muted-foreground/50">(Deactivated)</span>}
+                  </span>
                   <span className={`text-xs font-semibold uppercase ${scan.gpsValid ? 'text-success' : 'text-warning'}`}>
                     {scan.gpsValid ? 'Verified' : 'Flagged'}
                   </span>

@@ -115,7 +115,7 @@ router.get('/:id', async (req, res) => {
   `, [req.params.id])
 
   const scans = await db.all(`
-    SELECT s.*, c.name as checkpointName, c.code as checkpointCode
+    SELECT s.*, c.name as checkpointName, c.code as checkpointCode, c.active as checkpointActive
     FROM scans s
     JOIN checkpoints c ON s.checkpointId = c.id
     WHERE s.officerId = ?

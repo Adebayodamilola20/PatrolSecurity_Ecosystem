@@ -184,7 +184,10 @@ export default function ScanDetail() {
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Checkpoint</p>
-                    <p className="text-sm font-medium text-foreground">{scan.checkpointName}</p>
+                    <p className="text-sm font-medium text-foreground">
+                      {scan.checkpointName}
+                      {scan.checkpointActive === false && <span className="ml-1 text-[10px] text-muted-foreground/50">(Deactivated)</span>}
+                    </p>
                     <p className="text-xs text-muted-foreground">{scan.checkpointCode}</p>
                   </div>
                 </div>

@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef } from 'react'
-import { X, MapPin, ScanLine, Download, Edit, Trash2, MapIcon } from 'lucide-react'
+import { X, MapPin, ScanLine, Download, Edit, MapIcon } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import QRCode from 'qrcode'
+import L from 'leaflet'
 import { api } from '../services/api'
 import type { Checkpoint } from '../types'
 import { CardSkeleton } from '../components/ui/Skeleton'
@@ -48,6 +49,10 @@ function QRCell({ data }: { data: string }) {
 
 export default function Checkpoints() {
   const navigate = useNavigate()
+  const mapRef = useRef<HTMLDivElement>(null)
+  const leafletMapRef = useRef<L.Map | null>(null)
+  const markerRef = useRef<L.Marker | null>(null)
+  const radiusRef = useRef<L.Circle | null>(null)
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -64,6 +69,107 @@ export default function Checkpoints() {
     setLoading(true)
     api.checkpoints.list().then(setCheckpoints).finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    if (!showModal || !mapRef.current || leafletMapRef.current) return
+
+    const initialLat = Number(form.latitude) || 6.5244
+    const initialLng = Number(form.longitude) || 3.3792
+    const initialRadius = Number(form.radiusMeters) || 50
+
+    const markerIcon = L.divIcon({
+      className: '',
+      html: '<div style="width:18px;height:18px;background:oklch(0.70 0.14 220);border:3px solid white;border-radius:9999px;box-shadow:0 4px 14px rgba(0,0,0,0.35);"></div>',
+      iconSize: [18, 18],
+      iconAnchor: [9, 9],
+    })
+
+    const map = L.map(mapRef.current, {
+      center: [initialLat, initialLng],
+      zoom: 16,
+      zoomControl: false,
+    })
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap &copy; CARTO',
+      subdomains: 'abcd',
+      maxZoom: 19,
+    }).addTo(map)
+    L.control.zoom({ position: 'bottomright' }).addTo(map)
+
+    const marker = L.marker([initialLat, initialLng], {
+      draggable: true,
+      icon: markerIcon,
+    }).addTo(map)
+    const radiusCircle = L.circle([initialLat, initialLng], {
+      color: 'oklch(0.70 0.14 220)',
+      fillColor: 'oklch(0.70 0.14 220 / 0.15)',
+      fillOpacity: 0.18,
+      radius: initialRadius,
+      weight: 2,
+    }).addTo(map)
+
+    const syncPosition = (lat: number, lng: number) => {
+      setForm((current) => ({
+        ...current,
+        latitude: lat.toFixed(6),
+        longitude: lng.toFixed(6),
+      }))
+    }
+
+    marker.on('dragend', () => {
+      const pos = marker.getLatLng()
+      radiusCircle.setLatLng(pos)
+      syncPosition(pos.lat, pos.lng)
+      setLocationInfo('Pin moved. The checkpoint will be saved at the selected map point.')
+    })
+
+    map.on('click', (event) => {
+      marker.setLatLng(event.latlng)
+      radiusCircle.setLatLng(event.latlng)
+      syncPosition(event.latlng.lat, event.latlng.lng)
+      setLocationInfo('Map location updated. You can drag the pin again if you need to refine it.')
+    })
+
+    leafletMapRef.current = map
+    markerRef.current = marker
+    radiusRef.current = radiusCircle
+
+    window.setTimeout(() => {
+      map.invalidateSize()
+    }, 0)
+
+    return () => {
+      map.remove()
+      leafletMapRef.current = null
+      markerRef.current = null
+      radiusRef.current = null
+    }
+  }, [showModal])
+
+  useEffect(() => {
+    if (!showModal) return
+    const map = leafletMapRef.current
+    const marker = markerRef.current
+    const radiusCircle = radiusRef.current
+    if (!map || !marker || !radiusCircle) return
+
+    const lat = Number(form.latitude)
+    const lng = Number(form.longitude)
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      const next = L.latLng(lat, lng)
+      marker.setLatLng(next)
+      radiusCircle.setLatLng(next)
+      map.panTo(next, { animate: true, duration: 0.35 })
+    }
+  }, [form.latitude, form.longitude, showModal])
+
+  useEffect(() => {
+    const radiusCircle = radiusRef.current
+    if (!radiusCircle || !showModal) return
+
+    const radius = Number(form.radiusMeters) || 50
+    radiusCircle.setRadius(radius)
+  }, [form.radiusMeters, showModal])
 
   useEffect(() => {
     if (!showModal) return
@@ -165,20 +271,6 @@ export default function Checkpoints() {
     }
   }
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!window.confirm(`Delete checkpoint "${name}"?\n\nNote: Checkpoints with linked incidents, scans, or shifts cannot be deleted. Try deactivating instead.`)) return
-    try {
-      setActionError('')
-      await api.checkpoints.delete(id)
-      setCheckpoints(prev => prev.filter(c => c.id !== id))
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : ''
-      setActionError(
-        msg || 'Cannot delete — this checkpoint has linked records. Deactivate it instead (set "active" to false).',
-      )
-    }
-  }
-
   const handleUseCurrentLocation = async () => {
     if (!navigator.geolocation) {
       setAddressError('This browser does not support location access.')
@@ -268,6 +360,7 @@ export default function Checkpoints() {
       setAddressQuery('')
       setAddressResults([])
       setAddressError('')
+      setLocationInfo('')
       const list = await api.checkpoints.list()
       setCheckpoints(list)
     } catch {}
@@ -391,13 +484,6 @@ export default function Checkpoints() {
                   >
                     {deactivated ? 'Activate' : 'Deactivate'}
                   </button>
-                  <button
-                    onClick={() => handleDelete(cp.id, cp.name)}
-                    className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-destructive/10 hover:text-destructive"
-                    title="Delete"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
                 </div>
               </div>
             )
@@ -433,7 +519,7 @@ export default function Checkpoints() {
                   className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
                 />
                 <div className="mt-2 text-[11px] text-muted-foreground">
-                  Search uses OpenStreetMap. You can also enter coordinates directly, for example `6.5244, 3.3792`.
+                  Search for a place, use your current location, then adjust the pin on the map if needed.
                 </div>
                 {locationInfo ? (
                   <div className="mt-2 rounded-lg border border-info/20 bg-info/10 px-3 py-2 text-[11px] text-info">
@@ -466,6 +552,13 @@ export default function Checkpoints() {
                     ))
                   )}
                 </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs text-muted-foreground">Checkpoint map</label>
+                  <span className="text-[11px] text-muted-foreground">Tap map or drag pin to refine location</span>
+                </div>
+                <div ref={mapRef} className="mt-2 h-64 overflow-hidden rounded-xl border border-border" />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground">Name</label>

@@ -85,6 +85,7 @@ export default function Dashboard() {
     id: s.id,
     displayId: `#SC-${s.id.slice(0, 4).toUpperCase()}`,
     cp: [s.checkpointCode, s.checkpointName].filter(Boolean).join(' ') || 'Unknown checkpoint',
+    deactivated: s.checkpointActive === false,
     officer: officerInitials(s.officerName),
     time: (() => {
       const diff = Date.now() - new Date(s.scannedAt).getTime()
@@ -164,7 +165,10 @@ export default function Dashboard() {
                     {s.status}
                   </span>
                 </div>
-                <div className="mt-2 text-xs text-muted-foreground">{s.cp}</div>
+                <div className={`mt-2 text-xs ${s.deactivated ? 'text-muted-foreground/50' : 'text-muted-foreground'}`}>
+                  {s.cp}
+                  {s.deactivated && <span className="ml-1 text-[10px]">(Deactivated)</span>}
+                </div>
                 <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
                   <span>{s.officer}</span>
                   <span>{s.time}</span>

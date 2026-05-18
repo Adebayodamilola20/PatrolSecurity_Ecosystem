@@ -6,6 +6,40 @@ const router = Router()
 
 router.use(authMiddleware)
 
+function normalizeShiftRow(shift) {
+  if (!shift) return shift
+  return {
+    id: shift.id,
+    userId: shift.userId ?? shift.userid ?? '',
+    userName: shift.userName ?? shift.username ?? '',
+    userEmail: shift.userEmail ?? shift.useremail ?? '',
+    userPhone: shift.userPhone ?? shift.userphone ?? '',
+    clockIn: shift.clockIn ?? shift.clockin ?? null,
+    clockOut: shift.clockOut ?? shift.clockout ?? null,
+    clockInPhoto: shift.clockInPhoto ?? shift.clockinphoto ?? '',
+    clockInLatitude: shift.clockInLatitude ?? shift.clockinlatitude ?? null,
+    clockInLongitude: shift.clockInLongitude ?? shift.clockinlongitude ?? null,
+    clockOutLatitude: shift.clockOutLatitude ?? shift.clockoutlatitude ?? null,
+    clockOutLongitude: shift.clockOutLongitude ?? shift.clockoutlongitude ?? null,
+    scheduledStart: shift.scheduledStart ?? shift.scheduledstart ?? null,
+    scheduledEnd: shift.scheduledEnd ?? shift.scheduledend ?? null,
+    status: shift.status ?? 'completed',
+  }
+}
+
+function normalizeScanRow(scan) {
+  if (!scan) return scan
+  return {
+    id: scan.id,
+    checkpointName: scan.checkpointName ?? scan.checkpointname ?? '',
+    checkpointCode: scan.checkpointCode ?? scan.checkpointcode ?? '',
+    scannedAt: scan.scannedAt ?? scan.scannedat ?? null,
+    gpsValid: !!(scan.gpsValid ?? scan.gpsvalid),
+    distanceMeters: scan.distanceMeters ?? scan.distancemeters ?? null,
+    checkpointActive: !!(scan.checkpointActive ?? scan.checkpointactive),
+  }
+}
+
 router.get('/', async (req, res) => {
   const { officer, start, end, limit = 50, offset = 0 } = req.query
 
@@ -39,20 +73,22 @@ router.get('/', async (req, res) => {
     ORDER BY s.clockIn DESC LIMIT ? OFFSET ?
   `, [...params, Number(limit), Number(offset)])
 
-  const result = await Promise.all(shifts.map(async (s) => {
-    const clockIn = new Date(s.clockIn).getTime()
+  const result = await Promise.all(shifts.map(async (rawShift) => {
+    const s = normalizeShiftRow(rawShift)
+    const clockIn = s.clockIn ? new Date(s.clockIn).getTime() : Date.now()
     const clockOut = s.clockOut ? new Date(s.clockOut).getTime() : Date.now()
     const durationMs = clockOut - clockIn
     const hours = Math.floor(durationMs / 3600000)
     const minutes = Math.floor((durationMs % 3600000) / 60000)
 
-    const scans = await db.all(`
-      SELECT s.*, c.name as checkpointName, c.code as checkpointCode
+    const scansRaw = await db.all(`
+      SELECT s.*, c.name as checkpointName, c.code as checkpointCode, c.active as checkpointActive
       FROM scans s
       JOIN checkpoints c ON s.checkpointId = c.id
       WHERE s.officerId = ? AND s.scannedAt >= ? AND (s.scannedAt <= ? OR ? IS NULL)
       ORDER BY s.scannedAt ASC
     `, [s.userId, s.clockIn, s.clockOut, s.clockOut])
+    const scans = scansRaw.map(normalizeScanRow)
 
     return {
       shiftId: s.id,
@@ -84,12 +120,13 @@ router.get('/summary', async (req, res) => {
   const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString()
   const weekAgo = new Date(today.getTime() - 7 * 86400000).toISOString()
 
-  const shifts = await db.all(`
+  const shiftsRaw = await db.all(`
     SELECT s.*, u.name as userName FROM shifts s
     JOIN users u ON s.userId = u.id
     WHERE s.clockIn >= ?
     ORDER BY s.clockIn ASC
   `, [weekAgo])
+  const shifts = shiftsRaw.map(normalizeShiftRow)
 
   const totalHours = shifts.reduce((acc, s) => {
     if (!s.clockOut) return acc

@@ -108,7 +108,10 @@ export default function Scans() {
                   >
                     <td className="px-4 py-3 font-medium">#{s.id.slice(0, 6).toUpperCase()}</td>
                     <td className="px-4 py-3">{s.officerName}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{s.checkpointName}</td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {s.checkpointName}
+                      {s.checkpointActive === false && <span className="ml-1 text-[10px] text-muted-foreground/50">(Deactivated)</span>}
+                    </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {new Date(s.scannedAt).toLocaleString()}
                     </td>

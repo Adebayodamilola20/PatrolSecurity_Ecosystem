@@ -100,7 +100,7 @@ export default function CheckpointDetail() {
         <ArrowLeft className="w-4 h-4" /> Checkpoints
       </button>
 
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className={`rounded-xl border bg-card overflow-hidden ${!cp.active ? 'opacity-40' : 'border-border'}`}>
         <div className="relative h-44 bg-gradient-to-br from-primary/20 via-info/10 to-background flex items-center justify-center">
           <canvas ref={qrRef} className="rounded-lg" />
         </div>
