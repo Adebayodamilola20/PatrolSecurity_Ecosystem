@@ -7,7 +7,7 @@ export default function Monitoring() {
         <div className="text-xs uppercase tracking-wider text-muted-foreground">Live</div>
         <h1 className="text-2xl font-semibold">Live Monitoring</h1>
       </div>
-      <div className="rounded-xl border border-border bg-card p-2 h-[calc(100vh-200px)]">
+      <div className="rounded-xl border border-border bg-card p-2 h-[calc(100vh-200px)] md:h-[calc(100vh-200px)] min-h-[300px]">
         <PatrolMap />
       </div>
     </div>

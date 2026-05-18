@@ -57,6 +57,8 @@ class ProfileScreen extends StatelessWidget {
                       fontWeight: FontWeight.bold,
                       color: AppTheme.text,
                     ),
+                    softWrap: true,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
                   Container(
@@ -208,16 +210,20 @@ class _ProfileRow extends StatelessWidget {
       children: [
         Icon(icon, size: 20, color: AppTheme.textSecondary),
         const SizedBox(width: 12),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label,
-                style: const TextStyle(
-                    fontSize: 12, color: AppTheme.textSecondary)),
-            Text(value,
-                style: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w500)),
-          ],
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label,
+                  style: const TextStyle(
+                      fontSize: 12, color: AppTheme.textSecondary)),
+              Text(value,
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w500),
+                  softWrap: true,
+                  overflow: TextOverflow.ellipsis),
+            ],
+          ),
         ),
       ],
     );
@@ -255,6 +261,8 @@ class _StatWidget extends StatelessWidget {
             fontSize: 11,
             color: AppTheme.textSecondary,
           ),
+          softWrap: true,
+          overflow: TextOverflow.ellipsis,
         ),
       ],
     );

@@ -28,14 +28,17 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
     final auth = context.read<AuthProvider>();
+    final scan = context.read<ScanProvider>();
+    final navigator = Navigator.of(context);
     final ok = await auth.login(
       _emailCtrl.text.trim(),
       _passCtrl.text,
     );
     if (!mounted) return;
     if (ok) {
-      context.read<ScanProvider>().loadScans();
-      Navigator.pushReplacementNamed(context, AppRoutes.home);
+      await scan.loadScans();
+      await scan.loadCheckpoints();
+      navigator.pushReplacementNamed(AppRoutes.home);
     }
   }
 

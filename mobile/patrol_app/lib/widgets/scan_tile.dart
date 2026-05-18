@@ -48,6 +48,8 @@ class ScanTile extends StatelessWidget {
                         fontSize: 15,
                         color: AppTheme.text,
                       ),
+                      softWrap: true,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -56,6 +58,8 @@ class ScanTile extends StatelessWidget {
                         fontSize: 12,
                         color: AppTheme.textSecondary,
                       ),
+                      softWrap: true,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),

@@ -185,7 +185,7 @@ export default function Dashboard() {
         </div>
 
         <div className="lg:col-span-2 space-y-4">
-          <div className="rounded-xl border border-border bg-card p-2 h-[420px]">
+          <div className="rounded-xl border border-border bg-card p-2 h-[300px] md:h-[420px]">
             <PatrolMap />
           </div>
 

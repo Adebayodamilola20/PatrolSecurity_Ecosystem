@@ -31,6 +31,8 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ScanProvider>().loadScans();
+      context.read<ScanProvider>().loadCheckpoints();
       context.read<ShiftProvider>().loadStatus();
     });
   }
@@ -99,6 +101,9 @@ class _DashboardTab extends StatelessWidget {
                 fontWeight: FontWeight.bold,
                 color: AppTheme.text,
               ),
+              softWrap: true,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 2,
             ),
             const SizedBox(height: 4),
             if (shift.onDuty) ...[
@@ -118,6 +123,8 @@ class _DashboardTab extends StatelessWidget {
                     color: AppTheme.primary,
                     fontWeight: FontWeight.w600,
                   ),
+                  softWrap: true,
+                  overflow: TextOverflow.ellipsis,
                 ),
               const SizedBox(height: 8),
             ],

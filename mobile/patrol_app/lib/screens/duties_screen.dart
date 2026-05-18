@@ -189,9 +189,14 @@ class _DutiesScreenState extends State<DutiesScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(handover.siteLabel?.isNotEmpty == true ? handover.siteLabel! : (handover.checkpointName ?? 'Site handover'),
-                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                              softWrap: true,
+                              overflow: TextOverflow.ellipsis),
                           const SizedBox(height: 6),
-                          Text(handover.summary, style: const TextStyle(color: AppTheme.textSecondary)),
+                          Text(handover.summary, style: const TextStyle(color: AppTheme.textSecondary),
+                              softWrap: true,
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 3),
                           if ((handover.openIssues ?? '').isNotEmpty) ...[
                             const SizedBox(height: 8),
                             Text('Issues: ${handover.openIssues}', style: const TextStyle(fontSize: 13, color: AppTheme.flagged)),
@@ -239,43 +244,58 @@ class _DutiesScreenState extends State<DutiesScreen> {
                       children: [
                         Row(
                           children: [
-                            Expanded(child: Text(order.title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16))),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: completion?.reviewStatus == 'verified'
-                                    ? AppTheme.verified.withOpacity(0.12)
-                                    : AppTheme.flagged.withOpacity(0.12),
-                                borderRadius: BorderRadius.circular(999),
+                            Expanded(
+                              child: Text(order.title,
+                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                                  softWrap: true,
+                                  overflow: TextOverflow.ellipsis),
+                            ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: completion?.reviewStatus == 'verified'
+                                      ? AppTheme.verified.withOpacity(0.12)
+                                      : AppTheme.flagged.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(statusText,
+                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: completion?.reviewStatus == 'verified' ? AppTheme.verified : AppTheme.flagged),
+                                    softWrap: true,
+                                    overflow: TextOverflow.ellipsis),
                               ),
-                              child: Text(statusText, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: completion?.reviewStatus == 'verified' ? AppTheme.verified : AppTheme.flagged)),
                             ),
                           ],
                         ),
                         const SizedBox(height: 6),
                         Text(order.summary.isNotEmpty ? order.summary : order.instructions, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppTheme.textSecondary)),
                         const SizedBox(height: 10),
-                        Text(order.checkpointName ?? 'General site order', style: const TextStyle(fontSize: 13, color: AppTheme.primary, fontWeight: FontWeight.w600)),
+                        Text(order.checkpointName ?? 'General site order', style: const TextStyle(fontSize: 13, color: AppTheme.primary, fontWeight: FontWeight.w600),
+                            softWrap: true,
+                            overflow: TextOverflow.ellipsis),
                         const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            if (order.requiresAcknowledgement && completion == null)
+                          Row(
+                            children: [
+                              if (order.requiresAcknowledgement && completion == null)
+                                Expanded(
+                                  flex: 1,
+                                  child: OutlinedButton(
+                                    onPressed: duty.submitting ? null : () => duty.acknowledge(order.id),
+                                    child: const Text('Acknowledge'),
+                                  ),
+                                ),
+                              if (order.requiresAcknowledgement && completion == null) const SizedBox(width: 8),
                               Expanded(
-                                child: OutlinedButton(
-                                  onPressed: duty.submitting ? null : () => duty.acknowledge(order.id),
-                                  child: const Text('Acknowledge'),
+                                flex: 2,
+                                child: FilledButton.icon(
+                                  onPressed: () => _openCompleteDialog(order),
+                                  icon: const Icon(Icons.camera_alt_outlined, size: 18),
+                                  label: const Text('Complete', overflow: TextOverflow.ellipsis),
                                 ),
                               ),
-                            if (order.requiresAcknowledgement && completion == null) const SizedBox(width: 10),
-                            Expanded(
-                              child: FilledButton.icon(
-                                onPressed: () => _openCompleteDialog(order),
-                                icon: const Icon(Icons.camera_alt_outlined),
-                                label: const Text('Complete with Photo'),
-                              ),
-                            ),
-                          ],
-                        ),
+                            ],
+                          ),
                       ],
                     ),
                   ),

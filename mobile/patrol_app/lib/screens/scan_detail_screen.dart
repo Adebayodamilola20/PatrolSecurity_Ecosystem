@@ -62,6 +62,9 @@ class ScanDetailScreen extends StatelessWidget {
                       fontWeight: FontWeight.bold,
                       color: AppTheme.text,
                     ),
+                    softWrap: true,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
                   ),
                   Text(
                     '${item.checkpointCode} · ${item.checkpointName}',
@@ -69,6 +72,9 @@ class ScanDetailScreen extends StatelessWidget {
                       fontSize: 13,
                       color: AppTheme.textSecondary,
                     ),
+                    softWrap: true,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
                   ),
                 ],
               ),
@@ -175,18 +181,22 @@ class _DetailRow extends StatelessWidget {
       children: [
         Icon(icon, size: 20, color: AppTheme.textSecondary),
         const SizedBox(width: 12),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label,
-                style: const TextStyle(
-                    fontSize: 12, color: AppTheme.textSecondary)),
-            Text(value,
-                style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: AppTheme.text)),
-          ],
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label,
+                  style: const TextStyle(
+                      fontSize: 12, color: AppTheme.textSecondary)),
+              Text(value,
+                  style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: AppTheme.text),
+                  softWrap: true,
+                  overflow: TextOverflow.ellipsis),
+            ],
+          ),
         ),
       ],
     );

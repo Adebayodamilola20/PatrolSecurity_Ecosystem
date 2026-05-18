@@ -166,6 +166,8 @@ class _SettingTile extends StatelessWidget {
                       fontWeight: FontWeight.w500,
                       color: AppTheme.text,
                     ),
+                    softWrap: true,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   if (subtitle != null)
                     Text(
@@ -174,6 +176,8 @@ class _SettingTile extends StatelessWidget {
                         fontSize: 12,
                         color: AppTheme.textSecondary,
                       ),
+                      softWrap: true,
+                      overflow: TextOverflow.ellipsis,
                     ),
                 ],
               ),

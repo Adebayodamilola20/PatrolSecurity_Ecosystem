@@ -354,7 +354,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                   child: OutlinedButton.icon(
                     onPressed: () => _reportIncident(context),
                     icon: const Icon(Icons.warning_amber_rounded, size: 20),
-                    label: const Text('Report Incident at this Checkpoint'),
+                    label: const Text('Report Incident at this Checkpoint', overflow: TextOverflow.ellipsis),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.red.shade700,
                       side: BorderSide(color: Colors.red.shade700),
@@ -412,6 +412,8 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                     _checkpointName ?? 'Unknown Checkpoint',
                     style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.text),
                     textAlign: TextAlign.center,
+                    softWrap: true,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   if (_checkpoint != null)
                     Text(
@@ -588,10 +590,14 @@ class _InfoRow extends StatelessWidget {
       children: [
         Icon(icon, size: 20, color: AppTheme.textSecondary),
         const SizedBox(width: 12),
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-          Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.text)),
-        ]),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+            Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.text),
+                softWrap: true,
+                overflow: TextOverflow.ellipsis),
+          ]),
+        ),
       ],
     );
   }
@@ -608,7 +614,12 @@ class _DetailRow extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(label, style: const TextStyle(color: AppTheme.textSecondary)),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.w600, color: AppTheme.text)),
+        Flexible(
+          child: Text(value, style: const TextStyle(fontWeight: FontWeight.w600, color: AppTheme.text),
+              softWrap: true,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end),
+        ),
       ],
     );
   }

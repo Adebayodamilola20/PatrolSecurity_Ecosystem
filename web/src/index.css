@@ -81,7 +81,20 @@
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
+  /* Prevent text overflow on all devices */
+  h1, h2, h3, h4, h5, h6, p, span, a, button, li, label, input, textarea, select, option, td, th, div {
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+    word-break: break-word;
+    hyphens: auto;
+  }
   .leaflet-container { background: oklch(0.20 0.014 250); }
   .leaflet-control-attribution { background: rgba(0,0,0,0.5) !important; color: #aaa !important; }
   .leaflet-control-attribution a { color: #ccc !important; }
+}
+
+@layer utilities {
+  .no-hyphens {
+    hyphens: none;
+  }
 }

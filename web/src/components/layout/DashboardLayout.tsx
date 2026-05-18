@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Outlet, Navigate } from 'react-router-dom'
+import { Shield } from 'lucide-react'
 import Sidebar from './Sidebar'
 import Header from './Header'
 import { useAuthStore } from '../../stores/useAuthStore'
@@ -12,6 +13,7 @@ interface AppIssue {
 
 export default function DashboardLayout() {
   const [collapsed, setCollapsed] = useState(false)
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine)
   const [issue, setIssue] = useState<AppIssue | null>(null)
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
@@ -50,9 +52,33 @@ export default function DashboardLayout() {
 
   return (
     <div className="dark flex h-screen w-screen overflow-hidden bg-background text-foreground">
-      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
+      {/* Mobile overlay */}
+      {mobileSidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          onClick={() => setMobileSidebarOpen(false)}
+        />
+      )}
+
+      {/* Mobile sidebar drawer */}
+      <div className={`fixed inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out md:hidden ${
+        mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+      }`}>
+        <Sidebar
+          collapsed={false}
+          onToggle={() => {}}
+          mobile
+          onClose={() => setMobileSidebarOpen(false)}
+        />
+      </div>
+
+      {/* Desktop sidebar */}
+      <div className="hidden md:flex">
+        <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
+      </div>
+
       <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300`}>
-        <Header />
+        <Header onMenuClick={() => setMobileSidebarOpen(true)} />
         {(!online || issue) && (
           <div className={`border-b px-5 py-3 text-sm ${
             !online || issue?.kind === 'network'
@@ -86,7 +112,7 @@ export default function DashboardLayout() {
             </div>
           </div>
         )}
-        <main className="flex-1 overflow-y-auto p-5">
+        <main className="flex-1 overflow-y-auto p-3 md:p-5">
           <ErrorBoundary>
             <Outlet />
           </ErrorBoundary>

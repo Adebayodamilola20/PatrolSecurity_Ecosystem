@@ -15,6 +15,15 @@ class _ScannerScreenState extends State<ScannerScreen> {
   final controller = MobileScannerController();
   bool _flashlight = false;
   bool _processingScan = false;
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(const Duration(milliseconds: 800), () {
+      if (mounted) setState(() => _ready = true);
+    });
+  }
 
   @override
   void dispose() {
@@ -24,6 +33,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
 
   void _onDetect(BarcodeCapture capture) async {
     if (_processingScan) return;
+    if (!_ready) return;
     if (capture.barcodes.isEmpty) return;
     String? code = capture.barcodes.first.rawValue;
     if (code == null || code.isEmpty) return;
@@ -83,9 +93,12 @@ class _ScannerScreenState extends State<ScannerScreen> {
             onDetect: _onDetect,
           ),
           Center(
-            child: Container(
-              width: 250,
-              height: 250,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final size = constraints.biggest.shortestSide * 0.75;
+                return Container(
+              width: size.clamp(200, 300),
+              height: size.clamp(200, 300),
               decoration: BoxDecoration(
                 border: Border.all(color: Colors.white, width: 2),
                 borderRadius: BorderRadius.circular(16),
@@ -93,6 +106,8 @@ class _ScannerScreenState extends State<ScannerScreen> {
               child: CustomPaint(
                 painter: _CornerPainter(),
               ),
+            );
+              },
             ),
           ),
           Positioned(

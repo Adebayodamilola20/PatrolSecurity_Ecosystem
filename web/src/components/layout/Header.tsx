@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Search, Bell } from 'lucide-react'
+import { Search, Bell, Menu } from 'lucide-react'
 import { api } from '../../services/api'
 
-export default function Header() {
+interface HeaderProps {
+  onMenuClick?: () => void
+}
+
+export default function Header({ onMenuClick }: HeaderProps) {
   const [alertCount, setAlertCount] = useState(0)
 
   useEffect(() => {
@@ -10,7 +14,13 @@ export default function Header() {
   }, [])
 
   return (
-    <header className="flex items-center gap-3 border-b border-border bg-card/40 px-5 py-3">
+    <header className="flex items-center gap-3 border-b border-border bg-card/40 px-3 md:px-5 py-3">
+      <button
+        onClick={onMenuClick}
+        className="md:hidden rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-card border border-border"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
       <div className="relative flex-1 max-w-md">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <input
