@@ -10,12 +10,23 @@ import {
   Navigation,
   FileText,
   Ruler,
+  RefreshCcw,
 } from 'lucide-react'
 import { useEffect, useState, useRef } from 'react'
 import L from 'leaflet'
 import { api } from '../services/api'
 import type { Scan } from '../types'
 import { Skeleton } from '../components/ui/Skeleton'
+import { useAuthStore } from '../stores/useAuthStore'
+
+interface CheckpointSnapshot {
+  id: string
+  name: string
+  code: string
+  latitude: number
+  longitude: number
+  radiusMeters: number
+}
 
 export default function ScanDetail() {
   const { id } = useParams()
@@ -23,11 +34,25 @@ export default function ScanDetail() {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstance = useRef<L.Map | null>(null)
   const [scan, setScan] = useState<Scan | null>(null)
+  const [checkpoint, setCheckpoint] = useState<CheckpointSnapshot | null>(null)
+  const [fixingCheckpoint, setFixingCheckpoint] = useState(false)
+  const [fixMessage, setFixMessage] = useState('')
+  const user = useAuthStore((s) => s.user)
 
   useEffect(() => {
     if (!id) return
     api.scans.get(id).then(setScan).catch(() => {})
   }, [id])
+
+  useEffect(() => {
+    if (!scan?.checkpointId) return
+    api.checkpoints.list()
+      .then((items: CheckpointSnapshot[]) => {
+        const found = items.find((item) => item.id === scan.checkpointId) || null
+        setCheckpoint(found)
+      })
+      .catch(() => {})
+  }, [scan?.checkpointId])
 
   useEffect(() => {
     if (!mapRef.current || mapInstance.current || !scan) return
@@ -85,6 +110,36 @@ export default function ScanDetail() {
         </div>
       </div>
     )
+  }
+
+  const handleAlignCheckpoint = async () => {
+    if (scan?.gpsLatitude == null || scan?.gpsLongitude == null || !checkpoint) return
+
+    try {
+      setFixingCheckpoint(true)
+      setFixMessage('')
+      const updatedRadius = Math.max(
+        Number(checkpoint.radiusMeters) || 50,
+        75,
+      )
+
+      const updated = await api.checkpoints.update(checkpoint.id, {
+        latitude: scan.gpsLatitude,
+        longitude: scan.gpsLongitude,
+        radiusMeters: updatedRadius,
+      })
+
+      setCheckpoint(updated)
+      setFixMessage('Checkpoint location was updated to this scan position.')
+    } catch (error) {
+      setFixMessage(
+        error instanceof Error
+          ? error.message
+          : 'Could not update checkpoint location.',
+      )
+    } finally {
+      setFixingCheckpoint(false)
+    }
   }
 
   return (
@@ -160,6 +215,36 @@ export default function ScanDetail() {
                 </div>
               </div>
             </div>
+            {checkpoint ? (
+              <div className="border-t border-border px-6 py-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Stored checkpoint coordinates</p>
+                    <p className="text-sm font-medium text-foreground">
+                      {checkpoint.latitude.toFixed(6)}, {checkpoint.longitude.toFixed(6)}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">Radius: {checkpoint.radiusMeters} meters</p>
+                  </div>
+                  {!scan.gpsValid && user?.role === 'admin' && scan.gpsLatitude != null && scan.gpsLongitude != null ? (
+                    <div className="flex items-start justify-start md:justify-end">
+                      <button
+                        onClick={() => void handleAlignCheckpoint()}
+                        disabled={fixingCheckpoint}
+                        className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-60"
+                      >
+                        <RefreshCcw className="h-4 w-4" />
+                        {fixingCheckpoint ? 'Updating checkpoint...' : 'Use this scan location for checkpoint'}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+                {fixMessage ? (
+                  <div className={`mt-3 text-xs ${fixMessage.includes('updated') ? 'text-success' : 'text-destructive'}`}>
+                    {fixMessage}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           {scan.notes && (

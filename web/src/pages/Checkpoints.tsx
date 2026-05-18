@@ -20,6 +20,7 @@ interface AddressSuggestion {
   description: string
   latitude: string
   longitude: string
+  prefillName?: boolean
 }
 
 function getStatus(cp: Checkpoint): string {
@@ -55,6 +56,8 @@ export default function Checkpoints() {
   const [searchingAddress, setSearchingAddress] = useState(false)
   const [addressError, setAddressError] = useState('')
   const [resolvingCurrentLocation, setResolvingCurrentLocation] = useState(false)
+  const [locationInfo, setLocationInfo] = useState('')
+  const [actionError, setActionError] = useState('')
 
   useEffect(() => {
     setLoading(true)
@@ -72,11 +75,12 @@ export default function Checkpoints() {
     let active = true
     const timer = window.setTimeout(async () => {
       try {
-        setSearchingAddress(true)
-        setAddressError('')
-        const coordinateMatch = addressQuery.match(
-          /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/,
-        )
+      setSearchingAddress(true)
+      setAddressError('')
+      setLocationInfo('')
+      const coordinateMatch = addressQuery.match(
+        /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/,
+      )
 
         if (coordinateMatch) {
           const latitude = coordinateMatch[1]
@@ -89,6 +93,7 @@ export default function Checkpoints() {
               description: `${latitude}, ${longitude}`,
               latitude,
               longitude,
+              prefillName: false,
             },
           ])
           return
@@ -127,6 +132,7 @@ export default function Checkpoints() {
             description: result.display_name || '',
             latitude: result.lat,
             longitude: result.lon,
+            prefillName: true,
           })),
         )
       } catch (error) {
@@ -151,9 +157,16 @@ export default function Checkpoints() {
   const handleDelete = async (id: string, name: string) => {
     if (!window.confirm(`Delete checkpoint "${name}"?`)) return
     try {
+      setActionError('')
       await api.checkpoints.delete(id)
       setCheckpoints(prev => prev.filter(c => c.id !== id))
-    } catch {}
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : 'Could not delete checkpoint.',
+      )
+    }
   }
 
   const handleUseCurrentLocation = async () => {
@@ -165,6 +178,7 @@ export default function Checkpoints() {
     try {
       setResolvingCurrentLocation(true)
       setAddressError('')
+      setLocationInfo('')
       const position = await new Promise<GeolocationPosition>((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, {
           enableHighAccuracy: true,
@@ -175,12 +189,49 @@ export default function Checkpoints() {
 
       const latitude = String(position.coords.latitude)
       const longitude = String(position.coords.longitude)
+      const accuracy = Math.max(25, Math.ceil(position.coords.accuracy || 0))
+      const suggestedRadius = Math.max(
+        Number(form.radiusMeters) || 50,
+        Math.ceil((accuracy + 25) / 25) * 25,
+      )
+
       setForm((f) => ({
         ...f,
         latitude,
         longitude,
+        radiusMeters: String(suggestedRadius),
       }))
-      setAddressQuery(`${latitude}, ${longitude}`)
+      setLocationInfo(`Current location captured. GPS accuracy is about ${accuracy}m, so checkpoint radius was adjusted to ${suggestedRadius}m.`)
+
+      try {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`,
+          {
+            headers: {
+              Accept: 'application/json',
+            },
+          },
+        )
+
+        if (response.ok) {
+          const result = await response.json()
+          const displayName = String(result.display_name || '').trim()
+          const suggestedName =
+            String(result.name || result.address?.road || result.address?.suburb || result.address?.neighbourhood || '')
+              .trim()
+
+          setAddressQuery(displayName || `${latitude}, ${longitude}`)
+          setForm((f) => ({
+            ...f,
+            name: f.name || suggestedName,
+          }))
+        } else {
+          setAddressQuery(`${latitude}, ${longitude}`)
+        }
+      } catch {
+        setAddressQuery(`${latitude}, ${longitude}`)
+      }
+
       setAddressResults([])
     } catch {
       setAddressError('Could not get your current location. Check browser permission and try again.')
@@ -215,13 +266,14 @@ export default function Checkpoints() {
   const handleAddressSelect = (result: AddressSuggestion) => {
     setForm((f) => ({
       ...f,
-      name: f.name || result.mainText,
+      name: f.name || (result.prefillName ? result.mainText : f.name),
       latitude: result.latitude,
       longitude: result.longitude,
     }))
     setAddressQuery(result.description || `${result.latitude}, ${result.longitude}`)
     setAddressResults([])
     setAddressError('')
+    setLocationInfo('')
   }
 
   return (
@@ -238,6 +290,11 @@ export default function Checkpoints() {
           <ScanLine className="h-4 w-4" /> Add Checkpoint
         </button>
       </div>
+      {actionError ? (
+        <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {actionError}
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -356,6 +413,11 @@ export default function Checkpoints() {
                 <div className="mt-2 text-[11px] text-muted-foreground">
                   Search uses OpenStreetMap. You can also enter coordinates directly, for example `6.5244, 3.3792`.
                 </div>
+                {locationInfo ? (
+                  <div className="mt-2 rounded-lg border border-info/20 bg-info/10 px-3 py-2 text-[11px] text-info">
+                    {locationInfo}
+                  </div>
+                ) : null}
                 <div className="mt-2 rounded-lg border border-border bg-background">
                   {searchingAddress ? (
                     <div className="px-3 py-2 text-xs text-muted-foreground">Searching addresses...</div>
