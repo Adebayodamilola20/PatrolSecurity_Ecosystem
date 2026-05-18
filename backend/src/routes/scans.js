@@ -3,6 +3,23 @@ import { v4 as uuidv4 } from 'uuid'
 import db from '../db.js'
 import { authMiddleware } from '../middleware/auth.js'
 
+function normalizeCheckpoint(cp) {
+  if (!cp) return cp
+  return {
+    id: cp.id,
+    name: cp.name,
+    code: cp.code,
+    latitude: cp.latitude,
+    longitude: cp.longitude,
+    radiusMeters: cp.radiusMeters ?? cp.radiusmeters ?? 50,
+    expectedIntervalMinutes: cp.expectedIntervalMinutes ?? cp.expectedintervalminutes ?? 30,
+    scheduledTimeIn: cp.scheduledTimeIn ?? cp.scheduledtimein ?? '',
+    scheduledTimeOut: cp.scheduledTimeOut ?? cp.scheduledtimeout ?? '',
+    active: !!(cp.active ?? cp.active === 1),
+    createdAt: cp.createdAt ?? cp.createdat ?? null,
+  }
+}
+
 function normalizeScan(scan) {
   if (!scan) return scan
 
@@ -133,10 +150,11 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ message: 'checkpointId is required' })
   }
 
-  const checkpoint = await db.get('SELECT * FROM checkpoints WHERE id = ?', [checkpointId])
-  if (!checkpoint) {
+  const checkpointRaw = await db.get('SELECT * FROM checkpoints WHERE id = ?', [checkpointId])
+  if (!checkpointRaw) {
     return res.status(404).json({ message: 'Checkpoint not found' })
   }
+  const checkpoint = normalizeCheckpoint(checkpointRaw)
 
   let distanceMeters = null
   let gpsValid = true
@@ -150,7 +168,7 @@ router.post('/', async (req, res) => {
               Math.sin(dLon / 2) ** 2
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
     distanceMeters = Math.round(R * c)
-    gpsValid = distanceMeters <= (checkpoint.radiusMeters || 50)
+    gpsValid = distanceMeters <= checkpoint.radiusMeters
     if (!gpsValid) {
       await createIncident(
         req.user.id, checkpointId,

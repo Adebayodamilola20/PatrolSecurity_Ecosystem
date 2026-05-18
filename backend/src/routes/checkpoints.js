@@ -7,15 +7,33 @@ const router = Router()
 
 router.use(authMiddleware)
 
+function normalizeCheckpoint(cp) {
+  if (!cp) return cp
+  return {
+    id: cp.id,
+    name: cp.name,
+    code: cp.code,
+    latitude: cp.latitude,
+    longitude: cp.longitude,
+    radiusMeters: cp.radiusMeters ?? cp.radiusmeters ?? 50,
+    expectedIntervalMinutes: cp.expectedIntervalMinutes ?? cp.expectedintervalminutes ?? 30,
+    scheduledTimeIn: cp.scheduledTimeIn ?? cp.scheduledtimein ?? '',
+    scheduledTimeOut: cp.scheduledTimeOut ?? cp.scheduledtimeout ?? '',
+    active: !!(cp.active ?? cp.active === 1),
+    createdAt: cp.createdAt ?? cp.createdat ?? null,
+    lastScan: cp.lastScan ?? cp.lastscan ?? null,
+  }
+}
+
 router.get('/', async (req, res) => {
   const checkpoints = await db.all('SELECT * FROM checkpoints ORDER BY name')
-  res.json(checkpoints.map(c => ({ ...c, active: !!c.active })))
+  res.json(checkpoints.map(normalizeCheckpoint))
 })
 
 router.get('/:id', async (req, res) => {
   const cp = await db.get('SELECT * FROM checkpoints WHERE id = ?', [req.params.id])
   if (!cp) return res.status(404).json({ message: 'Checkpoint not found' })
-  res.json({ ...cp, active: !!cp.active })
+  res.json(normalizeCheckpoint(cp))
 })
 
 router.post('/', adminOnly, async (req, res) => {
@@ -51,8 +69,9 @@ router.post('/', adminOnly, async (req, res) => {
 })
 
 router.put('/:id', adminOnly, async (req, res) => {
-  const existing = await db.get('SELECT * FROM checkpoints WHERE id = ?', [req.params.id])
-  if (!existing) return res.status(404).json({ message: 'Checkpoint not found' })
+  const existingRaw = await db.get('SELECT * FROM checkpoints WHERE id = ?', [req.params.id])
+  if (!existingRaw) return res.status(404).json({ message: 'Checkpoint not found' })
+  const existing = normalizeCheckpoint(existingRaw)
 
   const { name, code, latitude, longitude, radiusMeters, expectedIntervalMinutes, scheduledTimeIn, scheduledTimeOut, active } = req.body
   await db.run(`
@@ -72,7 +91,7 @@ router.put('/:id', adminOnly, async (req, res) => {
   ])
 
   const updated = await db.get('SELECT * FROM checkpoints WHERE id = ?', [req.params.id])
-  res.json({ ...updated, active: !!updated.active })
+  res.json(normalizeCheckpoint(updated))
 })
 
 router.delete('/:id', adminOnly, async (req, res) => {
