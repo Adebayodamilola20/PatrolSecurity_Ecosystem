@@ -3,7 +3,6 @@ import { X, MapPin, ScanLine, Download, Edit, Trash2, MapIcon } from 'lucide-rea
 import { useNavigate } from 'react-router-dom'
 import QRCode from 'qrcode'
 import { api } from '../services/api'
-import { loadGoogleMaps } from '../services/googleMaps'
 import type { Checkpoint } from '../types'
 import { CardSkeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
@@ -15,10 +14,12 @@ const statusColor: Record<string, string> = {
 }
 
 interface AddressSuggestion {
-  placeId: string
+  id: string
   mainText: string
   secondaryText: string
   description: string
+  latitude: string
+  longitude: string
 }
 
 function getStatus(cp: Checkpoint): string {
@@ -53,6 +54,7 @@ export default function Checkpoints() {
   const [addressResults, setAddressResults] = useState<AddressSuggestion[]>([])
   const [searchingAddress, setSearchingAddress] = useState(false)
   const [addressError, setAddressError] = useState('')
+  const [resolvingCurrentLocation, setResolvingCurrentLocation] = useState(false)
 
   useEffect(() => {
     setLoading(true)
@@ -72,41 +74,59 @@ export default function Checkpoints() {
       try {
         setSearchingAddress(true)
         setAddressError('')
-        const maps = await loadGoogleMaps()
-        const service = new maps.places.AutocompleteService()
-        const sessionToken = new maps.places.AutocompleteSessionToken()
+        const coordinateMatch = addressQuery.match(
+          /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/,
+        )
 
-        const response = await service.getPlacePredictions({
-          input: addressQuery,
-          componentRestrictions: { country: 'ng' },
-          types: ['geocode', 'establishment'],
-          sessionToken,
-        })
-
-        if (!active) return
-
-        if (response?.status === 'REQUEST_DENIED') {
-          setAddressResults([])
-          setAddressError('Places API is not enabled. Go to https://console.cloud.google.com/apis/library/places-backend.googleapis.com and enable "Places API", then ensure billing is set up.')
-          setSearchingAddress(false)
+        if (coordinateMatch) {
+          const latitude = coordinateMatch[1]
+          const longitude = coordinateMatch[2]
+          setAddressResults([
+            {
+              id: `${latitude},${longitude}`,
+              mainText: 'Use typed coordinates',
+              secondaryText: `${latitude}, ${longitude}`,
+              description: `${latitude}, ${longitude}`,
+              latitude,
+              longitude,
+            },
+          ])
           return
         }
 
-        const predictions = Array.isArray(response?.predictions)
-          ? response.predictions
-          : Array.isArray(response)
-              ? response
-              : []
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&countrycodes=ng&q=${encodeURIComponent(addressQuery)}`,
+          {
+            headers: {
+              Accept: 'application/json',
+            },
+          },
+        )
+
+        if (!response.ok) {
+          throw new Error('Could not search for that address.')
+        }
+
+        const results = await response.json()
+        if (!active) return
 
         setAddressResults(
-          predictions.map((prediction: any) => ({
-            placeId: prediction.place_id,
+          (Array.isArray(results) ? results : []).map((result: any) => ({
+            id: String(result.place_id),
             mainText:
-              prediction.structured_formatting?.main_text ||
-              prediction.description,
+              String(result.display_name || '')
+                .split(',')
+                .slice(0, 2)
+                .join(', ') || 'Selected address',
             secondaryText:
-              prediction.structured_formatting?.secondary_text || '',
-            description: prediction.description,
+              String(result.display_name || '')
+                .split(',')
+                .slice(2)
+                .join(',')
+                .trim(),
+            description: result.display_name || '',
+            latitude: result.lat,
+            longitude: result.lon,
           })),
         )
       } catch (error) {
@@ -136,6 +156,39 @@ export default function Checkpoints() {
     } catch {}
   }
 
+  const handleUseCurrentLocation = async () => {
+    if (!navigator.geolocation) {
+      setAddressError('This browser does not support location access.')
+      return
+    }
+
+    try {
+      setResolvingCurrentLocation(true)
+      setAddressError('')
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 0,
+        })
+      })
+
+      const latitude = String(position.coords.latitude)
+      const longitude = String(position.coords.longitude)
+      setForm((f) => ({
+        ...f,
+        latitude,
+        longitude,
+      }))
+      setAddressQuery(`${latitude}, ${longitude}`)
+      setAddressResults([])
+    } catch {
+      setAddressError('Could not get your current location. Check browser permission and try again.')
+    } finally {
+      setResolvingCurrentLocation(false)
+    }
+  }
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
@@ -159,50 +212,16 @@ export default function Checkpoints() {
     } catch {}
   }
 
-  const handleAddressSelect = async (result: AddressSuggestion) => {
-    try {
-      const maps = await loadGoogleMaps()
-      const service = new maps.places.PlacesService(document.createElement('div'))
-
-      const details = await new Promise<any>((resolve, reject) => {
-        service.getDetails(
-          {
-            placeId: result.placeId,
-            fields: ['name', 'formatted_address', 'geometry', 'place_id'],
-          },
-          (place: any, status: any) => {
-            if (status !== maps.places.PlacesServiceStatus.OK || !place) {
-              if (status === 'REQUEST_DENIED') {
-                reject(new Error('Places API is not enabled. Enable it at https://console.cloud.google.com/apis/library/places-backend.googleapis.com'))
-              } else {
-                reject(new Error('Could not load the selected place details.'))
-              }
-              return
-            }
-            resolve(place)
-          },
-        )
-      })
-
-      const lat = details.geometry?.location?.lat?.()
-      const lng = details.geometry?.location?.lng?.()
-
-      setForm((f) => ({
-        ...f,
-        name: f.name || details.name || result.mainText,
-        latitude: lat != null ? String(lat) : f.latitude,
-        longitude: lng != null ? String(lng) : f.longitude,
-      }))
-      setAddressQuery(details.formatted_address || result.description)
-      setAddressResults([])
-      setAddressError('')
-    } catch (error) {
-      setAddressError(
-        error instanceof Error
-          ? error.message
-          : 'Could not use the selected place.',
-      )
-    }
+  const handleAddressSelect = (result: AddressSuggestion) => {
+    setForm((f) => ({
+      ...f,
+      name: f.name || result.mainText,
+      latitude: result.latitude,
+      longitude: result.longitude,
+    }))
+    setAddressQuery(result.description || `${result.latitude}, ${result.longitude}`)
+    setAddressResults([])
+    setAddressError('')
   }
 
   return (
@@ -318,24 +337,36 @@ export default function Checkpoints() {
             </div>
             <form onSubmit={handleCreate} className="space-y-3">
               <div>
-                <label className="text-xs text-muted-foreground">Search Address in Nigeria</label>
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-xs text-muted-foreground">Find location</label>
+                  <button
+                    type="button"
+                    onClick={() => void handleUseCurrentLocation()}
+                    className="rounded-md border border-border px-2 py-1 text-[11px] font-medium hover:bg-accent"
+                  >
+                    {resolvingCurrentLocation ? 'Getting location...' : 'Use current location'}
+                  </button>
+                </div>
                 <input
                   value={addressQuery}
                   onChange={e => setAddressQuery(e.target.value)}
-                  placeholder="Start typing a real address, estate, gate, or landmark"
+                  placeholder="Type an address or paste latitude,longitude"
                   className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
                 />
+                <div className="mt-2 text-[11px] text-muted-foreground">
+                  Search uses OpenStreetMap. You can also enter coordinates directly, for example `6.5244, 3.3792`.
+                </div>
                 <div className="mt-2 rounded-lg border border-border bg-background">
                   {searchingAddress ? (
-                    <div className="px-3 py-2 text-xs text-muted-foreground">Searching places...</div>
+                    <div className="px-3 py-2 text-xs text-muted-foreground">Searching addresses...</div>
                   ) : addressError ? (
                     <div className="px-3 py-2 text-xs text-destructive">{addressError}</div>
                   ) : addressResults.length === 0 ? (
-                    <div className="px-3 py-2 text-xs text-muted-foreground">No address selected yet.</div>
+                    <div className="px-3 py-2 text-xs text-muted-foreground">No location selected yet.</div>
                   ) : (
                     addressResults.map((result) => (
                       <button
-                        key={result.placeId}
+                        key={result.id}
                         type="button"
                         onClick={() => handleAddressSelect(result)}
                         className="block w-full border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent"
@@ -344,6 +375,9 @@ export default function Checkpoints() {
                         {result.secondaryText ? (
                           <div className="text-xs text-muted-foreground">{result.secondaryText}</div>
                         ) : null}
+                        <div className="mt-1 text-[11px] text-muted-foreground">
+                          {result.latitude}, {result.longitude}
+                        </div>
                       </button>
                     ))
                   )}
