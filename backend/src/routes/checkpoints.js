@@ -65,8 +65,8 @@ router.put('/:id', adminOnly, async (req, res) => {
     longitude ?? existing.longitude,
     radiusMeters ?? existing.radiusMeters,
     expectedIntervalMinutes ?? existing.expectedIntervalMinutes,
-    scheduledTimeIn ?? existing.scheduledTimeIn || '',
-    scheduledTimeOut ?? existing.scheduledTimeOut || '',
+    scheduledTimeIn ?? existing.scheduledTimeIn ?? '',
+    scheduledTimeOut ?? existing.scheduledTimeOut ?? '',
     active !== undefined ? (active ? 1 : 0) : existing.active,
     req.params.id
   ])
