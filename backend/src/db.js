@@ -144,8 +144,71 @@ const sqliteSchema = `
     clockOutLongitude REAL,
     scheduledStart TEXT,
     scheduledEnd TEXT,
+    siteLabel TEXT DEFAULT '',
     createdAt TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (userId) REFERENCES users(id)
+  );
+  CREATE TABLE IF NOT EXISTS postOrders (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    summary TEXT DEFAULT '',
+    instructions TEXT NOT NULL,
+    checkpointId TEXT,
+    assignedUserId TEXT,
+    assignedRole TEXT DEFAULT 'officer',
+    priority TEXT DEFAULT 'normal',
+    active INTEGER DEFAULT 1,
+    requiresAcknowledgement INTEGER DEFAULT 1,
+    requiresPhotoProof INTEGER DEFAULT 1,
+    createdBy TEXT NOT NULL,
+    createdAt TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (checkpointId) REFERENCES checkpoints(id),
+    FOREIGN KEY (assignedUserId) REFERENCES users(id),
+    FOREIGN KEY (createdBy) REFERENCES users(id)
+  );
+  CREATE TABLE IF NOT EXISTS postOrderCompletions (
+    id TEXT PRIMARY KEY,
+    postOrderId TEXT NOT NULL,
+    userId TEXT NOT NULL,
+    shiftId TEXT,
+    checkpointId TEXT,
+    status TEXT DEFAULT 'completed',
+    acknowledgedAt TEXT,
+    completedAt TEXT,
+    proofPhotoUrl TEXT DEFAULT '',
+    proofNote TEXT DEFAULT '',
+    proofGpsLatitude REAL,
+    proofGpsLongitude REAL,
+    reviewStatus TEXT DEFAULT 'pending',
+    reviewedBy TEXT,
+    reviewedAt TEXT,
+    reviewNote TEXT DEFAULT '',
+    createdAt TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (postOrderId) REFERENCES postOrders(id),
+    FOREIGN KEY (userId) REFERENCES users(id),
+    FOREIGN KEY (shiftId) REFERENCES shifts(id),
+    FOREIGN KEY (checkpointId) REFERENCES checkpoints(id),
+    FOREIGN KEY (reviewedBy) REFERENCES users(id)
+  );
+  CREATE TABLE IF NOT EXISTS handovers (
+    id TEXT PRIMARY KEY,
+    shiftId TEXT,
+    checkpointId TEXT,
+    siteLabel TEXT DEFAULT '',
+    fromUserId TEXT NOT NULL,
+    toUserId TEXT,
+    summary TEXT NOT NULL,
+    openIssues TEXT DEFAULT '',
+    equipmentStatus TEXT DEFAULT '',
+    photoUrl TEXT DEFAULT '',
+    status TEXT DEFAULT 'pending',
+    acceptedNote TEXT DEFAULT '',
+    createdAt TEXT DEFAULT (datetime('now')),
+    acceptedAt TEXT,
+    FOREIGN KEY (shiftId) REFERENCES shifts(id),
+    FOREIGN KEY (checkpointId) REFERENCES checkpoints(id),
+    FOREIGN KEY (fromUserId) REFERENCES users(id),
+    FOREIGN KEY (toUserId) REFERENCES users(id)
   );
 `
 
@@ -223,8 +286,71 @@ const pgSchema = `
     clockOutLongitude DOUBLE PRECISION,
     scheduledStart TIMESTAMPTZ,
     scheduledEnd TIMESTAMPTZ,
+    siteLabel TEXT DEFAULT '',
     createdAt TIMESTAMPTZ DEFAULT NOW(),
     FOREIGN KEY (userId) REFERENCES users(id)
+  );
+  CREATE TABLE IF NOT EXISTS postOrders (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    summary TEXT DEFAULT '',
+    instructions TEXT NOT NULL,
+    checkpointId TEXT,
+    assignedUserId TEXT,
+    assignedRole TEXT DEFAULT 'officer',
+    priority TEXT DEFAULT 'normal',
+    active INTEGER DEFAULT 1,
+    requiresAcknowledgement INTEGER DEFAULT 1,
+    requiresPhotoProof INTEGER DEFAULT 1,
+    createdBy TEXT NOT NULL,
+    createdAt TIMESTAMPTZ DEFAULT NOW(),
+    FOREIGN KEY (checkpointId) REFERENCES checkpoints(id),
+    FOREIGN KEY (assignedUserId) REFERENCES users(id),
+    FOREIGN KEY (createdBy) REFERENCES users(id)
+  );
+  CREATE TABLE IF NOT EXISTS postOrderCompletions (
+    id TEXT PRIMARY KEY,
+    postOrderId TEXT NOT NULL,
+    userId TEXT NOT NULL,
+    shiftId TEXT,
+    checkpointId TEXT,
+    status TEXT DEFAULT 'completed',
+    acknowledgedAt TIMESTAMPTZ,
+    completedAt TIMESTAMPTZ,
+    proofPhotoUrl TEXT DEFAULT '',
+    proofNote TEXT DEFAULT '',
+    proofGpsLatitude DOUBLE PRECISION,
+    proofGpsLongitude DOUBLE PRECISION,
+    reviewStatus TEXT DEFAULT 'pending',
+    reviewedBy TEXT,
+    reviewedAt TIMESTAMPTZ,
+    reviewNote TEXT DEFAULT '',
+    createdAt TIMESTAMPTZ DEFAULT NOW(),
+    FOREIGN KEY (postOrderId) REFERENCES postOrders(id),
+    FOREIGN KEY (userId) REFERENCES users(id),
+    FOREIGN KEY (shiftId) REFERENCES shifts(id),
+    FOREIGN KEY (checkpointId) REFERENCES checkpoints(id),
+    FOREIGN KEY (reviewedBy) REFERENCES users(id)
+  );
+  CREATE TABLE IF NOT EXISTS handovers (
+    id TEXT PRIMARY KEY,
+    shiftId TEXT,
+    checkpointId TEXT,
+    siteLabel TEXT DEFAULT '',
+    fromUserId TEXT NOT NULL,
+    toUserId TEXT,
+    summary TEXT NOT NULL,
+    openIssues TEXT DEFAULT '',
+    equipmentStatus TEXT DEFAULT '',
+    photoUrl TEXT DEFAULT '',
+    status TEXT DEFAULT 'pending',
+    acceptedNote TEXT DEFAULT '',
+    createdAt TIMESTAMPTZ DEFAULT NOW(),
+    acceptedAt TIMESTAMPTZ,
+    FOREIGN KEY (shiftId) REFERENCES shifts(id),
+    FOREIGN KEY (checkpointId) REFERENCES checkpoints(id),
+    FOREIGN KEY (fromUserId) REFERENCES users(id),
+    FOREIGN KEY (toUserId) REFERENCES users(id)
   );
 `
 
@@ -238,6 +364,7 @@ async function initDb() {
     try { db.exec("ALTER TABLE shifts ADD COLUMN clockOutLongitude REAL"); } catch {}
     try { db.exec("ALTER TABLE shifts ADD COLUMN scheduledStart TEXT"); } catch {}
     try { db.exec("ALTER TABLE shifts ADD COLUMN scheduledEnd TEXT"); } catch {}
+    try { db.exec("ALTER TABLE shifts ADD COLUMN siteLabel TEXT DEFAULT ''"); } catch {}
     try { db.exec("ALTER TABLE checkpoints ADD COLUMN expectedIntervalMinutes INTEGER DEFAULT 30"); } catch {}
     try { db.exec("ALTER TABLE checkpoints ADD COLUMN scheduledTimeIn TEXT DEFAULT ''"); } catch {}
     try { db.exec("ALTER TABLE checkpoints ADD COLUMN scheduledTimeOut TEXT DEFAULT ''"); } catch {}
@@ -250,6 +377,7 @@ async function initDb() {
     try { await db.exec("ALTER TABLE shifts ADD COLUMN IF NOT EXISTS clockOutLongitude DOUBLE PRECISION"); } catch {}
     try { await db.exec("ALTER TABLE shifts ADD COLUMN IF NOT EXISTS scheduledStart TIMESTAMPTZ"); } catch {}
     try { await db.exec("ALTER TABLE shifts ADD COLUMN IF NOT EXISTS scheduledEnd TIMESTAMPTZ"); } catch {}
+    try { await db.exec("ALTER TABLE shifts ADD COLUMN IF NOT EXISTS siteLabel TEXT DEFAULT ''"); } catch {}
     try { await db.exec("ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS expectedIntervalMinutes INTEGER DEFAULT 30"); } catch {}
     try { await db.exec("ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS scheduledTimeIn TEXT DEFAULT ''"); } catch {}
     try { await db.exec("ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS scheduledTimeOut TEXT DEFAULT ''"); } catch {}

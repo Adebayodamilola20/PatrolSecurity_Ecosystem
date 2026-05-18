@@ -14,6 +14,8 @@ import userRoutes from './routes/users.js'
 import shiftRoutes from './routes/shifts.js'
 import incidentRoutes from './routes/incidents.js'
 import timesheetRoutes from './routes/timesheets.js'
+import postOrderRoutes from './routes/postOrders.js'
+import handoverRoutes from './routes/handovers.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -74,6 +76,8 @@ app.use('/api/v1/users', userRoutes)
 app.use('/api/v1/shifts', shiftRoutes)
 app.use('/api/v1/incidents', incidentRoutes)
 app.use('/api/v1/timesheets', timesheetRoutes)
+app.use('/api/v1/post-orders', postOrderRoutes)
+app.use('/api/v1/handovers', handoverRoutes)
 
 app.get('/api/v1/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })

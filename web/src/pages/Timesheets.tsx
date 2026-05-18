@@ -4,6 +4,8 @@ import { api } from '../services/api'
 import { Skeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
 import { getScheduleStatus } from '../utils/patrolSchedule'
+import { formatDuration } from '../utils/format'
+import { subscribeToScans, subscribeToShiftUpdates } from '../services/websocket'
 
 const API_BASE = ''
 
@@ -25,7 +27,9 @@ export default function Timesheets() {
       clockIn: shift.clockIn ?? shift.clockin ?? null,
       clockOut: shift.clockOut ?? shift.clockout ?? null,
       duration: shift.clockIn ? `${Math.max(0, Math.round(((new Date(shift.clockOut ?? new Date().toISOString()).getTime() - new Date(shift.clockIn).getTime()) / 60000)))}m` : '—',
-      durationMinutes: 0,
+      durationMinutes: shift.clockIn
+        ? Math.max(0, Math.round((new Date(shift.clockOut ?? new Date().toISOString()).getTime() - new Date(shift.clockIn).getTime()) / 60000))
+        : 0,
       clockInPhoto: shift.clockInPhoto ?? shift.clockinphoto ?? '',
       clockInLatitude: shift.clockInLatitude ?? shift.clockinlatitude ?? null,
       clockInLongitude: shift.clockInLongitude ?? shift.clockinlongitude ?? null,
@@ -87,14 +91,25 @@ export default function Timesheets() {
   }
 
   useEffect(() => {
-    load()
+    void load()
 
     const handleRetry = () => {
       void load()
     }
 
+    const unsubShifts = subscribeToShiftUpdates(() => {
+      void load()
+    })
+    const unsubScans = subscribeToScans(() => {
+      void load()
+    })
+
     window.addEventListener('app:retry', handleRetry)
-    return () => window.removeEventListener('app:retry', handleRetry)
+    return () => {
+      unsubShifts()
+      unsubScans()
+      window.removeEventListener('app:retry', handleRetry)
+    }
   }, [])
 
   const filtered = officerFilter
@@ -203,6 +218,9 @@ export default function Timesheets() {
         ) : (
           filtered.map((t) => {
             const photoUrl = t.clockInPhoto ? `${API_BASE}${t.clockInPhoto}` : null
+            const displayDuration = t.duration && t.duration !== '—'
+              ? t.duration
+              : formatDuration(t.clockIn, t.clockOut)
             return (
               <div key={t.shiftId} className="rounded-xl border border-border bg-card overflow-hidden">
                 <div className="p-4 flex items-start gap-4">
@@ -237,7 +255,7 @@ export default function Timesheets() {
                       </div>
                       <div>
                         <div className="text-muted-foreground">Duration</div>
-                        <div className="text-sm font-medium">{t.duration}</div>
+                        <div className="text-sm font-medium">{displayDuration}</div>
                       </div>
                       <div>
                         <div className="text-muted-foreground">Scans</div>

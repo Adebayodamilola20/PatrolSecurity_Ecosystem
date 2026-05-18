@@ -4,6 +4,7 @@ import 'utils/routes.dart';
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/duties_screen.dart';
 import 'screens/scanner_screen.dart';
 import 'screens/scan_result_screen.dart';
 import 'screens/history_screen.dart';
@@ -16,6 +17,7 @@ import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/scan_provider.dart';
 import 'providers/shift_provider.dart';
+import 'providers/duty_provider.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,6 +27,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => ScanProvider()),
         ChangeNotifierProvider(create: (_) => ShiftProvider()),
+        ChangeNotifierProvider(create: (_) => DutyProvider()),
       ],
       child: const PatrolApp(),
     ),
@@ -56,6 +59,8 @@ class PatrolApp extends StatelessWidget {
             return _route(ScanResultScreen(
               scanData: args?['scanData'] as Map<String, dynamic>?,
             ));
+          case AppRoutes.duties:
+            return _route(const DutiesScreen());
           case AppRoutes.history:
             return _route(const HistoryScreen());
           case AppRoutes.scanDetail:

@@ -60,9 +60,10 @@ router.post('/', async (req, res) => {
   `, Object.values(incident))
 
   const full = await db.get(`
-    SELECT i.*, u.name as officerName
+    SELECT i.*, u.name as officerName, c.name as checkpointName
     FROM incidents i
     JOIN users u ON i.officerId = u.id
+    LEFT JOIN checkpoints c ON i.checkpointId = c.id
     WHERE i.id = ?
   `, [incident.id])
 
@@ -84,10 +85,12 @@ router.patch('/:id/status', async (req, res) => {
   if (!existing) return res.status(404).json({ message: 'Incident not found' })
 
   const resolvedAt = status === 'resolved' ? new Date().toISOString() : null
-  await db.get('UPDATE incidents SET status = ?, resolvedAt = ? WHERE id = ?')
-    .run(status, resolvedAt, req.params.id)
+  await db.run(
+    'UPDATE incidents SET status = ?, resolvedAt = ? WHERE id = ?',
+    [status, resolvedAt, req.params.id],
+  )
 
-  const updated = db.prepare(`
+  const updated = await db.get(`
     SELECT i.*, u.name as officerName, c.name as checkpointName
     FROM incidents i
     JOIN users u ON i.officerId = u.id

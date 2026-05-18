@@ -92,3 +92,64 @@ export interface DashboardStats {
   verifiedScans: number
   flaggedScans: number
 }
+
+export interface PostOrder {
+  id: string
+  title: string
+  summary: string
+  instructions: string
+  checkpointId?: string | null
+  checkpointName?: string | null
+  assignedUserId?: string | null
+  assignedUserName?: string | null
+  assignedRole?: string
+  priority: string
+  active: boolean
+  requiresAcknowledgement: boolean
+  requiresPhotoProof: boolean
+  createdBy: string
+  createdByName?: string | null
+  createdAt: string
+  latestCompletion?: PostOrderCompletion | null
+}
+
+export interface PostOrderCompletion {
+  id: string
+  postOrderId: string
+  postOrderTitle?: string
+  userId: string
+  userName?: string
+  checkpointId?: string | null
+  checkpointName?: string | null
+  status: string
+  acknowledgedAt?: string | null
+  completedAt?: string | null
+  proofPhotoUrl?: string
+  proofNote?: string
+  proofGpsLatitude?: number | null
+  proofGpsLongitude?: number | null
+  reviewStatus: string
+  reviewedAt?: string | null
+  reviewNote?: string
+  createdAt: string
+}
+
+export interface Handover {
+  id: string
+  shiftId?: string | null
+  checkpointId?: string | null
+  checkpointName?: string | null
+  siteLabel?: string
+  fromUserId: string
+  fromUserName?: string
+  toUserId?: string | null
+  toUserName?: string | null
+  summary: string
+  openIssues?: string
+  equipmentStatus?: string
+  photoUrl?: string
+  status: string
+  acceptedNote?: string
+  createdAt: string
+  acceptedAt?: string | null
+}

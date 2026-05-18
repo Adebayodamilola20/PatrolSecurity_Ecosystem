@@ -6,17 +6,23 @@ class ShiftProvider extends ChangeNotifier {
   bool _loading = false;
   String? _error;
   DateTime? _clockInTime;
+  DateTime? _scheduledEnd;
+  String? _siteLabel;
 
   bool get onDuty => _onDuty;
   bool get loading => _loading;
   String? get error => _error;
   DateTime? get clockInTime => _clockInTime;
+  DateTime? get scheduledEnd => _scheduledEnd;
+  String? get siteLabel => _siteLabel;
 
   void clearData() {
     _onDuty = false;
     _loading = false;
     _error = null;
     _clockInTime = null;
+    _scheduledEnd = null;
+    _siteLabel = null;
     notifyListeners();
   }
 
@@ -45,6 +51,10 @@ class ShiftProvider extends ChangeNotifier {
         shift?['clockInTime'] ??
         shift?['createdAt'];
     _clockInTime = clockIn is String ? DateTime.tryParse(clockIn) : null;
+    final scheduledEnd = data['scheduledEnd'] ?? shift?['scheduledEnd'];
+    _scheduledEnd =
+        scheduledEnd is String ? DateTime.tryParse(scheduledEnd) : null;
+    _siteLabel = (data['siteLabel'] ?? shift?['siteLabel'])?.toString();
   }
 
   Future<void> loadStatus() async {

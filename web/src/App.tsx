@@ -13,6 +13,8 @@ import Profile from './pages/Profile'
 import ScanDetail from './pages/ScanDetail'
 import CheckpointDetail from './pages/CheckpointDetail'
 import Timesheets from './pages/Timesheets'
+import PostOrders from './pages/PostOrders'
+import Handovers from './pages/Handovers'
 import Login from './pages/Login'
 import { useAuthStore } from './stores/useAuthStore'
 
@@ -48,6 +50,8 @@ export default function App() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/alerts" element={<Alerts />} />
           <Route path="/timesheets" element={<Timesheets />} />
+          <Route path="/post-orders" element={<PostOrders />} />
+          <Route path="/handovers" element={<Handovers />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -22,7 +22,18 @@ interface LiveIncident {
   id: string
   title: string
   severity: string
+  officerName?: string
+  description?: string
   checkpointName?: string
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
 }
 
 export function PatrolMap() {
@@ -131,8 +142,16 @@ export function PatrolMap() {
           },
         })
         marker.addListener('click', () => {
+          const officerName = escapeHtml(officer.name)
+          const checkpointName = officer.checkpointName ? escapeHtml(officer.checkpointName) : ''
+          const lastSeen = officer.lastSeenAt ? escapeHtml(new Date(officer.lastSeenAt).toLocaleString()) : 'Unknown'
           new maps.InfoWindow({
-            content: `<div style="min-width:180px"><strong>${officer.name}</strong><br/>On duty${officer.checkpointName ? `<br/>Last checkpoint: ${officer.checkpointName}` : ''}<br/>Last seen: ${officer.lastSeenAt ? new Date(officer.lastSeenAt).toLocaleString() : 'Unknown'}</div>`,
+            content: `<div style="min-width:220px;padding:4px 2px;color:#0f172a;font-family:Arial,sans-serif">
+              <div style="font-size:16px;font-weight:700;color:#0f172a">${officerName}</div>
+              <div style="margin-top:4px;font-size:12px;font-weight:600;color:#047857">On duty</div>
+              ${checkpointName ? `<div style="margin-top:8px;font-size:13px;color:#334155"><strong style="color:#0f172a">Last checkpoint:</strong> ${checkpointName}</div>` : ''}
+              <div style="margin-top:6px;font-size:13px;color:#334155"><strong style="color:#0f172a">Last seen:</strong> ${lastSeen}</div>
+            </div>`,
           }).open({ map, anchor: marker })
         })
         officerMarkersRef.current.push(marker)
@@ -216,6 +235,8 @@ export function PatrolMap() {
             id: incident.id,
             title: incident.title,
             severity: incident.severity,
+            officerName: incident.officerName,
+            description: incident.description,
             checkpointName: incident.checkpointName,
           })
         })
@@ -274,8 +295,12 @@ export function PatrolMap() {
           <div className="mt-1 font-medium">{latestIncident.title}</div>
           <div className="text-xs text-red-100/80">
             {latestIncident.severity}
+            {latestIncident.officerName ? ` · ${latestIncident.officerName}` : ''}
             {latestIncident.checkpointName ? ` · ${latestIncident.checkpointName}` : ''}
           </div>
+          {latestIncident.description ? (
+            <div className="mt-1 text-xs text-red-100/70">{latestIncident.description}</div>
+          ) : null}
         </div>
       ) : null}
       {mapError ? (

@@ -42,6 +42,17 @@ function normalizeScanRow(scan) {
   }
 }
 
+function formatDuration(clockIn, clockOut) {
+  if (!clockIn) return '—'
+  const start = new Date(clockIn).getTime()
+  const end = new Date(clockOut || new Date().toISOString()).getTime()
+  const durationMs = Math.max(0, end - start)
+  const hours = Math.floor(durationMs / 3600000)
+  const minutes = Math.floor((durationMs % 3600000) / 60000)
+  if (hours > 0) return `${hours}h ${minutes}m`
+  return `${minutes}m`
+}
+
 router.get('/', async (req, res) => {
   try {
     const { officer, start, end, limit = 50, offset = 0 } = req.query
@@ -81,17 +92,21 @@ router.get('/', async (req, res) => {
       const clockIn = s.clockIn ? new Date(s.clockIn).getTime() : Date.now()
       const clockOut = s.clockOut ? new Date(s.clockOut).getTime() : Date.now()
       const durationMs = Math.max(0, clockOut - clockIn)
-      const hours = Math.floor(durationMs / 3600000)
-      const minutes = Math.floor((durationMs % 3600000) / 60000)
-
-      const scansRaw = await db.all(`
+      const scanParams = [s.userId, s.clockIn]
+      let scanQuery = `
         SELECT s.*, c.name as checkpointName, c.code as checkpointCode, c.active as checkpointActive,
                c.scheduledTimeIn as scheduledTimeIn, c.scheduledTimeOut as scheduledTimeOut
         FROM scans s
         JOIN checkpoints c ON s.checkpointId = c.id
-        WHERE s.officerId = ? AND s.scannedAt >= ? AND (s.scannedAt <= ? OR ? IS NULL)
-        ORDER BY s.scannedAt ASC
-      `, [s.userId, s.clockIn, s.clockOut, s.clockOut])
+        WHERE s.officerId = ? AND s.scannedAt >= ?
+      `
+      if (s.clockOut) {
+        scanQuery += ' AND s.scannedAt <= ?'
+        scanParams.push(s.clockOut)
+      }
+      scanQuery += ' ORDER BY s.scannedAt ASC'
+
+      const scansRaw = await db.all(scanQuery, scanParams)
       const scans = scansRaw.map(normalizeScanRow)
 
       return {
@@ -102,7 +117,7 @@ router.get('/', async (req, res) => {
         userPhone: s.userPhone,
         clockIn: s.clockIn,
         clockOut: s.clockOut,
-        duration: `${hours}h ${minutes}m`,
+        duration: formatDuration(s.clockIn, s.clockOut),
         durationMinutes: Math.round(durationMs / 60000),
         clockInPhoto: s.clockInPhoto || '',
         clockInLatitude: s.clockInLatitude,

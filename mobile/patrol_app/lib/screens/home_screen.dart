@@ -6,6 +6,7 @@ import '../providers/shift_provider.dart';
 import '../utils/routes.dart';
 import '../utils/theme.dart';
 import '../widgets/scan_tile.dart';
+import 'duties_screen.dart';
 import 'history_screen.dart';
 import 'profile_screen.dart';
 
@@ -21,6 +22,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final _pages = [
     const _DashboardTab(),
+    const DutiesScreen(),
     const HistoryScreen(),
     const ProfileScreen(),
   ];
@@ -42,6 +44,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onTap: (i) => setState(() => _currentIndex = i),
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Home'),
+          BottomNavigationBarItem(icon: Icon(Icons.assignment_turned_in_outlined), label: 'Duties'),
           BottomNavigationBarItem(icon: Icon(Icons.history), label: 'History'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],
@@ -58,6 +61,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
 class _DashboardTab extends StatelessWidget {
   const _DashboardTab();
+
+  String _formatHour(DateTime? value) {
+    if (value == null) return '--:--';
+    return '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -93,6 +101,26 @@ class _DashboardTab extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 4),
+            if (shift.onDuty) ...[
+              Text(
+                '${_formatHour(shift.clockInTime)} - ${_formatHour(shift.scheduledEnd)}',
+                style: const TextStyle(
+                  fontSize: 15,
+                  color: AppTheme.text,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if ((shift.siteLabel ?? '').isNotEmpty)
+                Text(
+                  shift.siteLabel!,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppTheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              const SizedBox(height: 8),
+            ],
             Row(
               children: [
                 Container(

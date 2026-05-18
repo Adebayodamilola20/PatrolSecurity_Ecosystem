@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   LogOut,
   Clock,
+  ClipboardCheck,
 } from 'lucide-react'
 import { useAuthStore } from '../../stores/useAuthStore'
 
@@ -22,6 +23,8 @@ const nav = [
   { to: '/checkpoints', label: 'Checkpoints', icon: QrCode },
   { to: '/scans', label: 'Patrol History', icon: ClipboardList },
   { to: '/timesheets', label: 'Timesheets', icon: Clock },
+  { to: '/post-orders', label: 'Post Orders', icon: ClipboardList },
+  { to: '/handovers', label: 'Handovers', icon: ClipboardCheck },
   { to: '/reports', label: 'Reports', icon: FileText },
   { to: '/alerts', label: 'Alerts', icon: Bell },
   { to: '/settings', label: 'Settings', icon: Settings },

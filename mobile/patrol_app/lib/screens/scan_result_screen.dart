@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
@@ -214,16 +213,75 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
     if (!context.mounted) return;
 
     try {
-      await ApiService.reportIncident(
+      final incident = await ApiService.reportIncident(
         title: result['title']!,
         description: result['description'] ?? '',
         checkpointId: _checkpoint?.id,
       );
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Incident reported successfully'),
-            backgroundColor: AppTheme.verified,
+        final reportedAt = DateTime.tryParse(
+              incident['reportedAt']?.toString() ?? '',
+            ) ??
+            DateTime.now();
+        final formattedTime = DateFormat('MMM d, yyyy  h:mm a').format(reportedAt);
+
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Incident Sent'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  incident['title']?.toString() ?? result['title']!,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.text,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  incident['description']?.toString().isNotEmpty == true
+                      ? incident['description'].toString()
+                      : 'The control room can now review this incident report.',
+                  style: const TextStyle(
+                    color: AppTheme.textSecondary,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.border),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Severity: ${(incident['severity'] ?? 'low').toString()}'),
+                      const SizedBox(height: 4),
+                      Text('Checkpoint: ${_checkpointName ?? 'Unknown checkpoint'}'),
+                      const SizedBox(height: 4),
+                      Text('Reported: $formattedTime'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Dismiss'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Continue Patrol'),
+              ),
+            ],
           ),
         );
       }

@@ -16,10 +16,28 @@ router.post('/clock-in', async (req, res) => {
     return res.status(409).json({ message: 'Already clocked in' })
   }
 
+  const now = new Date()
+  const scheduledStart = req.body?.scheduledStart || now.toISOString()
+  const scheduledEnd = req.body?.scheduledEnd || new Date(now.getTime() + 8 * 3600000).toISOString()
+  let siteLabel = req.body?.siteLabel || ''
+  if (!siteLabel) {
+    const assignedOrder = await db.get(`
+      SELECT po.id, c.name as checkpointName
+      FROM postOrders po
+      LEFT JOIN checkpoints c ON po.checkpointId = c.id
+      WHERE po.active = 1
+        AND (po.assignedUserId IS NULL OR po.assignedUserId = ?)
+        AND (po.assignedRole IS NULL OR po.assignedRole = ?)
+      ORDER BY po.createdAt DESC
+      LIMIT 1
+    `, [req.user.id, req.user.role])
+    siteLabel = assignedOrder?.checkpointName || ''
+  }
+
   const shift = {
     id: uuidv4(),
     userId: req.user.id,
-    clockIn: new Date().toISOString(),
+    clockIn: now.toISOString(),
     clockOut: null,
     status: 'active',
     clockInPhoto: '',
@@ -27,15 +45,16 @@ router.post('/clock-in', async (req, res) => {
     clockInLongitude: null,
     clockOutLatitude: null,
     clockOutLongitude: null,
-    scheduledStart: null,
-    scheduledEnd: null,
+    scheduledStart,
+    scheduledEnd,
+    siteLabel,
   }
 
   await db.run(`
     INSERT INTO shifts (id, userId, clockIn, clockOut, status, clockInPhoto,
       clockInLatitude, clockInLongitude, clockOutLatitude, clockOutLongitude,
-      scheduledStart, scheduledEnd)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      scheduledStart, scheduledEnd, siteLabel)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, Object.values(shift))
 
   if (req.app.get('io')) {
