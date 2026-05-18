@@ -7,6 +7,8 @@ import { api } from '../services/api'
 import type { Scan } from '../types'
 import { Skeleton } from '../components/ui/Skeleton'
 import { formatDate } from '../utils/format'
+import { EmptyState } from '../components/ui/EmptyState'
+import { getScheduleStatus } from '../utils/patrolSchedule'
 
 interface CheckpointData {
   id: string; name: string; code: string; latitude: number; longitude: number
@@ -27,24 +29,53 @@ export default function CheckpointDetail() {
   const qrRef = useRef<HTMLCanvasElement>(null)
   const [cp, setCp] = useState<CheckpointData | null>(null)
   const [scans, setScans] = useState<Scan[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'flagged'>('all')
   const safeRadius = safeNumber(cp?.radiusMeters, 50)
   const safeLatitude = safeNumber(cp?.latitude, 0)
   const safeLongitude = safeNumber(cp?.longitude, 0)
 
-  useEffect(() => {
+  const load = async () => {
     if (!id) return
-    api.checkpoints.list().then((all: any[]) => {
-      const found = all.find((c: any) => c.id === id)
-      if (found) setCp(found)
-    }).catch(() => {})
-    api.scans.list({ checkpoint: id }).then(setScans).catch(() => {})
+    setLoading(true)
+    setError('')
+    try {
+      const [all, checkpointScans] = await Promise.all([
+        api.checkpoints.list(),
+        api.scans.list({ checkpoint: id }),
+      ])
+      const found = all.find((item: any) => item.id === id) || null
+      if (!found) {
+        throw new Error('Checkpoint details could not be found.')
+      }
+      setCp(found)
+      setScans(checkpointScans)
+    } catch (err) {
+      setCp(null)
+      setScans([])
+      setError(err instanceof Error ? err.message : 'Could not load checkpoint details.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void load()
+
+    const handleRetry = () => {
+      void load()
+    }
+
+    window.addEventListener('app:retry', handleRetry)
+    return () => window.removeEventListener('app:retry', handleRetry)
   }, [id])
 
   useEffect(() => {
     if (!mapRef.current || mapInstance.current || !cp) return
     const map = L.map(mapRef.current, { center: [safeLatitude, safeLongitude], zoom: 17, zoomControl: false })
+    mapInstance.current = map
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
       attribution: '&copy; OpenStreetMap &copy; CARTO',
       subdomains: 'abcd', maxZoom: 19,
@@ -78,7 +109,7 @@ export default function CheckpointDetail() {
     return matchSearch && matchStatus
   })
 
-  if (!cp) {
+  if (loading) {
     return (
       <div className="pb-8 space-y-4">
         <Skeleton className="h-5 w-32" />
@@ -89,6 +120,24 @@ export default function CheckpointDetail() {
         <Skeleton className="h-48 w-full rounded-xl" />
         <Skeleton className="h-64 w-full rounded-xl" />
       </div>
+    )
+  }
+
+  if (!cp) {
+    return (
+      <EmptyState
+        icon={<AlertTriangle className="h-7 w-7" />}
+        title="Checkpoint details unavailable"
+        description={error || 'There was a problem loading this checkpoint.'}
+        action={
+          <button
+            onClick={() => void load()}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+          >
+            Try again
+          </button>
+        }
+      />
     )
   }
 
@@ -183,15 +232,9 @@ export default function CheckpointDetail() {
         </div>
         <div className="divide-y divide-border">
           {filteredScans.map((scan) => {
-            const scanTime = new Date(scan.scannedAt)
-            let lateMins = 0
-            if (cp.scheduledTimeIn) {
-              const [sh, sm] = cp.scheduledTimeIn.split(':').map(Number)
-              const sched = new Date(scanTime)
-              sched.setHours(sh, sm, 0, 0)
-              lateMins = Math.round((scanTime.getTime() - sched.getTime()) / 60000)
-            }
-            const isLate = lateMins > 0
+            const arrivalStatus = getScheduleStatus(scan.scannedAt, cp.scheduledTimeIn, { mode: 'arrival' })
+            const overtimeStatus = getScheduleStatus(scan.scannedAt, cp.scheduledTimeOut, { mode: 'departure' })
+            const isLate = arrivalStatus.kind === 'late' || overtimeStatus.kind === 'late'
             return (
               <button key={scan.id} onClick={() => navigate(`/scans/${scan.id}`)}
                 className={`w-full p-4 flex items-start gap-3 hover:bg-accent/30 transition-colors text-left ${isLate ? 'bg-destructive/5' : ''}`}
@@ -210,12 +253,27 @@ export default function CheckpointDetail() {
                     <span className={scan.gpsValid ? 'text-success' : 'text-destructive'}>
                       {scan.gpsValid ? `${scan.distanceMeters}m` : 'GPS Flagged'}
                     </span>
-                    {isLate && (
-                      <span className="flex items-center gap-1 text-destructive font-semibold">
-                        <AlertTriangle className="h-3 w-3" />
-                        {lateMins}min late
+                    {arrivalStatus.kind !== 'unscheduled' && (
+                      <span className={`flex items-center gap-1 font-semibold ${
+                        arrivalStatus.kind === 'late'
+                          ? 'text-destructive'
+                          : arrivalStatus.kind === 'early'
+                            ? 'text-info'
+                            : 'text-success'
+                      }`}>
+                        {arrivalStatus.kind === 'late' && <AlertTriangle className="h-3 w-3" />}
+                        {arrivalStatus.label}
                       </span>
                     )}
+                    {overtimeStatus.kind === 'late' && (
+                      <span className="flex items-center gap-1 text-warning font-semibold">
+                        <Clock className="h-3 w-3" />
+                        Past clock-out by {overtimeStatus.absMinutes} min
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-2 text-[11px] text-muted-foreground">
+                    {arrivalStatus.kind !== 'unscheduled' ? arrivalStatus.detail : 'No schedule set for this checkpoint yet.'}
                   </div>
                 </div>
               </button>

@@ -69,6 +69,8 @@ export interface Scan {
   distanceMeters: number
   photoUrl?: string
   notes?: string
+  scheduledTimeIn?: string
+  scheduledTimeOut?: string
 }
 
 export interface Report {

@@ -37,120 +37,133 @@ function normalizeScanRow(scan) {
     gpsValid: !!(scan.gpsValid ?? scan.gpsvalid),
     distanceMeters: scan.distanceMeters ?? scan.distancemeters ?? null,
     checkpointActive: !!(scan.checkpointActive ?? scan.checkpointactive),
+    scheduledTimeIn: scan.scheduledTimeIn ?? scan.scheduledtimein ?? '',
+    scheduledTimeOut: scan.scheduledTimeOut ?? scan.scheduledtimeout ?? '',
   }
 }
 
 router.get('/', async (req, res) => {
-  const { officer, start, end, limit = 50, offset = 0 } = req.query
+  try {
+    const { officer, start, end, limit = 50, offset = 0 } = req.query
 
-  const conditions = []
-  const params = []
+    const conditions = []
+    const params = []
 
-  if (officer) {
-    conditions.push('s.userId = ?')
-    params.push(officer)
-  }
-  if (start) {
-    conditions.push('s.clockIn >= ?')
-    params.push(start)
-  }
-  if (end) {
-    conditions.push('(s.clockOut IS NULL OR s.clockOut <= ?)')
-    params.push(end)
-  }
-  if (req.user.role === 'officer') {
-    conditions.push('s.userId = ?')
-    params.push(req.user.id)
-  }
-
-  const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : ''
-
-  const shifts = await db.all(`
-    SELECT s.*, u.name as userName, u.email as userEmail, u.phone as userPhone
-    FROM shifts s
-    JOIN users u ON s.userId = u.id
-    ${where}
-    ORDER BY s.clockIn DESC LIMIT ? OFFSET ?
-  `, [...params, Number(limit), Number(offset)])
-
-  const result = await Promise.all(shifts.map(async (rawShift) => {
-    const s = normalizeShiftRow(rawShift)
-    const clockIn = s.clockIn ? new Date(s.clockIn).getTime() : Date.now()
-    const clockOut = s.clockOut ? new Date(s.clockOut).getTime() : Date.now()
-    const durationMs = clockOut - clockIn
-    const hours = Math.floor(durationMs / 3600000)
-    const minutes = Math.floor((durationMs % 3600000) / 60000)
-
-    const scansRaw = await db.all(`
-      SELECT s.*, c.name as checkpointName, c.code as checkpointCode, c.active as checkpointActive
-      FROM scans s
-      JOIN checkpoints c ON s.checkpointId = c.id
-      WHERE s.officerId = ? AND s.scannedAt >= ? AND (s.scannedAt <= ? OR ? IS NULL)
-      ORDER BY s.scannedAt ASC
-    `, [s.userId, s.clockIn, s.clockOut, s.clockOut])
-    const scans = scansRaw.map(normalizeScanRow)
-
-    return {
-      shiftId: s.id,
-      userId: s.userId,
-      userName: s.userName,
-      userEmail: s.userEmail,
-      userPhone: s.userPhone,
-      clockIn: s.clockIn,
-      clockOut: s.clockOut,
-      duration: `${hours}h ${minutes}m`,
-      durationMinutes: Math.round(durationMs / 60000),
-      clockInPhoto: s.clockInPhoto || '',
-      clockInLatitude: s.clockInLatitude,
-      clockInLongitude: s.clockInLongitude,
-      clockOutLatitude: s.clockOutLatitude,
-      clockOutLongitude: s.clockOutLongitude,
-      status: s.status,
-      scans,
-      scanCount: scans.length,
-      verifiedScans: scans.filter(sc => sc.gpsValid).length,
+    if (officer) {
+      conditions.push('s.userId = ?')
+      params.push(officer)
     }
-  }))
+    if (start) {
+      conditions.push('s.clockIn >= ?')
+      params.push(start)
+    }
+    if (end) {
+      conditions.push('(s.clockOut IS NULL OR s.clockOut <= ?)')
+      params.push(end)
+    }
+    if (req.user.role === 'officer') {
+      conditions.push('s.userId = ?')
+      params.push(req.user.id)
+    }
 
-  res.json(result)
+    const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : ''
+
+    const shifts = await db.all(`
+      SELECT s.*, u.name as userName, u.email as userEmail, u.phone as userPhone
+      FROM shifts s
+      JOIN users u ON s.userId = u.id
+      ${where}
+      ORDER BY s.clockIn DESC LIMIT ? OFFSET ?
+    `, [...params, Number(limit), Number(offset)])
+
+    const result = await Promise.all(shifts.map(async (rawShift) => {
+      const s = normalizeShiftRow(rawShift)
+      const clockIn = s.clockIn ? new Date(s.clockIn).getTime() : Date.now()
+      const clockOut = s.clockOut ? new Date(s.clockOut).getTime() : Date.now()
+      const durationMs = Math.max(0, clockOut - clockIn)
+      const hours = Math.floor(durationMs / 3600000)
+      const minutes = Math.floor((durationMs % 3600000) / 60000)
+
+      const scansRaw = await db.all(`
+        SELECT s.*, c.name as checkpointName, c.code as checkpointCode, c.active as checkpointActive,
+               c.scheduledTimeIn as scheduledTimeIn, c.scheduledTimeOut as scheduledTimeOut
+        FROM scans s
+        JOIN checkpoints c ON s.checkpointId = c.id
+        WHERE s.officerId = ? AND s.scannedAt >= ? AND (s.scannedAt <= ? OR ? IS NULL)
+        ORDER BY s.scannedAt ASC
+      `, [s.userId, s.clockIn, s.clockOut, s.clockOut])
+      const scans = scansRaw.map(normalizeScanRow)
+
+      return {
+        shiftId: s.id,
+        userId: s.userId,
+        userName: s.userName,
+        userEmail: s.userEmail,
+        userPhone: s.userPhone,
+        clockIn: s.clockIn,
+        clockOut: s.clockOut,
+        duration: `${hours}h ${minutes}m`,
+        durationMinutes: Math.round(durationMs / 60000),
+        clockInPhoto: s.clockInPhoto || '',
+        clockInLatitude: s.clockInLatitude,
+        clockInLongitude: s.clockInLongitude,
+        clockOutLatitude: s.clockOutLatitude,
+        clockOutLongitude: s.clockOutLongitude,
+        status: s.status,
+        scans,
+        scanCount: scans.length,
+        verifiedScans: scans.filter(sc => sc.gpsValid).length,
+      }
+    }))
+
+    res.json(result)
+  } catch (error) {
+    console.error('[timesheets:list]', error)
+    res.status(500).json({ message: 'Could not load timesheets right now.' })
+  }
 })
 
 router.get('/summary', async (req, res) => {
-  const today = new Date()
-  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString()
-  const weekAgo = new Date(today.getTime() - 7 * 86400000).toISOString()
+  try {
+    const today = new Date()
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString()
+    const weekAgo = new Date(today.getTime() - 7 * 86400000).toISOString()
 
-  const shiftsRaw = await db.all(`
-    SELECT s.*, u.name as userName FROM shifts s
-    JOIN users u ON s.userId = u.id
-    WHERE s.clockIn >= ?
-    ORDER BY s.clockIn ASC
-  `, [weekAgo])
-  const shifts = shiftsRaw.map(normalizeShiftRow)
+    const shiftsRaw = await db.all(`
+      SELECT s.*, u.name as userName FROM shifts s
+      JOIN users u ON s.userId = u.id
+      WHERE s.clockIn >= ?
+      ORDER BY s.clockIn ASC
+    `, [weekAgo])
+    const shifts = shiftsRaw.map(normalizeShiftRow)
 
-  const totalHours = shifts.reduce((acc, s) => {
-    if (!s.clockOut) return acc
-    return acc + (new Date(s.clockOut).getTime() - new Date(s.clockIn).getTime())
-  }, 0)
+    const totalHours = shifts.reduce((acc, s) => {
+      if (!s.clockOut) return acc
+      return acc + Math.max(0, new Date(s.clockOut).getTime() - new Date(s.clockIn).getTime())
+    }, 0)
 
-  const todayShifts = shifts.filter(s => s.clockIn >= todayStart)
+    const todayShifts = shifts.filter(s => s.clockIn >= todayStart)
 
-  const byUser = {}
-  for (const s of shifts) {
-    if (!byUser[s.userId]) byUser[s.userId] = { name: s.userName, shifts: 0, hours: 0 }
-    byUser[s.userId].shifts++
-    if (s.clockOut) {
-      byUser[s.userId].hours += (new Date(s.clockOut).getTime() - new Date(s.clockIn).getTime()) / 3600000
+    const byUser = {}
+    for (const s of shifts) {
+      if (!byUser[s.userId]) byUser[s.userId] = { name: s.userName, shifts: 0, hours: 0 }
+      byUser[s.userId].shifts++
+      if (s.clockOut) {
+        byUser[s.userId].hours += Math.max(0, new Date(s.clockOut).getTime() - new Date(s.clockIn).getTime()) / 3600000
+      }
     }
-  }
 
-  res.json({
-    totalShifts: shifts.length,
-    todayShifts: todayShifts.length,
-    activeShifts: shifts.filter(s => s.status === 'active').length,
-    totalHours: Math.round(totalHours / 3600000 * 10) / 10,
-    byUser: Object.entries(byUser).map(([id, data]) => ({ userId: id, ...data, hours: Math.round(data.hours * 10) / 10 })),
-  })
+    res.json({
+      totalShifts: shifts.length,
+      todayShifts: todayShifts.length,
+      activeShifts: shifts.filter(s => s.status === 'active').length,
+      totalHours: Math.round(totalHours / 3600000 * 10) / 10,
+      byUser: Object.entries(byUser).map(([id, data]) => ({ userId: id, ...data, hours: Math.round(data.hours * 10) / 10 })),
+    })
+  } catch (error) {
+    console.error('[timesheets:summary]', error)
+    res.status(500).json({ message: 'Could not load timesheet summary right now.' })
+  }
 })
 
 export default router

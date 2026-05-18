@@ -3,6 +3,7 @@ import { User, MapPin, Camera, CheckCircle, XCircle, Clock } from 'lucide-react'
 import { api } from '../services/api'
 import { Skeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
+import { getScheduleStatus } from '../utils/patrolSchedule'
 
 const API_BASE = ''
 
@@ -13,28 +14,87 @@ export default function Timesheets() {
   const [officerFilter, setOfficerFilter] = useState('')
   const [error, setError] = useState('')
 
-  const load = () => {
+  const fallbackTimesheetsFromShifts = async () => {
+    const shifts = await api.shifts.list()
+    return (Array.isArray(shifts) ? shifts : []).map((shift: any) => ({
+      shiftId: shift.id,
+      userId: shift.userId ?? shift.userid ?? '',
+      userName: shift.userName ?? shift.username ?? 'Unknown officer',
+      userEmail: shift.userEmail ?? shift.useremail ?? '',
+      userPhone: shift.userPhone ?? shift.userphone ?? '',
+      clockIn: shift.clockIn ?? shift.clockin ?? null,
+      clockOut: shift.clockOut ?? shift.clockout ?? null,
+      duration: shift.clockIn ? `${Math.max(0, Math.round(((new Date(shift.clockOut ?? new Date().toISOString()).getTime() - new Date(shift.clockIn).getTime()) / 60000)))}m` : '—',
+      durationMinutes: 0,
+      clockInPhoto: shift.clockInPhoto ?? shift.clockinphoto ?? '',
+      clockInLatitude: shift.clockInLatitude ?? shift.clockinlatitude ?? null,
+      clockInLongitude: shift.clockInLongitude ?? shift.clockinlongitude ?? null,
+      clockOutLatitude: shift.clockOutLatitude ?? shift.clockoutlatitude ?? null,
+      clockOutLongitude: shift.clockOutLongitude ?? shift.clockoutlongitude ?? null,
+      status: shift.status ?? 'completed',
+      scans: [],
+      scanCount: 0,
+      verifiedScans: 0,
+    }))
+  }
+
+  const load = async () => {
     setLoading(true)
     setError('')
-    Promise.all([
-      api.timesheets.list(),
-      api.timesheets.summary(),
-    ]).then(([ts, sm]) => {
-      setTimesheets(ts as any[])
-      setSummary(sm)
-    }).catch((err) => {
+    let nextError = ''
+
+    try {
+      const [timesheetResult, summaryResult] = await Promise.allSettled([
+        api.timesheets.list(),
+        api.timesheets.summary(),
+      ])
+
+      if (timesheetResult.status === 'fulfilled') {
+        setTimesheets(timesheetResult.value as any[])
+      } else {
+        try {
+          const fallback = await fallbackTimesheetsFromShifts()
+          setTimesheets(fallback)
+          nextError = 'Detailed timesheet scans could not load, so this page is showing basic shift records.'
+        } catch (fallbackError) {
+          setTimesheets([])
+          nextError = fallbackError instanceof Error
+            ? fallbackError.message
+            : 'Could not load timesheets. Please try again.'
+        }
+      }
+
+      if (summaryResult.status === 'fulfilled') {
+        setSummary(summaryResult.value)
+      } else {
+        setSummary(null)
+        if (!nextError) {
+          nextError = summaryResult.reason instanceof Error
+            ? summaryResult.reason.message
+            : 'Could not load timesheet summary right now.'
+        }
+      }
+    } catch (err) {
       setTimesheets([])
       setSummary(null)
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Could not load timesheets. Please try again.',
-      )
-    }).finally(() => setLoading(false))
+      nextError = err instanceof Error
+        ? err.message
+        : 'Could not load timesheets. Please try again.'
+    } finally {
+      setError(nextError)
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
     load()
+
+    const handleRetry = () => {
+      void load()
+    }
+
+    window.addEventListener('app:retry', handleRetry)
+    return () => window.removeEventListener('app:retry', handleRetry)
   }, [])
 
   const filtered = officerFilter
@@ -75,6 +135,12 @@ export default function Timesheets() {
             <div className="text-xs text-muted-foreground">Total Hours</div>
             <div className="mt-1 text-2xl font-semibold">{summary.totalHours}h</div>
           </div>
+        </div>
+      )}
+
+      {error && filtered.length > 0 && (
+        <div className="rounded-xl border border-warning/20 bg-warning/10 px-4 py-3 text-sm text-warning">
+          {error}
         </div>
       )}
 
@@ -201,6 +267,21 @@ export default function Timesheets() {
                           {scan.checkpointActive === false && <span className="ml-1 text-[10px] text-muted-foreground/50">(Deactivated)</span>}
                         </span>
                         <span className="text-muted-foreground">({scan.checkpointCode})</span>
+                        {(() => {
+                          const status = getScheduleStatus(scan.scannedAt, scan.scheduledTimeIn, { mode: 'arrival' })
+                          if (status.kind === 'unscheduled') return null
+                          return (
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                              status.kind === 'late'
+                                ? 'bg-destructive/10 text-destructive'
+                                : status.kind === 'early'
+                                  ? 'bg-info/10 text-info'
+                                  : 'bg-success/10 text-success'
+                            }`}>
+                              {status.label}
+                            </span>
+                          )
+                        })()}
                         <span className="text-muted-foreground ml-auto">{scan.distanceMeters ? `${scan.distanceMeters}m` : '-'}</span>
                       </div>
                     ))}

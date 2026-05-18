@@ -75,7 +75,10 @@ export default function DashboardLayout() {
                 </div>
               </div>
               <button
-                onClick={() => window.location.reload()}
+                onClick={() => {
+                  setIssue(null)
+                  window.dispatchEvent(new CustomEvent('app:retry'))
+                }}
                 className="inline-flex items-center justify-center rounded-lg border border-current/20 px-3 py-2 text-xs font-semibold hover:bg-black/5"
               >
                 Try again

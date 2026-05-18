@@ -15,6 +15,7 @@ interface LiveOfficer {
   lat: number | null
   lng: number | null
   lastSeenAt?: string | null
+  checkpointName?: string | null
 }
 
 interface LiveIncident {
@@ -93,6 +94,12 @@ export function PatrolMap() {
         latestByOfficer.set(scan.officerId, scan)
       })
 
+      const activeOfficerIds = new Set(
+        users
+          .filter((user) => user.role === 'officer' && user.onDuty)
+          .map((user) => user.id),
+      )
+
       const liveOfficers: LiveOfficer[] = users
         .filter((user) => user.role === 'officer' && user.onDuty)
         .map((user) => {
@@ -104,6 +111,7 @@ export function PatrolMap() {
             lat: lastScan?.gpsLatitude ?? null,
             lng: lastScan?.gpsLongitude ?? null,
             lastSeenAt: lastScan?.scannedAt ?? user.lastClockIn ?? null,
+            checkpointName: lastScan?.checkpointName ?? null,
           }
         })
 
@@ -124,14 +132,17 @@ export function PatrolMap() {
         })
         marker.addListener('click', () => {
           new maps.InfoWindow({
-            content: `<div style="min-width:180px"><strong>${officer.name}</strong><br/>On duty<br/>Last seen: ${officer.lastSeenAt ? new Date(officer.lastSeenAt).toLocaleString() : 'Unknown'}</div>`,
+            content: `<div style="min-width:180px"><strong>${officer.name}</strong><br/>On duty${officer.checkpointName ? `<br/>Last checkpoint: ${officer.checkpointName}` : ''}<br/>Last seen: ${officer.lastSeenAt ? new Date(officer.lastSeenAt).toLocaleString() : 'Unknown'}</div>`,
           }).open({ map, anchor: marker })
         })
         officerMarkersRef.current.push(marker)
         bounds.extend(marker.getPosition())
       })
 
-      scans.slice(0, 30).forEach((scan) => {
+      scans
+        .filter((scan) => activeOfficerIds.has(scan.officerId))
+        .slice(0, 30)
+        .forEach((scan) => {
         if (scan.gpsLatitude == null || scan.gpsLongitude == null) return
         const marker = new maps.Marker({
           map,
