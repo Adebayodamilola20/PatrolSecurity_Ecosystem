@@ -95,8 +95,13 @@ router.get('/recent', async (req, res) => {
     FROM scans s
     JOIN users u ON s.officerId = u.id
     JOIN checkpoints c ON s.checkpointId = c.id
-    ORDER BY s.receivedAt DESC LIMIT 20
-  `)
+  `
+  if (conditions.length > 0) {
+    query += ' WHERE ' + conditions.join(' AND ')
+  }
+  query += ' ORDER BY s.receivedAt DESC LIMIT 20'
+
+  const scans = await db.all(query, params)
   res.json(scans.map(normalizeScan))
 })
 
