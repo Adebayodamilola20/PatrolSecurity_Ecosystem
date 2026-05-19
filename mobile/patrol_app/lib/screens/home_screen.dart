@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/duty_provider.dart';
 import '../providers/scan_provider.dart';
 import '../providers/shift_provider.dart';
 import '../utils/routes.dart';
@@ -34,7 +35,24 @@ class _HomeScreenState extends State<HomeScreen> {
       context.read<ScanProvider>().loadScans();
       context.read<ScanProvider>().loadCheckpoints();
       context.read<ShiftProvider>().loadStatus();
+      context.read<DutyProvider>().load();
     });
+  }
+
+  void _openScannerOrExplain(BuildContext context) {
+    final duty = context.read<DutyProvider>();
+    if (duty.hasPendingAcknowledgements) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Acknowledge ${duty.pendingAcknowledgementOrders.length} active pass-on log item(s) in Duties before scanning.',
+          ),
+          backgroundColor: AppTheme.flagged,
+        ),
+      );
+      return;
+    }
+    Navigator.pushNamed(context, AppRoutes.scanner);
   }
 
   @override
@@ -52,7 +70,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.pushNamed(context, AppRoutes.scanner),
+        onPressed: () => _openScannerOrExplain(context),
         backgroundColor: AppTheme.primary,
         child: const Icon(Icons.qr_code_scanner, color: Colors.white),
       ),
@@ -72,6 +90,7 @@ class _DashboardTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    final duty = context.watch<DutyProvider>();
     final scan = context.watch<ScanProvider>();
     final shift = context.watch<ShiftProvider>();
 
@@ -90,6 +109,7 @@ class _DashboardTab extends StatelessWidget {
           await scan.loadScans();
           await scan.loadCheckpoints();
           await shift.loadStatus();
+          await duty.load();
         },
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -173,21 +193,69 @@ class _DashboardTab extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: _StatCard(
-                    label: 'Total Scans',
-                    value: '${scan.totalScans}',
-                    icon: Icons.assignment_turned_in,
-                    color: const Color(0xFF3B82F6),
+                    label: 'Pass-On Logs',
+                    value: '${duty.pendingAcknowledgementOrders.length}',
+                    icon: Icons.assignment_late_outlined,
+                    color: duty.hasPendingAcknowledgements
+                        ? AppTheme.flagged
+                        : const Color(0xFF3B82F6),
                   ),
                 ),
               ],
             ),
+            if (duty.hasPendingAcknowledgements) ...[
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppTheme.flagged.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: AppTheme.flagged.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.warning_amber_rounded,
+                      color: AppTheme.flagged,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Action required before scanning',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.text,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${duty.pendingAcknowledgementOrders.length} instruction(s) still need acknowledgement in Duties.',
+                            style: const TextStyle(
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               height: 56,
               child: ElevatedButton.icon(
-                onPressed: () =>
-                    Navigator.pushNamed(context, AppRoutes.scanner),
+                onPressed: () => context
+                    .findAncestorStateOfType<_HomeScreenState>()
+                    ?._openScannerOrExplain(context),
                 icon: const Icon(Icons.qr_code_scanner, size: 24),
                 label: const Text('Scan QR Code'),
                 style: ElevatedButton.styleFrom(
@@ -264,17 +332,48 @@ class _DashboardTab extends StatelessWidget {
             Row(
               children: [
                 _QuickAction(
+                  icon: Icons.description_outlined,
+                  label: 'Reports',
+                  onTap: () =>
+                      Navigator.pushNamed(context, AppRoutes.reports),
+                ),
+                const SizedBox(width: 12),
+                _QuickAction(
+                  icon: Icons.assignment_turned_in_outlined,
+                  label: 'Duties',
+                  onTap: () =>
+                      Navigator.pushNamed(context, AppRoutes.duties),
+                ),
+                const SizedBox(width: 12),
+                _QuickAction(
                   icon: Icons.history,
                   label: 'History',
                   onTap: () =>
                       Navigator.pushNamed(context, AppRoutes.history),
                 ),
-                const SizedBox(width: 12),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
                 _QuickAction(
                   icon: Icons.location_on_outlined,
                   label: 'Checkpoints',
                   onTap: () =>
                       Navigator.pushNamed(context, AppRoutes.checkpoints),
+                ),
+                const SizedBox(width: 12),
+                _QuickAction(
+                  icon: Icons.sos_outlined,
+                  label: 'Emergency',
+                  onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Emergency workflow needs control-room contact rules from management before activation.',
+                      ),
+                      backgroundColor: AppTheme.error,
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 12),
                 _QuickAction(

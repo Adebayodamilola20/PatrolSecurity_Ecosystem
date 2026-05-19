@@ -4,3 +4,4 @@ const String baseUrl = String.fromEnvironment(
 );
 const String defaultPassword = '123456';
 const double gpsRadiusMeters = 50;
+const double strictScanRadiusMeters = 10;

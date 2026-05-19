@@ -14,9 +14,14 @@ class DutyProvider extends ChangeNotifier {
 
   List<PostOrder> get orders => _orders;
   List<Handover> get pendingHandovers => _pendingHandovers;
+  List<PostOrder> get pendingAcknowledgementOrders => _orders.where((order) {
+        final acknowledged = order.latestCompletion?.acknowledgedAt?.isNotEmpty == true;
+        return order.requiresAcknowledgement && !acknowledged;
+      }).toList();
   bool get loading => _loading;
   bool get submitting => _submitting;
   String? get error => _error;
+  bool get hasPendingAcknowledgements => pendingAcknowledgementOrders.isNotEmpty;
 
   Future<void> load() async {
     _loading = true;

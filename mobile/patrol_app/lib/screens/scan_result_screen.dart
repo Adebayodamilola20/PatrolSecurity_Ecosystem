@@ -6,6 +6,7 @@ import '../models/checkpoint.dart';
 import '../providers/scan_provider.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
+import '../utils/constants.dart';
 import '../utils/routes.dart';
 import '../utils/theme.dart';
 import 'package:intl/intl.dart';
@@ -98,7 +99,11 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
         checkpoint.latitude,
         checkpoint.longitude,
       );
-      _gpsValid = _distance <= checkpoint.radiusMeters;
+      final effectiveRadius = math.min(
+        checkpoint.radiusMeters,
+        strictScanRadiusMeters,
+      );
+      _gpsValid = _distance <= effectiveRadius;
     }
 
     setState(() => _loading = false);
@@ -473,7 +478,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                                   ? 'Location Required'
                                   : _gpsValid
                                       ? 'Within Range'
-                                      : 'Out of Range',
+                                      : 'Outside 10m Limit',
                               style: TextStyle(
                                 color: widget.scanData?['gpsLatitude'] == null
                                     ? Colors.orange
@@ -487,6 +492,19 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                         ),
                       ],
                     ),
+                    if (widget.scanData?['gpsLatitude'] != null && !_gpsValid) ...[
+                      const Divider(height: 16),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Policy: scans must happen within 10 metres of the assigned facility checkpoint.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

@@ -11,6 +11,7 @@ import 'screens/history_screen.dart';
 import 'screens/scan_detail_screen.dart';
 import 'screens/checkpoints_screen.dart';
 import 'screens/checkpoint_detail_screen.dart';
+import 'screens/reports_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/settings_screen.dart';
 import 'package:provider/provider.dart';
@@ -73,6 +74,8 @@ class PatrolApp extends StatelessWidget {
             return _route(CheckpointDetailScreen(
               checkpointId: args?['checkpointId'] as String?,
             ));
+          case AppRoutes.reports:
+            return _route(const ReportsScreen());
           case AppRoutes.profile:
             return _route(const ProfileScreen());
           case AppRoutes.settings:

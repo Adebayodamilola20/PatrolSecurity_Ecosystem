@@ -163,6 +163,103 @@ class ApiService {
     return jsonDecode(res.body);
   }
 
+  static Future<Map<String, dynamic>> submitDailyActivityReport({
+    required String summary,
+    String activities = '',
+    String openIssues = '',
+    String siteLabel = '',
+    String? checkpointId,
+    String shiftWindow = '',
+  }) async {
+    await _ensureOnline();
+    final res = await _client.post(
+      Uri.parse('$baseUrl/reports/daily-activity'),
+      headers: await _headers(),
+      body: jsonEncode({
+        'summary': summary,
+        'activities': activities,
+        'openIssues': openIssues,
+        'siteLabel': siteLabel,
+        'checkpointId': checkpointId,
+        'shiftWindow': shiftWindow,
+      }),
+    ).timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to submit daily activity report');
+    }
+    return jsonDecode(res.body);
+  }
+
+  static Future<Map<String, dynamic>> submitMaintenanceReport({
+    required String title,
+    required String issue,
+    String assetName = '',
+    String severity = 'medium',
+    String? checkpointId,
+  }) async {
+    await _ensureOnline();
+    final res = await _client.post(
+      Uri.parse('$baseUrl/reports/maintenance'),
+      headers: await _headers(),
+      body: jsonEncode({
+        'title': title,
+        'issue': issue,
+        'assetName': assetName,
+        'severity': severity,
+        'checkpointId': checkpointId,
+      }),
+    ).timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to submit maintenance report');
+    }
+    return jsonDecode(res.body);
+  }
+
+  static Future<Map<String, dynamic>> submitPassOnLog({
+    required String title,
+    required String instruction,
+    String priority = 'normal',
+    String siteLabel = '',
+    String? checkpointId,
+    bool requiresAcknowledgement = true,
+  }) async {
+    await _ensureOnline();
+    final res = await _client.post(
+      Uri.parse('$baseUrl/pass-on-logs'),
+      headers: await _headers(),
+      body: jsonEncode({
+        'title': title,
+        'instruction': instruction,
+        'priority': priority,
+        'siteLabel': siteLabel,
+        'checkpointId': checkpointId,
+        'requiresAcknowledgement': requiresAcknowledgement,
+      }),
+    ).timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to create pass-on log');
+    }
+    return jsonDecode(res.body);
+  }
+
+  static Future<Map<String, dynamic>> requestDailyTourExport({
+    required String date,
+  }) async {
+    await _ensureOnline();
+    final res = await _client.post(
+      Uri.parse('$baseUrl/scans/export/daily'),
+      headers: await _headers(),
+      body: jsonEncode({
+        'date': date,
+        'format': 'xlsx',
+      }),
+    ).timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to request daily tour export');
+    }
+    return jsonDecode(res.body);
+  }
+
   static Future<List<dynamic>> getPostOrders() async {
     await _ensureOnline();
     final res = await _client.get(

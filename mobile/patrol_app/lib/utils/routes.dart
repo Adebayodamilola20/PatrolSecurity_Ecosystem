@@ -9,6 +9,7 @@ class AppRoutes {
   static const String scanDetail = '/scan-detail';
   static const String checkpoints = '/checkpoints';
   static const String checkpointDetail = '/checkpoint-detail';
+  static const String reports = '/reports';
   static const String profile = '/profile';
   static const String settings = '/settings';
 }
