@@ -178,10 +178,16 @@ router.post('/', adminOnly, async (req, res) => {
 
   if (siteIds && Array.isArray(siteIds) && siteIds.length > 0) {
     for (const siteId of siteIds) {
-      await db.run(
-        'INSERT OR IGNORE INTO user_site_assignments (id, userId, siteId) VALUES (?, ?, ?)',
-        [uuidv4(), user.id, siteId]
+      const existingAssignment = await db.get(
+        'SELECT id FROM user_site_assignments WHERE userId = ? AND siteId = ?',
+        [user.id, siteId]
       )
+      if (!existingAssignment) {
+        await db.run(
+          'INSERT INTO user_site_assignments (id, userId, siteId) VALUES (?, ?, ?)',
+          [uuidv4(), user.id, siteId]
+        )
+      }
     }
   }
 

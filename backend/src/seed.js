@@ -98,10 +98,16 @@ if (!existingGuard) {
   console.log('Guard assigned to Lagos HQ')
 } else {
   console.log('Guard user already exists')
-  await db.run(
-    'INSERT OR IGNORE INTO user_site_assignments (id, userId, siteId) VALUES (?, ?, ?)',
-    [uuidv4(), existingGuard.id, site1Id]
+  const existingAssignment = await db.get(
+    'SELECT id FROM user_site_assignments WHERE userId = ? AND siteId = ?',
+    [existingGuard.id, site1Id]
   )
+  if (!existingAssignment) {
+    await db.run(
+      'INSERT INTO user_site_assignments (id, userId, siteId) VALUES (?, ?, ?)',
+      [uuidv4(), existingGuard.id, site1Id]
+    )
+  }
 }
 
 const checkpoint = {
