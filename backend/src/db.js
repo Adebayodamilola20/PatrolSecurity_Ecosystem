@@ -36,7 +36,10 @@ function createSqliteDb() {
 }
 
 function createPgDb(connectionString) {
-  const pool = new pg.Pool({ connectionString })
+  const pool = new pg.Pool({
+    connectionString,
+    ssl: connectionString.includes('localhost') || connectionString.includes('127.0.0.1') ? false : { rejectUnauthorized: false }
+  })
   pool.on('error', (err) => console.error('[PG] Pool error:', err.message))
   return {
     type: 'postgres',
@@ -853,6 +856,16 @@ async function initDb() {
     );`); } catch {}
   } else {
     await db.exec(pgSchema)
+    try {
+      await db.exec(`
+        UPDATE users SET role = 'guard' WHERE role = 'officer';
+        UPDATE users SET role = 'main_account' WHERE role IN ('client_main_account', 'client-main-account', 'main-account');
+        ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+        ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'main_account', 'supervisor', 'guard'));
+      `)
+    } catch (e) {
+      console.log('[PG Migration] Non-critical error adjusting users check constraint:', e.message)
+    }
     try { await db.exec("ALTER TABLE shifts ADD COLUMN IF NOT EXISTS clockInPhoto TEXT DEFAULT ''"); } catch {}
     try { await db.exec("ALTER TABLE shifts ADD COLUMN IF NOT EXISTS clockInLatitude DOUBLE PRECISION"); } catch {}
     try { await db.exec("ALTER TABLE shifts ADD COLUMN IF NOT EXISTS clockInLongitude DOUBLE PRECISION"); } catch {}
@@ -978,6 +991,11 @@ async function initDb() {
   }
 }
 
-await initDb()
+try {
+  await initDb()
+} catch (err) {
+  console.error('[DATABASE_INIT_ERROR] Failed to initialize database:', err)
+  throw err
+}
 
 export default db
