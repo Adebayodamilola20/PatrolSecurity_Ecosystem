@@ -323,6 +323,23 @@ const pgSchema = `
     sentAt TIMESTAMPTZ,
     createdAt TIMESTAMPTZ DEFAULT NOW()
   );
+  CREATE TABLE IF NOT EXISTS clients (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT DEFAULT '',
+    phone TEXT DEFAULT '',
+    active INTEGER DEFAULT 1,
+    createdAt TIMESTAMPTZ DEFAULT NOW()
+  );
+  CREATE TABLE IF NOT EXISTS sites (
+    id TEXT PRIMARY KEY,
+    clientId TEXT NOT NULL,
+    name TEXT NOT NULL,
+    location TEXT DEFAULT '',
+    active INTEGER DEFAULT 1,
+    createdAt TIMESTAMPTZ DEFAULT NOW(),
+    FOREIGN KEY (clientId) REFERENCES clients(id)
+  );
   CREATE TABLE IF NOT EXISTS exportFiles (
     id TEXT PRIMARY KEY,
     type TEXT NOT NULL,
@@ -419,6 +436,15 @@ const pgSchema = `
     FOREIGN KEY (checkpointId) REFERENCES checkpoints(id),
     FOREIGN KEY (fromUserId) REFERENCES users(id),
     FOREIGN KEY (toUserId) REFERENCES users(id)
+  );
+  CREATE TABLE IF NOT EXISTS user_site_assignments (
+    id TEXT PRIMARY KEY,
+    userId TEXT NOT NULL,
+    siteId TEXT NOT NULL,
+    createdAt TIMESTAMPTZ DEFAULT NOW(),
+    FOREIGN KEY (userId) REFERENCES users(id),
+    FOREIGN KEY (siteId) REFERENCES sites(id),
+    UNIQUE(userId, siteId)
   );
 `
 
