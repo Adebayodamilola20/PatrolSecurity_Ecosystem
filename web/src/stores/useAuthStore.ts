@@ -1,13 +1,20 @@
 import { create } from 'zustand'
 import { api } from '../services/api'
 import { connectSocket, disconnectSocket } from '../services/websocket'
+import type { Site } from '../types'
 
-interface AuthUser {
+export type UserRole = 'admin' | 'main_account' | 'supervisor' | 'guard'
+
+export interface AuthUser {
   id: string
   name: string
   email: string
-  role: 'admin' | 'supervisor' | 'officer'
+  role: UserRole
   phone: string
+  clientId?: string | null
+  clientName?: string | null
+  siteIds?: string[]
+  sites?: Site[]
 }
 
 interface AuthStore {
@@ -15,6 +22,7 @@ interface AuthStore {
   token: string | null
   isAuthenticated: boolean
   loading: boolean
+  hydrate: () => Promise<void>
   login: (email: string, password: string) => Promise<void>
   logout: () => void
   updateProfile: (data: Partial<AuthUser>) => void
@@ -39,13 +47,36 @@ if (saved.token) {
 export const useAuthStore = create<AuthStore>((set) => ({
   user: saved.user,
   token: saved.token,
-  isAuthenticated: !!saved.token && !!saved.user,
-  loading: false,
+  isAuthenticated: false,
+  loading: !!saved.token,
+
+  hydrate: async () => {
+    const token = localStorage.getItem('patrol_token')
+    const rawUser = localStorage.getItem('patrol_user')
+    if (!token || !rawUser) {
+      disconnectSocket()
+      set({ user: null, token: null, isAuthenticated: false, loading: false })
+      return
+    }
+
+    set({ loading: true })
+    try {
+      const res = await api.auth.me()
+      localStorage.setItem('patrol_user', JSON.stringify(res.user))
+      connectSocket(token)
+      set({ user: res.user, token, isAuthenticated: true, loading: false })
+    } catch {
+      disconnectSocket()
+      localStorage.removeItem('patrol_token')
+      localStorage.removeItem('patrol_user')
+      set({ user: null, token: null, isAuthenticated: false, loading: false })
+    }
+  },
 
   login: async (email: string, password: string) => {
     const res = await api.auth.login(email, password)
     const { token, user } = res
-    set({ user, token, isAuthenticated: true })
+    set({ user, token, isAuthenticated: true, loading: false })
     localStorage.setItem('patrol_token', token)
     localStorage.setItem('patrol_user', JSON.stringify(user))
     connectSocket(token)
@@ -53,7 +84,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
 
   logout: () => {
     disconnectSocket()
-    set({ user: null, token: null, isAuthenticated: false })
+    set({ user: null, token: null, isAuthenticated: false, loading: false })
     localStorage.removeItem('patrol_token')
     localStorage.removeItem('patrol_user')
   },
@@ -67,3 +98,34 @@ export const useAuthStore = create<AuthStore>((set) => ({
     })
   },
 }))
+
+export function useIsAdmin() {
+  return useAuthStore((s) => s.user?.role === 'admin')
+}
+
+export function useIsMainAccount() {
+  return useAuthStore((s) => s.user?.role === 'main_account')
+}
+
+export function useIsSupervisor() {
+  return useAuthStore((s) => s.user?.role === 'supervisor')
+}
+
+export function useIsGuard() {
+  return useAuthStore((s) => s.user?.role === 'guard')
+}
+
+export function useCanManageUsers() {
+  const role = useAuthStore((s) => s.user?.role)
+  return role === 'admin'
+}
+
+export function useCanManageCheckpoints() {
+  const role = useAuthStore((s) => s.user?.role)
+  return role === 'admin' || role === 'main_account'
+}
+
+export function useCanViewAlerts() {
+  const role = useAuthStore((s) => s.user?.role)
+  return role !== 'guard'
+}

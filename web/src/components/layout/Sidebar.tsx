@@ -14,21 +14,45 @@ import {
   Clock,
   ClipboardCheck,
 } from 'lucide-react'
-import { useAuthStore } from '../../stores/useAuthStore'
+import { useAuthStore, useCanManageUsers, useCanViewAlerts } from '../../stores/useAuthStore'
 
-const nav = [
-  { to: '/', label: 'Overview', icon: LayoutDashboard },
-  { to: '/monitoring', label: 'Live Monitoring', icon: MapPin },
-  { to: '/users', label: 'Officers', icon: Users },
-  { to: '/checkpoints', label: 'Checkpoints', icon: QrCode },
-  { to: '/scans', label: 'Patrol History', icon: ClipboardList },
-  { to: '/timesheets', label: 'Timesheets', icon: Clock },
-  { to: '/post-orders', label: 'Post Orders', icon: ClipboardList },
-  { to: '/handovers', label: 'Handovers', icon: ClipboardCheck },
-  { to: '/reports', label: 'Reports', icon: FileText },
-  { to: '/alerts', label: 'Alerts', icon: Bell },
-  { to: '/settings', label: 'Settings', icon: Settings },
-]
+function useNav() {
+  const role = useAuthStore((s) => s.user?.role)
+  const canManageUsers = useCanManageUsers()
+  const canViewAlerts = useCanViewAlerts()
+
+  const items = [
+    { to: '/', label: 'Overview', icon: LayoutDashboard },
+  ]
+
+  if (role !== 'guard') {
+    items.push({ to: '/monitoring', label: 'Live Monitoring', icon: MapPin })
+  }
+
+  if (canManageUsers) {
+    items.push({ to: '/users', label: 'Personnel', icon: Users })
+  }
+
+  items.push({ to: '/checkpoints', label: 'Checkpoints', icon: QrCode })
+  items.push({ to: '/scans', label: 'Patrol History', icon: ClipboardList })
+  items.push({ to: '/timesheets', label: 'Timesheets', icon: Clock })
+  items.push({ to: '/post-orders', label: 'Post Orders', icon: ClipboardList })
+  items.push({ to: '/handovers', label: 'Handovers', icon: ClipboardCheck })
+
+  if (role === 'admin' || role === 'main_account') {
+    items.push({ to: '/reports', label: 'Reports', icon: FileText })
+  }
+
+  if (canViewAlerts) {
+    items.push({ to: '/alerts', label: 'Alerts', icon: Bell })
+  }
+
+  if (role === 'admin') {
+    items.push({ to: '/settings', label: 'Settings', icon: Settings })
+  }
+
+  return items
+}
 
 interface SidebarProps {
   collapsed: boolean
@@ -40,6 +64,14 @@ interface SidebarProps {
 export default function Sidebar({ collapsed, onToggle, mobile, onClose }: SidebarProps) {
   const location = useLocation()
   const { user, logout } = useAuthStore()
+  const nav = useNav()
+
+  const roleLabels: Record<string, string> = {
+    admin: 'Admin',
+    main_account: 'Client Admin',
+    supervisor: 'Supervisor',
+    guard: 'Guard',
+  }
 
   return (
     <aside
@@ -68,7 +100,10 @@ export default function Sidebar({ collapsed, onToggle, mobile, onClose }: Sideba
           <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary to-info shrink-0" />
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium truncate">{user?.name || 'User'}</div>
-            <div className="text-[11px] text-muted-foreground capitalize">{user?.role || 'User'} · Control</div>
+            <div className="text-[11px] text-muted-foreground capitalize">{roleLabels[user?.role || ''] || user?.role} · Control</div>
+            {user?.clientName && (
+              <div className="text-[10px] text-muted-foreground/60 truncate">{user.clientName}</div>
+            )}
           </div>
         </div>
       )}
@@ -88,7 +123,7 @@ export default function Sidebar({ collapsed, onToggle, mobile, onClose }: Sideba
               }`}
             >
               <Icon className="h-4 w-4 shrink-0" />
-              <span>{item.label}</span>
+              {(!collapsed || mobile) && <span>{item.label}</span>}
               {(!collapsed || mobile) && item.label === "Alerts" && (
                 <span className="ml-auto rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-semibold text-destructive-foreground">
                   3

@@ -3,6 +3,7 @@ import { Phone, Mail, MoreHorizontal, Plus, X, UsersIcon, Clock3 } from 'lucide-
 import { useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
 import { subscribeToShiftUpdates } from '../services/websocket'
+import { useCanManageUsers, useIsMainAccount, useAuthStore } from '../stores/useAuthStore'
 import type { User } from '../types'
 import { CardSkeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
@@ -10,16 +11,19 @@ import { formatDate } from '../utils/format'
 
 export default function Users() {
   const navigate = useNavigate()
+  const currentUser = useAuthStore((s) => s.user)
   const [officers, setOfficers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'officer', phone: '' })
+  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'guard', phone: '', clientId: '', siteIds: [] as string[] })
   const [saving, setSaving] = useState(false)
+  const canManage = useCanManageUsers()
+  const isMainAccount = useIsMainAccount()
 
   const load = () => {
     setLoading(true)
     api.users.list().then((users) => {
-      setOfficers(users.filter((u: User) => u.role === 'officer' || u.role === 'supervisor'))
+      setOfficers(users.filter((u: User) => u.role === 'guard' || u.role === 'supervisor' || u.role === 'main_account'))
     }).catch(() => {}).finally(() => setLoading(false))
   }
 
@@ -35,9 +39,13 @@ export default function Users() {
     e.preventDefault()
     setSaving(true)
     try {
-      await api.users.create(form)
+      const payload: any = { ...form }
+      if (currentUser?.clientId) {
+        payload.clientId = currentUser.clientId
+      }
+      await api.users.create(payload)
       setShowForm(false)
-      setForm({ name: '', email: '', password: '', role: 'officer', phone: '' })
+      setForm({ name: '', email: '', password: '', role: 'guard', phone: '', clientId: '', siteIds: [] })
       load()
     } catch (err: any) {
       alert(err.message)
@@ -51,21 +59,23 @@ export default function Users() {
       <div className="flex items-center justify-between">
         <div>
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Team</div>
-          <h1 className="text-2xl font-semibold">Officers</h1>
+          <h1 className="text-2xl font-semibold">Personnel</h1>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-        >
-          <Plus className="h-4 w-4" /> Add Officer
-        </button>
+        {(canManage || isMainAccount) && (
+          <button
+            onClick={() => setShowForm(true)}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+          >
+            <Plus className="h-4 w-4" /> Add Personnel
+          </button>
+        )}
       </div>
 
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
           <div className="rounded-xl border border-border bg-card p-6 w-full max-w-md mx-4 shadow-xl">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Add Officer</h2>
+              <h2 className="text-lg font-semibold">Add Personnel</h2>
               <button onClick={() => setShowForm(false)} className="text-muted-foreground hover:text-foreground">
                 <X className="h-5 w-5" />
               </button>
@@ -79,7 +89,7 @@ export default function Users() {
               <div>
                 <label className="block text-xs text-muted-foreground mb-1">Email</label>
                 <input required type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" placeholder="officer@securecorp.com" />
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" placeholder="guard@securecorp.com" />
               </div>
               <div>
                 <label className="block text-xs text-muted-foreground mb-1">Password</label>
@@ -91,9 +101,10 @@ export default function Users() {
                   <label className="block text-xs text-muted-foreground mb-1">Role</label>
                   <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}
                     className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm">
-                    <option value="officer">Officer</option>
+                    <option value="guard">Guard</option>
                     <option value="supervisor">Supervisor</option>
-                    <option value="admin">Admin</option>
+                    <option value="main_account">Main Account</option>
+                    {currentUser?.role === 'admin' && <option value="admin">Admin</option>}
                   </select>
                 </div>
                 <div>
@@ -109,7 +120,7 @@ export default function Users() {
                 </button>
                 <button type="submit" disabled={saving}
                   className="flex-1 rounded-lg bg-primary py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">
-                  {saving ? 'Saving...' : 'Add Officer'}
+                  {saving ? 'Saving...' : 'Add Personnel'}
                 </button>
               </div>
             </form>
@@ -124,14 +135,14 @@ export default function Users() {
       ) : officers.length === 0 ? (
         <EmptyState
           icon={<UsersIcon className="h-7 w-7" />}
-          title="No officers yet"
-          description="Add your first officer or supervisor to get started."
+          title="No personnel yet"
+          description="Add personnel to get started."
           action={
             <button
               onClick={() => setShowForm(true)}
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
             >
-              <Plus className="h-4 w-4" /> Add Officer
+              <Plus className="h-4 w-4" /> Add Personnel
             </button>
           }
         />

@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import DashboardLayout from './components/layout/DashboardLayout'
 import Dashboard from './pages/Dashboard'
@@ -20,11 +21,19 @@ import { useAuthStore } from './stores/useAuthStore'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const loading = useAuthStore((s) => s.loading)
+  if (loading) return null
   if (!isAuthenticated) return <Navigate to="/login" replace />
   return <>{children}</>
 }
 
 export default function App() {
+  const hydrate = useAuthStore((s) => s.hydrate)
+
+  useEffect(() => {
+    hydrate()
+  }, [hydrate])
+
   return (
     <BrowserRouter>
       <Routes>

@@ -23,10 +23,10 @@ export default function PostOrders() {
     instructions: '',
     checkpointId: '',
     assignedUserId: '',
-    assignedRole: 'officer',
+    assignedRole: 'guard',
     priority: 'normal',
     active: true,
-    requiresAcknowledgement: true,
+    requiresAcknowledgement: false,
     requiresPhotoProof: true,
   })
 
@@ -42,7 +42,7 @@ export default function PostOrders() {
       setOrders(ordersData)
       setCompletions(completionsData)
       setCheckpoints(checkpointsData)
-      setUsers(usersData.filter((user: User) => user.role === 'officer' || user.role === 'supervisor'))
+      setUsers(usersData.filter((user: User) => user.role === 'guard' || user.role === 'supervisor'))
     } finally {
       setLoading(false)
     }
@@ -68,10 +68,10 @@ export default function PostOrders() {
         instructions: '',
         checkpointId: '',
         assignedUserId: '',
-        assignedRole: 'officer',
+        assignedRole: 'guard',
         priority: 'normal',
         active: true,
-        requiresAcknowledgement: true,
+        requiresAcknowledgement: false,
         requiresPhotoProof: true,
       })
       await load()
@@ -117,7 +117,7 @@ export default function PostOrders() {
                 {checkpoints.map((cp) => <option key={cp.id} value={cp.id}>{cp.name}</option>)}
               </select>
               <select value={form.assignedUserId} onChange={(e) => setForm({ ...form, assignedUserId: e.target.value })} className="rounded-lg border border-border bg-background px-3 py-2 text-sm">
-                <option value="">Any officer</option>
+                <option value="">Any guard</option>
                 {users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
               </select>
               <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className="rounded-lg border border-border bg-background px-3 py-2 text-sm">
@@ -127,14 +127,14 @@ export default function PostOrders() {
                 <option value="critical">Critical</option>
               </select>
               <select value={form.assignedRole} onChange={(e) => setForm({ ...form, assignedRole: e.target.value })} className="rounded-lg border border-border bg-background px-3 py-2 text-sm">
-                <option value="officer">Officer</option>
+                <option value="guard">Guard</option>
                 <option value="supervisor">Supervisor</option>
               </select>
             </div>
             <textarea required value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} placeholder="Detailed instructions" className="min-h-32 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
             <div className="flex flex-wrap gap-4 text-sm">
               <label className="flex items-center gap-2"><input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} /> Active</label>
-              <label className="flex items-center gap-2"><input type="checkbox" checked={form.requiresAcknowledgement} onChange={(e) => setForm({ ...form, requiresAcknowledgement: e.target.checked })} /> Requires acknowledgement</label>
+              <span className="text-muted-foreground">No acknowledgement required before submission.</span>
               <label className="flex items-center gap-2"><input type="checkbox" checked={form.requiresPhotoProof} onChange={(e) => setForm({ ...form, requiresPhotoProof: e.target.checked })} /> Requires proof photo</label>
             </div>
             <div className="flex gap-2 justify-end">
@@ -156,7 +156,7 @@ export default function PostOrders() {
         <EmptyState
           icon={<ClipboardList className="h-7 w-7" />}
           title="No post orders yet"
-          description="Create patrol instructions that guards must acknowledge and complete with proof photos."
+          description="Create patrol instructions guards can complete without a separate acknowledgement step."
         />
       ) : (
         <>
@@ -174,7 +174,7 @@ export default function PostOrders() {
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-muted-foreground">
                   <div>Checkpoint: <span className="text-foreground">{order.checkpointName || 'Any'}</span></div>
-                  <div>Assigned: <span className="text-foreground">{order.assignedUserName || order.assignedRole || 'Officer'}</span></div>
+                  <div>Assigned: <span className="text-foreground">{order.assignedUserName || order.assignedRole || 'Guard'}</span></div>
                   <div>Photo proof: <span className="text-foreground">{order.requiresPhotoProof ? 'Required' : 'Optional'}</span></div>
                   <div>Created: <span className="text-foreground">{formatDate(order.createdAt)}</span></div>
                 </div>

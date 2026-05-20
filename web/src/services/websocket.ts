@@ -57,3 +57,10 @@ export function subscribeToIncidents(callback: (data: any) => void) {
     socket?.off('incident:new', callback)
   }
 }
+
+export function subscribeToEmergency(callback: (data: any) => void) {
+  socket?.on('emergency:new', callback)
+  return () => {
+    socket?.off('emergency:new', callback)
+  }
+}

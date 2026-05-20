@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { FileText, Download, Mail, Calendar, Plus, X, FileBarChart } from 'lucide-react'
-import { api } from '../services/api'
-import type { Report } from '../types'
+import { api, apiFileUrl } from '../services/api'
+import type { ExportFile, Report } from '../types'
 import { TableSkeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
 
@@ -13,13 +13,25 @@ const statusColor: Record<string, string> = {
 
 export default function Reports() {
   const [reports, setReports] = useState<Report[]>([])
+  const [exports, setExports] = useState<ExportFile[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [requestingExport, setRequestingExport] = useState(false)
+  const [exportDate, setExportDate] = useState(new Date().toISOString().slice(0, 10))
   const [form, setForm] = useState({ clientEmail: '', periodStart: '', periodEnd: '' })
+
+  const loadData = async () => {
+    const [reportList, exportList] = await Promise.all([
+      api.reports.list(),
+      api.scans.listDailyExports(),
+    ])
+    setReports(reportList)
+    setExports(exportList)
+  }
 
   useEffect(() => {
     setLoading(true)
-    api.reports.list().then(setReports).finally(() => setLoading(false))
+    loadData().finally(() => setLoading(false))
   }, [])
 
   const handleGenerate = async (e: React.FormEvent) => {
@@ -32,9 +44,23 @@ export default function Reports() {
       })
       setShowForm(false)
       setForm({ clientEmail: '', periodStart: '', periodEnd: '' })
-      const list = await api.reports.list()
-      setReports(list)
+      await loadData()
     } catch {}
+  }
+
+  const handleRequestExport = async () => {
+    if (!exportDate) return
+    try {
+      setRequestingExport(true)
+      const created = await api.scans.exportDaily({ date: exportDate, format: 'xlsx' })
+      await loadData()
+      if (created?.downloadUrl) {
+        window.open(apiFileUrl(created.downloadUrl), '_blank', 'noopener,noreferrer')
+      }
+    } catch {
+    } finally {
+      setRequestingExport(false)
+    }
   }
 
   return (
@@ -52,6 +78,37 @@ export default function Reports() {
         </button>
       </div>
 
+      <div className="rounded-xl border border-border bg-card p-4">
+        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <div className="text-xs uppercase tracking-wider text-muted-foreground">Excel Export</div>
+            <h2 className="mt-1 text-lg font-semibold">Daily Tour Archive</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Generate a real Excel workbook for patrol scans and attendance, then review it here.
+            </p>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div>
+              <label className="text-xs text-muted-foreground">Export date</label>
+              <input
+                type="date"
+                value={exportDate}
+                onChange={(e) => setExportDate(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+              />
+            </div>
+            <button
+              onClick={handleRequestExport}
+              disabled={requestingExport || !exportDate}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Download className="h-4 w-4" />
+              {requestingExport ? 'Generating...' : 'Generate Excel'}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="text-xs text-muted-foreground">Sent this month</div>
@@ -66,6 +123,68 @@ export default function Reports() {
           <div className="mt-2 text-2xl font-semibold">{reports.filter(r => r.status === 'failed').length}</div>
         </div>
       </div>
+
+      {loading ? (
+        <TableSkeleton rows={3} />
+      ) : exports.length === 0 ? (
+        <EmptyState
+          icon={<Download className="h-7 w-7" />}
+          title="No Excel exports yet"
+          description="Generate a daily tour workbook to start building the archive."
+        />
+      ) : (
+        <div className="rounded-xl border border-border bg-card">
+          <div className="border-b border-border px-4 py-3">
+            <h2 className="font-semibold">Generated Excel Exports</h2>
+          </div>
+          <div className="divide-y divide-border">
+            {exports.map((item) => (
+              <div key={item.id} className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center">
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium">
+                    {item.scopeLabel || 'Patrol Export'} · {item.date}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {item.fileName} · Requested by {item.requestedByName || 'Unknown'}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-sm lg:min-w-[320px] lg:grid-cols-4">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Scans</div>
+                    <div className="font-medium">{item.totals?.scans ?? 0}</div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Verified</div>
+                    <div className="font-medium">{item.totals?.verifiedScans ?? 0}</div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Shifts</div>
+                    <div className="font-medium">{item.totals?.shifts ?? 0}</div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Hours</div>
+                    <div className="font-medium">{item.totals?.totalShiftHours ?? 0}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase ${statusColor[item.status] || 'bg-primary/15 text-primary'}`}>
+                    {item.status}
+                  </span>
+                  <a
+                    href={apiFileUrl(item.downloadUrl)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-lg border border-border p-2 hover:bg-accent inline-flex items-center justify-center"
+                    title="Download Excel"
+                  >
+                    <Download className="h-4 w-4" />
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <TableSkeleton rows={4} />

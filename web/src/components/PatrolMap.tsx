@@ -107,12 +107,12 @@ export function PatrolMap() {
 
       const activeOfficerIds = new Set(
         users
-          .filter((user) => user.role === 'officer' && user.onDuty)
+          .filter((user) => user.role === 'guard' && user.onDuty)
           .map((user) => user.id),
       )
 
       const liveOfficers: LiveOfficer[] = users
-        .filter((user) => user.role === 'officer' && user.onDuty)
+        .filter((user) => user.role === 'guard' && user.onDuty)
         .map((user) => {
           const lastScan = latestByOfficer.get(user.id)
           return {

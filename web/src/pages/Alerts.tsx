@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
+import { Navigate } from 'react-router-dom'
 import { AlertTriangle, AlertCircle, Info, Clock, ShieldAlert, User2, MapPin } from 'lucide-react'
 import { api } from '../services/api'
+import { useAuthStore } from '../stores/useAuthStore'
 import type { Incident, MissedPatrol } from '../types'
 import { formatDate } from '../utils/format'
 
@@ -21,8 +23,13 @@ const severityColor: Record<string, string> = {
 }
 
 export default function Alerts() {
+  const userRole = useAuthStore((s) => s.user?.role)
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [missedPatrols, setMissedPatrols] = useState<MissedPatrol[]>([])
+
+  if (userRole === 'guard') {
+    return <Navigate to="/" replace />
+  }
 
   useEffect(() => {
     api.incidents.list().then(setIncidents).catch(() => {})

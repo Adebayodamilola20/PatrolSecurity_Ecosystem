@@ -1,5 +1,15 @@
 const API_BASE = import.meta.env.VITE_API_URL || '/api/v1'
 
+export function apiFileUrl(path: string) {
+  if (!path) return ''
+  if (/^https?:\/\//i.test(path)) return path
+  if (API_BASE.startsWith('http')) {
+    const base = new URL(API_BASE)
+    return `${base.origin}${path.startsWith('/') ? path : `/${path}`}`
+  }
+  return path
+}
+
 function emitAppEvent(name: string, detail?: Record<string, unknown>) {
   if (typeof window === 'undefined') return
   window.dispatchEvent(new CustomEvent(name, { detail }))
@@ -53,12 +63,16 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ email, password }),
       }),
+    me: () => request<{ user: any }>('/auth/me'),
   },
   scans: {
     list: (params?: Record<string, string>) =>
       request<any[]>(`/scans?${new URLSearchParams(params)}`),
     recent: () => request<any[]>('/scans/recent'),
     get: (id: string) => request<any>(`/scans/${id}`),
+    exportDaily: (data: { date: string; format?: 'xlsx' }) =>
+      request<any>('/scans/export/daily', { method: 'POST', body: JSON.stringify(data) }),
+    listDailyExports: () => request<any[]>('/scans/export/daily'),
   },
   checkpoints: {
     list: () => request<any[]>('/checkpoints'),
@@ -119,5 +133,21 @@ export const api = {
     list: () => request<any[]>('/handovers'),
     updateStatus: (id: string, status: string) =>
       request<any>(`/handovers/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+  },
+  clients: {
+    list: () => request<any[]>('/clients'),
+    create: (data: any) =>
+      request<any>('/clients', { method: 'POST', body: JSON.stringify(data) }),
+  },
+  sites: {
+    list: (params?: Record<string, string>) =>
+      request<any[]>(`/sites?${new URLSearchParams(params || {})}`),
+    create: (data: any) =>
+      request<any>('/sites', { method: 'POST', body: JSON.stringify(data) }),
+  },
+  emergency: {
+    settings: () => request<any[]>('/emergency/settings'),
+    saveSetting: (data: { settingKey: string; settingValue: string; scopeType?: string; scopeId?: string }) =>
+      request<any>('/emergency/settings', { method: 'POST', body: JSON.stringify(data) }),
   },
 }

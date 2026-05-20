@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import QRCode from 'qrcode'
 import L from 'leaflet'
 import { api } from '../services/api'
+import { useCanManageCheckpoints } from '../stores/useAuthStore'
 import type { Checkpoint } from '../types'
 import { CardSkeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
@@ -50,13 +51,16 @@ function QRCell({ data }: { data: string }) {
 export default function Checkpoints() {
   const navigate = useNavigate()
   const mapRef = useRef<HTMLDivElement>(null)
+  const canManage = useCanManageCheckpoints()
   const leafletMapRef = useRef<L.Map | null>(null)
   const markerRef = useRef<L.Marker | null>(null)
   const radiusRef = useRef<L.Circle | null>(null)
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [form, setForm] = useState({ name: '', code: '', latitude: '', longitude: '', radiusMeters: '50', expectedIntervalMinutes: '30', scheduledTimeIn: '', scheduledTimeOut: '' })
+  const patrolIntervalOptions = [5, 10, 15, 20, 25, 30, 45, 60]
+  const emptyForm = { name: '', code: '', latitude: '', longitude: '', radiusMeters: '50', expectedIntervalMinutes: '30', scheduledTimeIn: '06:00', scheduledTimeOut: '' }
+  const [form, setForm] = useState(emptyForm)
   const [addressQuery, setAddressQuery] = useState('')
   const [addressResults, setAddressResults] = useState<AddressSuggestion[]>([])
   const [searchingAddress, setSearchingAddress] = useState(false)
@@ -358,7 +362,7 @@ export default function Checkpoints() {
         scheduledTimeOut: form.scheduledTimeOut,
       })
       setShowModal(false)
-      setForm({ name: '', code: '', latitude: '', longitude: '', radiusMeters: '50', expectedIntervalMinutes: '30', scheduledTimeIn: '', scheduledTimeOut: '' })
+      setForm(emptyForm)
       setAddressQuery('')
       setAddressResults([])
       setAddressError('')
@@ -396,12 +400,14 @@ export default function Checkpoints() {
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Locations</div>
           <h1 className="text-2xl font-semibold">Checkpoints</h1>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-        >
-          <ScanLine className="h-4 w-4" /> Add Checkpoint
-        </button>
+        {canManage && (
+          <button
+            onClick={() => setShowModal(true)}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+          >
+            <ScanLine className="h-4 w-4" /> Add Checkpoint
+          </button>
+        )}
       </div>
       {actionError ? (
         <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -418,14 +424,14 @@ export default function Checkpoints() {
           icon={<MapIcon className="h-7 w-7" />}
           title="No checkpoints yet"
           description="Create your first checkpoint to start tracking patrols."
-          action={
+          action={canManage ? (
             <button
               onClick={() => setShowModal(true)}
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
             >
               <ScanLine className="h-4 w-4" /> Add Checkpoint
             </button>
-          }
+          ) : undefined}
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -480,20 +486,24 @@ export default function Checkpoints() {
                   >
                     Details
                   </button>
-                  <button
-                    onClick={() => navigate(`/checkpoints/${cp.id}`)}
-                    className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-accent"
-                    title="Edit"
-                  >
-                    <Edit className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={() => handleToggleActive(cp)}
-                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs hover:bg-accent ${deactivated ? 'text-success border-success/30 hover:bg-success/10' : 'text-warning border-warning/30 hover:bg-warning/10'}`}
-                    title={deactivated ? 'Activate' : 'Deactivate'}
-                  >
-                    {deactivated ? 'Activate' : 'Deactivate'}
-                  </button>
+                  {canManage && (
+                    <>
+                      <button
+                        onClick={() => navigate(`/checkpoints/${cp.id}`)}
+                        className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-accent"
+                        title="Edit"
+                      >
+                        <Edit className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleToggleActive(cp)}
+                        className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs hover:bg-accent ${deactivated ? 'text-success border-success/30 hover:bg-success/10' : 'text-warning border-warning/30 hover:bg-warning/10'}`}
+                        title={deactivated ? 'Activate' : 'Deactivate'}
+                      >
+                        {deactivated ? 'Activate' : 'Deactivate'}
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             )
@@ -601,9 +611,14 @@ export default function Checkpoints() {
                     className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground">Expected Interval (min)</label>
-                  <input type="number" value={form.expectedIntervalMinutes} onChange={e => setForm(f => ({ ...f, expectedIntervalMinutes: e.target.value }))}
-                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+                  <label className="text-xs text-muted-foreground">Patrol Interval (min)</label>
+                  <select value={form.expectedIntervalMinutes} onChange={e => setForm(f => ({ ...f, expectedIntervalMinutes: e.target.value }))}
+                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm">
+                    {patrolIntervalOptions.map((minutes) => (
+                      <option key={minutes} value={minutes}>{minutes} minutes</option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-[11px] text-muted-foreground">Inactivity alert triggers when no scan is received in this interval.</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">

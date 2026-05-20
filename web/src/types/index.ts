@@ -2,12 +2,33 @@ export interface User {
   id: string
   name: string
   email: string
-  role: 'admin' | 'supervisor' | 'officer'
+  role: 'admin' | 'main_account' | 'supervisor' | 'guard'
   phone?: string
   active: boolean
   onDuty?: boolean
   lastClockIn?: string | null
   lastClockOut?: string | null
+  clientId?: string | null
+  siteIds?: string[]
+  sites?: Site[]
+  createdAt: string
+}
+
+export interface Client {
+  id: string
+  name: string
+  email: string
+  phone: string
+  active: boolean
+  createdAt: string
+}
+
+export interface Site {
+  id: string
+  clientId: string
+  name: string
+  location: string
+  active: boolean
   createdAt: string
 }
 
@@ -20,6 +41,8 @@ export interface Checkpoint {
   radiusMeters: number
   expectedIntervalMinutes: number
   active: boolean
+  clientId?: string | null
+  siteId?: string | null
   lastScan?: string
   scheduledTimeIn?: string
   scheduledTimeOut?: string
@@ -81,6 +104,30 @@ export interface Report {
   format: 'pdf' | 'html'
   status: 'pending' | 'sent' | 'failed'
   sentAt?: string
+  createdAt: string
+}
+
+export interface ExportFile {
+  id: string
+  type: string
+  date: string
+  format: 'xlsx'
+  status: 'ready' | 'pending' | 'failed'
+  scopeLabel: string
+  clientId?: string | null
+  requestedBy: string
+  requestedByName?: string
+  fileName: string
+  filePath: string
+  downloadUrl: string
+  totals: {
+    scans: number
+    verifiedScans: number
+    flaggedScans: number
+    shifts: number
+    totalShiftHours: number
+  }
+  generatedAt: string
   createdAt: string
 }
 
