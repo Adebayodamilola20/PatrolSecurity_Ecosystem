@@ -1,10 +1,19 @@
 import jwt from 'jsonwebtoken'
+import { normalizeRole, isAdmin, isMainAccount } from '../utils/roles.js'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'patrol-monitoring-secret-key-2024'
 
 export function generateToken(user) {
+  const siteIds = Array.isArray(user.siteIds) ? user.siteIds : []
   return jwt.sign(
-    { id: user.id, name: user.name, email: user.email, role: user.role },
+    {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: normalizeRole(user.role),
+      clientId: user.clientId || null,
+      siteIds,
+    },
     JWT_SECRET,
     { expiresIn: '24h' }
   )
@@ -27,8 +36,22 @@ export function authMiddleware(req, res, next) {
 }
 
 export function adminOnly(req, res, next) {
-  if (req.user?.role !== 'admin') {
+  if (!isAdmin(req.user?.role)) {
     return res.status(403).json({ message: 'Admin access required' })
+  }
+  next()
+}
+
+export function adminOrMainAccountOnly(req, res, next) {
+  if (!isAdmin(req.user?.role) && !isMainAccount(req.user?.role)) {
+    return res.status(403).json({ message: 'Admin or Main Account access required' })
+  }
+  next()
+}
+
+export function mainAccountOnly(req, res, next) {
+  if (!isMainAccount(req.user?.role)) {
+    return res.status(403).json({ message: 'Main Account access required' })
   }
   next()
 }

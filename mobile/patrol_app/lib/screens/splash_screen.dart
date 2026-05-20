@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/duty_provider.dart';
 import '../providers/scan_provider.dart';
+import '../providers/shift_provider.dart';
 import '../utils/routes.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -24,10 +26,18 @@ class _SplashScreenState extends State<SplashScreen> {
 
     final auth = context.read<AuthProvider>();
     final scan = context.read<ScanProvider>();
+    final shift = context.read<ShiftProvider>();
+    final duty = context.read<DutyProvider>();
 
-    if (auth.isLoggedIn) {
-      scan.loadScans();
-      scan.loadCheckpoints();
+    final restored = await auth.restoreSession();
+
+    if (!mounted) return;
+    if (restored) {
+      await scan.loadScans();
+      await scan.loadCheckpoints();
+      await shift.loadStatus();
+      await duty.load();
+      if (!mounted) return;
       Navigator.pushReplacementNamed(context, AppRoutes.home);
     } else {
       Navigator.pushReplacementNamed(context, AppRoutes.login);
@@ -52,7 +62,7 @@ class _SplashScreenState extends State<SplashScreen> {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.15),
+                color: Colors.white.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(24),
               ),
               child: const Icon(
@@ -76,14 +86,14 @@ class _SplashScreenState extends State<SplashScreen> {
               'Security Patrol System',
               style: TextStyle(
                 fontSize: 14,
-                color: Colors.white.withOpacity(0.7),
+                color: Colors.white.withValues(alpha: 0.7),
               ),
             ),
             const SizedBox(height: 48),
             SizedBox(
               width: 120,
               child: LinearProgressIndicator(
-                backgroundColor: Colors.white.withOpacity(0.2),
+                backgroundColor: Colors.white.withValues(alpha: 0.2),
                 valueColor: const AlwaysStoppedAnimation(Colors.white),
               ),
             ),
@@ -92,7 +102,7 @@ class _SplashScreenState extends State<SplashScreen> {
               'Loading...',
               style: TextStyle(
                 fontSize: 12,
-                color: Colors.white.withOpacity(0.5),
+                color: Colors.white.withValues(alpha: 0.5),
               ),
             ),
           ],

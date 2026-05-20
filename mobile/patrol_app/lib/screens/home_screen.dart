@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/checkpoint.dart';
 import '../providers/auth_provider.dart';
 import '../providers/duty_provider.dart';
 import '../providers/scan_provider.dart';
 import '../providers/shift_provider.dart';
+import '../services/api_service.dart';
+import '../services/location_service.dart';
 import '../utils/routes.dart';
 import '../utils/theme.dart';
 import '../widgets/scan_tile.dart';
@@ -40,18 +43,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openScannerOrExplain(BuildContext context) {
-    final duty = context.read<DutyProvider>();
-    if (duty.hasPendingAcknowledgements) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Acknowledge ${duty.pendingAcknowledgementOrders.length} active pass-on log item(s) in Duties before scanning.',
-          ),
-          backgroundColor: AppTheme.flagged,
-        ),
-      );
-      return;
-    }
     Navigator.pushNamed(context, AppRoutes.scanner);
   }
 
@@ -85,6 +76,123 @@ class _DashboardTab extends StatelessWidget {
   String _formatHour(DateTime? value) {
     if (value == null) return '--:--';
     return '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _triggerEmergency(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final shift = context.read<ShiftProvider>();
+    final scanProvider = context.read<ScanProvider>();
+
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Emergency alert triggered. Getting GPS and notifying response contacts...'),
+        duration: Duration(seconds: 3),
+        backgroundColor: AppTheme.error,
+      ),
+    );
+
+    try {
+      final location = await LocationService.getCurrentLocation();
+      final pos = location.position;
+      final nearestCheckpoint = pos == null
+          ? null
+          : _findNearestCheckpoint(
+              scanProvider.checkpoints,
+              pos.latitude,
+              pos.longitude,
+            );
+      final locationText = pos == null
+          ? ''
+          : nearestCheckpoint == null
+              ? '${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}'
+              : '${nearestCheckpoint.name} '
+                  '(${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)})';
+      final note = location.error == null
+          ? nearestCheckpoint == null
+              ? 'Emergency button pressed from mobile patrol app.'
+              : 'Emergency button pressed from mobile patrol app near ${nearestCheckpoint.name}.'
+          : 'Emergency button pressed from mobile patrol app. GPS note: ${location.error}';
+
+      await ApiService.triggerEmergency(
+        checkpointId: nearestCheckpoint?.id,
+        siteLabel: shift.siteLabel ?? '',
+        note: note,
+        location: locationText,
+      );
+
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            pos == null
+                ? 'Emergency alert dispatched. GPS was unavailable, but response contacts were notified.'
+                : 'Emergency alert dispatched with GPS location.',
+          ),
+          duration: const Duration(seconds: 5),
+          backgroundColor: AppTheme.verified,
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Emergency alert failed: ${e.toString().replaceFirst('Exception: ', '')}',
+          ),
+          duration: const Duration(seconds: 6),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+    }
+  }
+
+  Future<void> _confirmEmergencyAction(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Send emergency alert?'),
+        content: const Text(
+          'This will notify the configured emergency contacts with your current patrol context and GPS when available.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: AppTheme.error),
+            child: const Text('Send Alert'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      await _triggerEmergency(context);
+    }
+  }
+
+  Checkpoint? _findNearestCheckpoint(
+    List<Checkpoint> checkpoints,
+    double latitude,
+    double longitude,
+  ) {
+    Checkpoint? nearest;
+    double? nearestDistance;
+
+    for (final checkpoint in checkpoints) {
+      final distance = LocationService.calculateDistance(
+        latitude,
+        longitude,
+        checkpoint.latitude,
+        checkpoint.longitude,
+      );
+      if (nearestDistance == null || distance < nearestDistance) {
+        nearest = checkpoint;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearest;
   }
 
   @override
@@ -193,61 +301,14 @@ class _DashboardTab extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: _StatCard(
-                    label: 'Pass-On Logs',
-                    value: '${duty.pendingAcknowledgementOrders.length}',
+                    label: 'Post Orders',
+                    value: '${duty.orders.length}',
                     icon: Icons.assignment_late_outlined,
-                    color: duty.hasPendingAcknowledgements
-                        ? AppTheme.flagged
-                        : const Color(0xFF3B82F6),
+                    color: const Color(0xFF3B82F6),
                   ),
                 ),
               ],
             ),
-            if (duty.hasPendingAcknowledgements) ...[
-              const SizedBox(height: 16),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: AppTheme.flagged.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: AppTheme.flagged.withValues(alpha: 0.25),
-                  ),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(
-                      Icons.warning_amber_rounded,
-                      color: AppTheme.flagged,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Action required before scanning',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: AppTheme.text,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${duty.pendingAcknowledgementOrders.length} instruction(s) still need acknowledgement in Duties.',
-                            style: const TextStyle(
-                              color: AppTheme.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
@@ -271,6 +332,8 @@ class _DashboardTab extends StatelessWidget {
                 ),
               ),
             ),
+            const SizedBox(height: 12),
+            _EmergencyHoldButton(onConfirmed: () => _triggerEmergency(context)),
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
@@ -366,14 +429,7 @@ class _DashboardTab extends StatelessWidget {
                 _QuickAction(
                   icon: Icons.sos_outlined,
                   label: 'Emergency',
-                  onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Emergency workflow needs control-room contact rules from management before activation.',
-                      ),
-                      backgroundColor: AppTheme.error,
-                    ),
-                  ),
+                  onTap: () => _confirmEmergencyAction(context),
                 ),
                 const SizedBox(width: 12),
                 _QuickAction(
@@ -436,6 +492,118 @@ class _DashboardTab extends StatelessWidget {
 
 }
 
+class _EmergencyHoldButton extends StatefulWidget {
+  final Future<void> Function() onConfirmed;
+
+  const _EmergencyHoldButton({required this.onConfirmed});
+
+  @override
+  State<_EmergencyHoldButton> createState() => _EmergencyHoldButtonState();
+}
+
+class _EmergencyHoldButtonState extends State<_EmergencyHoldButton> {
+  bool _holding = false;
+  bool _sending = false;
+
+  Future<void> _confirmEmergency() async {
+    if (_sending) return;
+    setState(() => _sending = true);
+    try {
+      await widget.onConfirmed();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _holding = false;
+          _sending = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onLongPressStart: (_) => setState(() => _holding = true),
+      onLongPressCancel: () => setState(() => _holding = false),
+      onLongPressEnd: (_) => _confirmEmergency(),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        decoration: BoxDecoration(
+          color: _holding ? const Color(0xFFB91C1C) : AppTheme.error,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.error.withValues(alpha: 0.32),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.18),
+                shape: BoxShape.circle,
+              ),
+              child: _sending
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.4,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(
+                      Icons.sos,
+                      color: Colors.white,
+                      size: 26,
+                    ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _sending ? 'Sending emergency alert...' : 'EMERGENCY ALERT',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    _sending
+                        ? 'Do not close the app.'
+                        : 'Press and hold to notify designated contacts.',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.86),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.touch_app_outlined,
+              color: Colors.white,
+              size: 22,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _StatCard extends StatelessWidget {
   final String label;
   final String value;
@@ -465,7 +633,7 @@ class _StatCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: color.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(icon, color: color, size: 20),
@@ -523,7 +691,7 @@ class _QuickAction extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: AppTheme.primary.withOpacity(0.1),
+                    color: AppTheme.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(icon, color: AppTheme.primary, size: 24),

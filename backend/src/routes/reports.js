@@ -2,14 +2,154 @@ import { Router } from 'express'
 import { v4 as uuidv4 } from 'uuid'
 import db from '../db.js'
 import { authMiddleware } from '../middleware/auth.js'
+import { buildFiveWsAndH, sendNotificationBundle } from '../services/notifications.js'
+import { canExport, normalizeRole } from '../utils/roles.js'
 
 const router = Router()
-
 router.use(authMiddleware)
 
+async function getSetting(key, fallback = '') {
+  const row = await db.get('SELECT settingValue FROM communicationSettings WHERE settingKey = ? ORDER BY createdAt DESC LIMIT 1', [key])
+  return row?.settingValue ?? row?.settingvalue ?? fallback
+}
+
+async function createSubmission({ type, title, summary = '', details = {}, checkpointId = null, siteLabel = '', req }) {
+  const submission = {
+    id: uuidv4(),
+    type,
+    title,
+    summary,
+    detailsJson: JSON.stringify(details),
+    checkpointId,
+    siteLabel,
+    userId: req.user.id,
+    status: 'submitted',
+    submittedAt: new Date().toISOString(),
+  }
+
+  await db.run(`
+    INSERT INTO reportSubmissions (
+      id, type, title, summary, detailsJson, checkpointId, siteLabel,
+      userId, status, submittedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, Object.values(submission))
+
+  return submission
+}
+
+async function emailReportSubmission({ submission, req, subjectPrefix, details }) {
+  const recipients = (await getSetting('report_email_recipients', '')).split(',').map((v) => v.trim()).filter(Boolean)
+  const fiveWs = buildFiveWsAndH({
+    who: req.user.name,
+    what: submission.title,
+    when: submission.submittedAt,
+    where: submission.siteLabel || details.checkpointName || 'Unknown site',
+    why: details.openIssues || details.issue || details.description || '',
+    how: details.activities || details.instructions || details.summary || '',
+  })
+
+  const payload = await sendNotificationBundle({
+    emails: recipients,
+    subject: `${subjectPrefix}: ${submission.title}`,
+    html: `
+      <h2>${subjectPrefix}</h2>
+      <p><strong>Who:</strong> ${fiveWs.who}</p>
+      <p><strong>What:</strong> ${fiveWs.what}</p>
+      <p><strong>When:</strong> ${fiveWs.when}</p>
+      <p><strong>Where:</strong> ${fiveWs.where}</p>
+      <p><strong>Why:</strong> ${fiveWs.why}</p>
+      <p><strong>How:</strong> ${fiveWs.how}</p>
+      <pre>${JSON.stringify(details, null, 2)}</pre>
+    `,
+    text: `${subjectPrefix}\nWho: ${fiveWs.who}\nWhat: ${fiveWs.what}\nWhen: ${fiveWs.when}\nWhere: ${fiveWs.where}\nWhy: ${fiveWs.why}\nHow: ${fiveWs.how}`,
+  })
+
+  await db.run('UPDATE reportSubmissions SET status = ?, emailedAt = ?, deliveryPayload = ? WHERE id = ?', [
+    'emailed',
+    new Date().toISOString(),
+    JSON.stringify(payload),
+    submission.id,
+  ])
+
+  return payload
+}
+
 router.get('/', async (req, res) => {
-  const reports = await db.all('SELECT * FROM reports ORDER BY createdAt DESC')
-  res.json(reports)
+  const role = normalizeRole(req.user?.role)
+  let query = `
+    SELECT rs.*, u.name as userName
+    FROM reportSubmissions rs
+    JOIN users u ON rs.userId = u.id
+  `
+  const conditions = []
+  const params = []
+
+  if (role === 'main_account') {
+    conditions.push(`rs.userId IN (SELECT id FROM users WHERE clientId = ?)`)
+    params.push(req.user.clientId)
+  } else if (role === 'supervisor' || role === 'guard') {
+    conditions.push('rs.userId = ?')
+    params.push(req.user.id)
+  }
+
+  if (conditions.length > 0) {
+    query += ' WHERE ' + conditions.join(' AND ')
+  }
+  query += ' ORDER BY rs.submittedAt DESC'
+
+  const submissions = await db.all(query, params)
+  res.json(submissions)
+})
+
+router.post('/daily-activity', async (req, res) => {
+  const { summary, activities = '', openIssues = '', siteLabel = '', checkpointId = null, shiftWindow = '' } = req.body
+  if (!summary) {
+    return res.status(400).json({ message: 'summary is required' })
+  }
+
+  const submission = await createSubmission({
+    type: 'daily_activity',
+    title: `Daily Activity Report - ${siteLabel || req.user.name}`,
+    summary,
+    details: { summary, activities, openIssues, siteLabel, checkpointId, shiftWindow },
+    checkpointId,
+    siteLabel,
+    req,
+  })
+
+  const delivery = await emailReportSubmission({
+    submission,
+    req,
+    subjectPrefix: 'Daily Activity Report',
+    details: { summary, activities, openIssues, siteLabel, checkpointId, shiftWindow },
+  })
+
+  res.status(201).json({ ...submission, delivery })
+})
+
+router.post('/maintenance', async (req, res) => {
+  const { title, issue, assetName = '', severity = 'medium', checkpointId = null } = req.body
+  if (!title || !issue) {
+    return res.status(400).json({ message: 'title and issue are required' })
+  }
+
+  const submission = await createSubmission({
+    type: 'maintenance',
+    title,
+    summary: issue,
+    details: { title, issue, assetName, severity, checkpointId },
+    checkpointId,
+    req,
+  })
+
+  const delivery = await emailReportSubmission({
+    submission,
+    req,
+    subjectPrefix: 'Maintenance Report',
+    details: { title, issue, assetName, severity, checkpointId },
+  })
+
+  res.status(201).json({ ...submission, delivery })
 })
 
 router.post('/generate', async (req, res) => {
@@ -44,6 +184,42 @@ router.post('/generate', async (req, res) => {
   }, 2000)
 
   res.status(201).json(report)
+})
+
+router.post('/export-request', async (req, res) => {
+  if (!canExport(req.user.role)) {
+    return res.status(403).json({ message: 'Only Admin and Main Account can request exports' })
+  }
+
+  const { date, format = 'xlsx' } = req.body
+  if (!date) {
+    return res.status(400).json({ message: 'date is required' })
+  }
+
+  const recipients = (await getSetting('export_email_recipients', '')).split(',').map((v) => v.trim()).filter(Boolean)
+  const submission = await createSubmission({
+    type: 'export_request',
+    title: `Daily Tour Export Request - ${date}`,
+    summary: `Requested export in ${format} format`,
+    details: { date, format, requestedBy: req.user.email },
+    req,
+  })
+
+  const delivery = await sendNotificationBundle({
+    emails: recipients,
+    subject: `Daily Tour Export Request (${format.toUpperCase()})`,
+    html: `<p>${req.user.name} requested a ${format.toUpperCase()} export for ${date}.</p>`,
+    text: `${req.user.name} requested a ${format.toUpperCase()} export for ${date}.`,
+  })
+
+  await db.run('UPDATE reportSubmissions SET status = ?, emailedAt = ?, deliveryPayload = ? WHERE id = ?', [
+    'emailed',
+    new Date().toISOString(),
+    JSON.stringify(delivery),
+    submission.id,
+  ])
+
+  res.status(201).json({ ...submission, delivery })
 })
 
 router.get('/:id/pdf', async (req, res) => {

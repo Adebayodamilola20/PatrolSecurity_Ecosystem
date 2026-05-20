@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { v4 as uuidv4 } from 'uuid'
 import db from '../db.js'
 import { authMiddleware } from '../middleware/auth.js'
+import { normalizeRole } from '../utils/roles.js'
 
 const router = Router()
 
@@ -97,12 +98,32 @@ router.get('/status', async (req, res) => {
 })
 
 router.get('/', async (req, res) => {
+  const role = normalizeRole(req.user?.role)
+  const conditions = ['1=1']
+  const params = []
+
+  if (role === 'guard') {
+    conditions.push('s.userId = ?')
+    params.push(req.user.id)
+  } else if (role === 'main_account') {
+    conditions.push(`s.userId IN (SELECT u.id FROM users u WHERE u.clientId = ?)`)
+    params.push(req.user.clientId)
+  } else if (role === 'supervisor') {
+    conditions.push(`s.userId IN (
+      SELECT usa.userId FROM user_site_assignments usa WHERE usa.siteId IN (
+        SELECT usa2.siteId FROM user_site_assignments usa2 WHERE usa2.userId = ?
+      )
+    )`)
+    params.push(req.user.id)
+  }
+
   const shifts = await db.all(`
     SELECT s.*, u.name as userName, u.email as userEmail
     FROM shifts s
     JOIN users u ON s.userId = u.id
+    WHERE ${conditions.join(' AND ')}
     ORDER BY s.createdAt DESC LIMIT 50
-  `)
+  `, params)
   res.json(shifts)
 })
 
@@ -110,8 +131,27 @@ router.get('/missing-clockins', async (req, res) => {
   const now = new Date()
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
 
+  const role = normalizeRole(req.user?.role)
+  let userFilter = ''
+  const params = []
+  if (role === 'main_account') {
+    userFilter = 'AND u.clientId = ?'
+    params.push(req.user.clientId)
+  } else if (role === 'supervisor') {
+    userFilter = `AND u.id IN (
+      SELECT usa.userId FROM user_site_assignments usa WHERE usa.siteId IN (
+        SELECT usa2.siteId FROM user_site_assignments usa2 WHERE usa2.userId = ?
+      )
+    )`
+    params.push(req.user.id)
+  } else if (role === 'guard') {
+    userFilter = 'AND u.id = ?'
+    params.push(req.user.id)
+  }
+
   const activeUsers = await db.all(
-    "SELECT id, name FROM users WHERE active = 1 AND role IN ('officer', 'supervisor')"
+    `SELECT id, name FROM users u WHERE active = 1 AND role IN ('guard', 'supervisor') ${userFilter}`,
+    params
   )
 
   const todaysShifts = await db.all(`

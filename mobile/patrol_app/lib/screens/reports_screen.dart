@@ -1,11 +1,15 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/checkpoint.dart';
+import '../models/export_file.dart';
 import '../providers/auth_provider.dart';
 import '../providers/scan_provider.dart';
 import '../providers/shift_provider.dart';
 import '../services/api_service.dart';
+import '../utils/constants.dart';
 import '../utils/theme.dart';
 
 class ReportsScreen extends StatefulWidget {
@@ -17,14 +21,17 @@ class ReportsScreen extends StatefulWidget {
 
 class _ReportsScreenState extends State<ReportsScreen> {
   bool _submitting = false;
+  bool _exportsLoading = false;
   String _statusMessage = '';
   DateTime _exportDate = DateTime.now();
+  List<ExportFile> _dailyExports = [];
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ScanProvider>().loadCheckpoints();
+      _loadDailyExports();
     });
   }
 
@@ -72,6 +79,25 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
+  Future<void> _loadDailyExports() async {
+    setState(() => _exportsLoading = true);
+    try {
+      final data = await ApiService.getDailyTourExports();
+      if (!mounted) return;
+      setState(() {
+        _dailyExports = data
+            .map((item) => ExportFile.fromJson(item as Map<String, dynamic>))
+            .toList();
+      });
+    } catch (_) {
+      if (!mounted) return;
+    } finally {
+      if (mounted) {
+        setState(() => _exportsLoading = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -79,6 +105,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final scan = context.watch<ScanProvider>();
     final checkpoints = scan.checkpoints;
     final exportLabel = DateFormat('MMM d, yyyy').format(_exportDate);
+    final role = auth.user?.role ?? '';
+    final canExport = _canExport(role);
 
     return DefaultTabController(
       length: 4,
@@ -142,6 +170,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   _DailyActivityTab(
                     checkpoints: checkpoints,
                     busy: _submitting,
+                    canExport: canExport,
                     onSubmit: (summary, activities, issues, checkpointId) {
                       final shiftWindow = _buildShiftWindow(shift);
                       return _submit(
@@ -158,14 +187,20 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     },
                     onRequestExport: () {
                       return _submit(
-                        () => ApiService.requestDailyTourExport(
-                          date: DateFormat('yyyy-MM-dd').format(_exportDate),
-                        ),
+                        () async {
+                          final result = await ApiService.requestDailyTourExport(
+                            date: DateFormat('yyyy-MM-dd').format(_exportDate),
+                          );
+                          await _loadDailyExports();
+                          return result;
+                        },
                         'Excel export requested for $exportLabel.',
                       );
                     },
                     exportLabel: exportLabel,
                     onPickExportDate: _pickExportDate,
+                    exports: _dailyExports,
+                    exportsLoading: _exportsLoading,
                   ),
                   _IncidentTab(
                     checkpoints: checkpoints,
@@ -229,23 +264,36 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final end = shift.scheduledEnd == null ? '--:--' : formatter.format(shift.scheduledEnd!);
     return '$start - $end';
   }
+
+  bool _canExport(String role) {
+    final normalized = role.trim().toLowerCase().replaceAll('_', ' ');
+    return normalized == 'admin' ||
+        normalized.contains('main account') ||
+        normalized.contains('client main');
+  }
 }
 
 class _DailyActivityTab extends StatefulWidget {
   final List<Checkpoint> checkpoints;
   final bool busy;
+  final bool canExport;
   final Future<void> Function(String, String, String, String?) onSubmit;
   final Future<void> Function() onRequestExport;
   final String exportLabel;
   final Future<void> Function() onPickExportDate;
+  final List<ExportFile> exports;
+  final bool exportsLoading;
 
   const _DailyActivityTab({
     required this.checkpoints,
     required this.busy,
+    required this.canExport,
     required this.onSubmit,
     required this.onRequestExport,
     required this.exportLabel,
     required this.onPickExportDate,
+    required this.exports,
+    required this.exportsLoading,
   });
 
   @override
@@ -321,21 +369,209 @@ class _DailyActivityTabState extends State<_DailyActivityTab> {
           icon: const Icon(Icons.description_outlined),
           label: Text(widget.busy ? 'Submitting...' : 'Submit Daily Report'),
         ),
-        const SizedBox(height: 24),
-        const _SectionTitle(
-          title: 'Excel Export',
-          description: 'Request the day’s tour entries in spreadsheet format.',
+        if (widget.canExport) ...[
+          const SizedBox(height: 24),
+          const _SectionTitle(
+            title: 'Excel Export',
+            description: 'Generate and review the day’s tour workbook in spreadsheet format.',
+          ),
+          OutlinedButton.icon(
+            onPressed: widget.busy ? null : widget.onPickExportDate,
+            icon: const Icon(Icons.calendar_month_outlined),
+            label: Text('Export date: ${widget.exportLabel}'),
+          ),
+          const SizedBox(height: 12),
+          ElevatedButton.icon(
+            onPressed: widget.busy ? null : widget.onRequestExport,
+            icon: const Icon(Icons.download_outlined),
+            label: Text(widget.busy ? 'Requesting...' : 'Request Excel Export'),
+          ),
+          const SizedBox(height: 16),
+          if (widget.exportsLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (widget.exports.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: const Text(
+                'No Excel exports have been generated yet.',
+                style: TextStyle(color: AppTheme.textSecondary),
+              ),
+            )
+          else
+            ...widget.exports.map((item) => _ExportArchiveCard(item: item)),
+        ] else ...[
+          const SizedBox(height: 24),
+          const _SectionTitle(
+            title: 'Excel Export',
+            description: 'Accessible only to Admin and Client Main Account users.',
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ExportArchiveCard extends StatelessWidget {
+  final ExportFile item;
+
+  const _ExportArchiveCard({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final generated = item.generatedAt ?? item.createdAt;
+    final generatedLabel = generated == null
+        ? 'Unknown time'
+        : DateFormat('MMM d, yyyy  h:mm a').format(generated);
+    final fullDownloadUrl = item.downloadUrl.startsWith('http')
+        ? item.downloadUrl
+        : baseUrl.replaceFirst('/api/v1', '') + item.downloadUrl;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  item.scopeLabel.isNotEmpty ? item.scopeLabel : 'Patrol Export',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                    color: AppTheme.text,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  item.status.toUpperCase(),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${item.date} • ${item.fileName}',
+            style: const TextStyle(color: AppTheme.textSecondary, height: 1.4),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 16,
+            runSpacing: 8,
+            children: [
+              _ExportMetric(label: 'Scans', value: '${item.totals.scans}'),
+              _ExportMetric(label: 'Verified', value: '${item.totals.verifiedScans}'),
+              _ExportMetric(label: 'Shifts', value: '${item.totals.shifts}'),
+              _ExportMetric(
+                label: 'Hours',
+                value: item.totals.totalShiftHours.toStringAsFixed(1),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Generated: $generatedLabel',
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppTheme.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    final uri = Uri.tryParse(fullDownloadUrl);
+                    var opened = false;
+                    if (uri != null) {
+                      opened = await launchUrl(
+                        uri,
+                        mode: LaunchMode.externalApplication,
+                      );
+                    }
+                    if (!opened) {
+                      await Clipboard.setData(ClipboardData(text: fullDownloadUrl));
+                    }
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          opened
+                              ? 'Opening export download link.'
+                              : 'Could not open automatically. Link copied to clipboard.',
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.download_outlined),
+                  label: const Text('Open Export'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExportMetric extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _ExportMetric({
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: AppTheme.textSecondary,
+          ),
         ),
-        OutlinedButton.icon(
-          onPressed: widget.busy ? null : widget.onPickExportDate,
-          icon: const Icon(Icons.calendar_month_outlined),
-          label: Text('Export date: ${widget.exportLabel}'),
-        ),
-        const SizedBox(height: 12),
-        ElevatedButton.icon(
-          onPressed: widget.busy ? null : widget.onRequestExport,
-          icon: const Icon(Icons.download_outlined),
-          label: Text(widget.busy ? 'Requesting...' : 'Request Excel Export'),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: AppTheme.text,
+          ),
         ),
       ],
     );
@@ -565,7 +801,7 @@ class _PassOnLogTabState extends State<_PassOnLogTab> {
       children: [
         const _SectionTitle(
           title: 'Pass-On Log',
-          description: 'Create one-off instructions that officers must acknowledge before patrol actions.',
+          description: 'Create one-off instructions officers can act on without a separate acknowledgement step.',
         ),
         _CheckpointField(
           checkpoints: widget.checkpoints,
@@ -597,7 +833,7 @@ class _PassOnLogTabState extends State<_PassOnLogTab> {
           maxLines: 4,
           decoration: const InputDecoration(
             labelText: 'Instruction details *',
-            hintText: 'State exactly what must be acknowledged and completed.',
+            hintText: 'State exactly what must be completed.',
           ),
         ),
         const SizedBox(height: 16),

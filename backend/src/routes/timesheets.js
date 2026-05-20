@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import db from '../db.js'
 import { authMiddleware } from '../middleware/auth.js'
+import { normalizeRole } from '../utils/roles.js'
 
 const router = Router()
 
@@ -59,6 +60,7 @@ router.get('/', async (req, res) => {
 
     const conditions = []
     const params = []
+    const role = normalizeRole(req.user?.role)
 
     if (officer) {
       conditions.push('s.userId = ?')
@@ -72,8 +74,19 @@ router.get('/', async (req, res) => {
       conditions.push('(s.clockOut IS NULL OR s.clockOut <= ?)')
       params.push(end)
     }
-    if (req.user.role === 'officer') {
+
+    if (role === 'guard') {
       conditions.push('s.userId = ?')
+      params.push(req.user.id)
+    } else if (role === 'main_account') {
+      conditions.push('s.userId IN (SELECT u.id FROM users u WHERE u.clientId = ?)')
+      params.push(req.user.clientId)
+    } else if (role === 'supervisor') {
+      conditions.push(`s.userId IN (
+        SELECT usa.userId FROM user_site_assignments usa WHERE usa.siteId IN (
+          SELECT usa2.siteId FROM user_site_assignments usa2 WHERE usa2.userId = ?
+        )
+      )`)
       params.push(req.user.id)
     }
 
@@ -144,12 +157,23 @@ router.get('/summary', async (req, res) => {
     const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString()
     const weekAgo = new Date(today.getTime() - 7 * 86400000).toISOString()
 
+    const role = normalizeRole(req.user?.role)
+    let userFilter = ''
+    const userParams = []
+    if (role === 'main_account') {
+      userFilter = 'AND u.clientId = ?'
+      userParams.push(req.user.clientId)
+    } else if (role === 'supervisor' || role === 'guard') {
+      userFilter = 'AND s.userId = ?'
+      userParams.push(req.user.id)
+    }
+
     const shiftsRaw = await db.all(`
       SELECT s.*, u.name as userName FROM shifts s
       JOIN users u ON s.userId = u.id
-      WHERE s.clockIn >= ?
+      WHERE s.clockIn >= ? ${userFilter}
       ORDER BY s.clockIn ASC
-    `, [weekAgo])
+    `, [weekAgo, ...userParams])
     const shifts = shiftsRaw.map(normalizeShiftRow)
 
     const totalHours = shifts.reduce((acc, s) => {

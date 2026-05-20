@@ -71,15 +71,43 @@ function createPgDb(connectionString) {
 const db = DATABASE_URL ? createPgDb(DATABASE_URL) : createSqliteDb()
 
 const sqliteSchema = `
+  CREATE TABLE IF NOT EXISTS clients (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT DEFAULT '',
+    phone TEXT DEFAULT '',
+    active INTEGER DEFAULT 1,
+    createdAt TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS sites (
+    id TEXT PRIMARY KEY,
+    clientId TEXT NOT NULL,
+    name TEXT NOT NULL,
+    location TEXT DEFAULT '',
+    active INTEGER DEFAULT 1,
+    createdAt TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (clientId) REFERENCES clients(id)
+  );
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('admin','supervisor','officer')),
+    role TEXT NOT NULL CHECK(role IN ('admin','main_account','supervisor','guard')),
     phone TEXT DEFAULT '',
     active INTEGER DEFAULT 1,
-    createdAt TEXT DEFAULT (datetime('now'))
+    clientId TEXT,
+    createdAt TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (clientId) REFERENCES clients(id)
+  );
+  CREATE TABLE IF NOT EXISTS user_site_assignments (
+    id TEXT PRIMARY KEY,
+    userId TEXT NOT NULL,
+    siteId TEXT NOT NULL,
+    createdAt TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (userId) REFERENCES users(id),
+    FOREIGN KEY (siteId) REFERENCES sites(id),
+    UNIQUE(userId, siteId)
   );
   CREATE TABLE IF NOT EXISTS checkpoints (
     id TEXT PRIMARY KEY,
@@ -90,9 +118,13 @@ const sqliteSchema = `
     radiusMeters REAL DEFAULT 50,
     expectedIntervalMinutes INTEGER DEFAULT 30,
     active INTEGER DEFAULT 1,
+    clientId TEXT,
+    siteId TEXT,
     createdAt TEXT DEFAULT (datetime('now')),
     scheduledTimeIn TEXT DEFAULT '',
-    scheduledTimeOut TEXT DEFAULT ''
+    scheduledTimeOut TEXT DEFAULT '',
+    FOREIGN KEY (clientId) REFERENCES clients(id),
+    FOREIGN KEY (siteId) REFERENCES sites(id)
   );
   CREATE TABLE IF NOT EXISTS incidents (
     id TEXT PRIMARY KEY,
@@ -131,6 +163,24 @@ const sqliteSchema = `
     sentAt TEXT,
     createdAt TEXT DEFAULT (datetime('now'))
   );
+  CREATE TABLE IF NOT EXISTS exportFiles (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    date TEXT NOT NULL,
+    format TEXT DEFAULT 'xlsx',
+    status TEXT DEFAULT 'ready',
+    scopeLabel TEXT DEFAULT '',
+    clientId TEXT,
+    requestedBy TEXT NOT NULL,
+    fileName TEXT NOT NULL,
+    filePath TEXT NOT NULL,
+    downloadUrl TEXT NOT NULL,
+    totalsJson TEXT DEFAULT '{}',
+    generatedAt TEXT DEFAULT (datetime('now')),
+    createdAt TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (clientId) REFERENCES clients(id),
+    FOREIGN KEY (requestedBy) REFERENCES users(id)
+  );
   CREATE TABLE IF NOT EXISTS shifts (
     id TEXT PRIMARY KEY,
     userId TEXT NOT NULL,
@@ -155,10 +205,10 @@ const sqliteSchema = `
     instructions TEXT NOT NULL,
     checkpointId TEXT,
     assignedUserId TEXT,
-    assignedRole TEXT DEFAULT 'officer',
+    assignedRole TEXT DEFAULT 'guard',
     priority TEXT DEFAULT 'normal',
     active INTEGER DEFAULT 1,
-    requiresAcknowledgement INTEGER DEFAULT 1,
+    requiresAcknowledgement INTEGER DEFAULT 0,
     requiresPhotoProof INTEGER DEFAULT 1,
     createdBy TEXT NOT NULL,
     createdAt TEXT DEFAULT (datetime('now')),
@@ -218,7 +268,7 @@ const pgSchema = `
     name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('admin','supervisor','officer')),
+    role TEXT NOT NULL CHECK(role IN ('admin','main_account','supervisor','guard')),
     phone TEXT DEFAULT '',
     active INTEGER DEFAULT 1,
     createdAt TIMESTAMPTZ DEFAULT NOW()
@@ -273,6 +323,24 @@ const pgSchema = `
     sentAt TIMESTAMPTZ,
     createdAt TIMESTAMPTZ DEFAULT NOW()
   );
+  CREATE TABLE IF NOT EXISTS exportFiles (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    date TEXT NOT NULL,
+    format TEXT DEFAULT 'xlsx',
+    status TEXT DEFAULT 'ready',
+    scopeLabel TEXT DEFAULT '',
+    clientId TEXT,
+    requestedBy TEXT NOT NULL,
+    fileName TEXT NOT NULL,
+    filePath TEXT NOT NULL,
+    downloadUrl TEXT NOT NULL,
+    totalsJson TEXT DEFAULT '{}',
+    generatedAt TIMESTAMPTZ DEFAULT NOW(),
+    createdAt TIMESTAMPTZ DEFAULT NOW(),
+    FOREIGN KEY (clientId) REFERENCES clients(id),
+    FOREIGN KEY (requestedBy) REFERENCES users(id)
+  );
   CREATE TABLE IF NOT EXISTS shifts (
     id TEXT PRIMARY KEY,
     userId TEXT NOT NULL,
@@ -297,10 +365,10 @@ const pgSchema = `
     instructions TEXT NOT NULL,
     checkpointId TEXT,
     assignedUserId TEXT,
-    assignedRole TEXT DEFAULT 'officer',
+    assignedRole TEXT DEFAULT 'guard',
     priority TEXT DEFAULT 'normal',
     active INTEGER DEFAULT 1,
-    requiresAcknowledgement INTEGER DEFAULT 1,
+    requiresAcknowledgement INTEGER DEFAULT 0,
     requiresPhotoProof INTEGER DEFAULT 1,
     createdBy TEXT NOT NULL,
     createdAt TIMESTAMPTZ DEFAULT NOW(),
@@ -368,6 +436,395 @@ async function initDb() {
     try { db.exec("ALTER TABLE checkpoints ADD COLUMN expectedIntervalMinutes INTEGER DEFAULT 30"); } catch {}
     try { db.exec("ALTER TABLE checkpoints ADD COLUMN scheduledTimeIn TEXT DEFAULT ''"); } catch {}
     try { db.exec("ALTER TABLE checkpoints ADD COLUMN scheduledTimeOut TEXT DEFAULT ''"); } catch {}
+
+    try { db.exec(`CREATE TABLE IF NOT EXISTS communicationSettings (
+      id TEXT PRIMARY KEY,
+      scopeType TEXT DEFAULT 'global',
+      scopeId TEXT DEFAULT '',
+      settingKey TEXT NOT NULL,
+      settingValue TEXT DEFAULT '',
+      updatedBy TEXT,
+      createdAt TEXT DEFAULT (datetime('now'))
+    );`); } catch {}
+    try { db.exec(`CREATE TABLE IF NOT EXISTS reportSubmissions (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      summary TEXT DEFAULT '',
+      detailsJson TEXT DEFAULT '{}',
+      checkpointId TEXT,
+      siteLabel TEXT DEFAULT '',
+      userId TEXT NOT NULL,
+      status TEXT DEFAULT 'submitted',
+      submittedAt TEXT DEFAULT (datetime('now')),
+      emailedAt TEXT,
+      deliveryPayload TEXT DEFAULT '{}',
+      FOREIGN KEY (checkpointId) REFERENCES checkpoints(id),
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );`); } catch {}
+    try { db.exec(`CREATE TABLE IF NOT EXISTS exportFiles (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      date TEXT NOT NULL,
+      format TEXT DEFAULT 'xlsx',
+      status TEXT DEFAULT 'ready',
+      scopeLabel TEXT DEFAULT '',
+      clientId TEXT,
+      requestedBy TEXT NOT NULL,
+      fileName TEXT NOT NULL,
+      filePath TEXT NOT NULL,
+      downloadUrl TEXT NOT NULL,
+      totalsJson TEXT DEFAULT '{}',
+      generatedAt TEXT DEFAULT (datetime('now')),
+      createdAt TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (clientId) REFERENCES clients(id),
+      FOREIGN KEY (requestedBy) REFERENCES users(id)
+    );`); } catch {}
+    try { db.exec(`CREATE TABLE IF NOT EXISTS emergencyEvents (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      checkpointId TEXT,
+      siteLabel TEXT DEFAULT '',
+      message TEXT NOT NULL,
+      note TEXT DEFAULT '',
+      triggeredAt TEXT DEFAULT (datetime('now')),
+      emailRecipients TEXT DEFAULT '[]',
+      phoneRecipients TEXT DEFAULT '[]',
+      status TEXT DEFAULT 'triggered',
+      deliveryPayload TEXT DEFAULT '{}',
+      FOREIGN KEY (userId) REFERENCES users(id),
+      FOREIGN KEY (checkpointId) REFERENCES checkpoints(id)
+    );`); } catch {}
+    try { db.exec(`CREATE TABLE IF NOT EXISTS passOnLogs (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      instruction TEXT NOT NULL,
+      priority TEXT DEFAULT 'normal',
+      siteLabel TEXT DEFAULT '',
+      checkpointId TEXT,
+      requiresAcknowledgement INTEGER DEFAULT 0,
+      createdBy TEXT NOT NULL,
+      active INTEGER DEFAULT 1,
+      createdAt TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (checkpointId) REFERENCES checkpoints(id),
+      FOREIGN KEY (createdBy) REFERENCES users(id)
+    );`); } catch {}
+    try { db.exec(`CREATE TABLE IF NOT EXISTS clients (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT DEFAULT '',
+      phone TEXT DEFAULT '',
+      active INTEGER DEFAULT 1,
+      createdAt TEXT DEFAULT (datetime('now'))
+    );`); } catch {}
+    try { db.exec(`CREATE TABLE IF NOT EXISTS sites (
+      id TEXT PRIMARY KEY,
+      clientId TEXT NOT NULL,
+      name TEXT NOT NULL,
+      location TEXT DEFAULT '',
+      active INTEGER DEFAULT 1,
+      createdAt TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (clientId) REFERENCES clients(id)
+    );`); } catch {}
+    try { db.exec(`CREATE TABLE IF NOT EXISTS user_site_assignments (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      siteId TEXT NOT NULL,
+      createdAt TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (userId) REFERENCES users(id),
+      FOREIGN KEY (siteId) REFERENCES sites(id),
+      UNIQUE(userId, siteId)
+    );`); } catch {}
+    try { db.exec("ALTER TABLE users ADD COLUMN clientId TEXT REFERENCES clients(id)"); } catch {}
+    try { db.exec("ALTER TABLE checkpoints ADD COLUMN clientId TEXT REFERENCES clients(id)"); } catch {}
+    try { db.exec("ALTER TABLE checkpoints ADD COLUMN siteId TEXT REFERENCES sites(id)"); } catch {}
+    const usersTable = db.get("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'")
+    const legacyUserReference = db.get("SELECT name FROM sqlite_master WHERE type = 'table' AND sql LIKE '%users_legacy%' LIMIT 1")
+    if (
+      usersTable?.sql?.includes("CHECK(role IN ('admin','supervisor','officer'))") ||
+      legacyUserReference
+    ) {
+      const dependentTables = [
+        {
+          name: 'scans',
+          columns: 'id, officerId, checkpointId, scannedAt, receivedAt, gpsLatitude, gpsLongitude, gpsValid, distanceMeters, notes',
+          createSql: `CREATE TABLE scans (
+            id TEXT PRIMARY KEY,
+            officerId TEXT NOT NULL,
+            checkpointId TEXT NOT NULL,
+            scannedAt TEXT NOT NULL,
+            receivedAt TEXT DEFAULT (datetime('now')),
+            gpsLatitude REAL,
+            gpsLongitude REAL,
+            gpsValid INTEGER DEFAULT 1,
+            distanceMeters REAL,
+            notes TEXT DEFAULT '',
+            FOREIGN KEY (officerId) REFERENCES users(id),
+            FOREIGN KEY (checkpointId) REFERENCES checkpoints(id)
+          );`,
+        },
+        {
+          name: 'shifts',
+          columns: 'id, userId, clockIn, clockOut, status, clockInPhoto, clockInLatitude, clockInLongitude, clockOutLatitude, clockOutLongitude, scheduledStart, scheduledEnd, siteLabel, createdAt',
+          createSql: `CREATE TABLE shifts (
+            id TEXT PRIMARY KEY,
+            userId TEXT NOT NULL,
+            clockIn TEXT NOT NULL,
+            clockOut TEXT,
+            status TEXT DEFAULT 'active',
+            clockInPhoto TEXT DEFAULT '',
+            clockInLatitude REAL,
+            clockInLongitude REAL,
+            clockOutLatitude REAL,
+            clockOutLongitude REAL,
+            scheduledStart TEXT,
+            scheduledEnd TEXT,
+            siteLabel TEXT DEFAULT '',
+            createdAt TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (userId) REFERENCES users(id)
+          );`,
+        },
+        {
+          name: 'incidents',
+          columns: 'id, officerId, checkpointId, title, description, severity, status, reportedAt, resolvedAt',
+          createSql: `CREATE TABLE incidents (
+            id TEXT PRIMARY KEY,
+            officerId TEXT NOT NULL,
+            checkpointId TEXT,
+            title TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            severity TEXT DEFAULT 'low' CHECK(severity IN ('low','medium','high','critical')),
+            status TEXT DEFAULT 'open' CHECK(status IN ('open','investigating','resolved')),
+            reportedAt TEXT DEFAULT (datetime('now')),
+            resolvedAt TEXT,
+            FOREIGN KEY (officerId) REFERENCES users(id),
+            FOREIGN KEY (checkpointId) REFERENCES checkpoints(id)
+          );`,
+        },
+        {
+          name: 'postOrders',
+          columns: 'id, title, summary, instructions, checkpointId, assignedUserId, assignedRole, priority, active, requiresAcknowledgement, requiresPhotoProof, createdBy, createdAt',
+          createSql: `CREATE TABLE postOrders (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            summary TEXT DEFAULT '',
+            instructions TEXT NOT NULL,
+            checkpointId TEXT,
+            assignedUserId TEXT,
+            assignedRole TEXT DEFAULT 'guard',
+            priority TEXT DEFAULT 'normal',
+            active INTEGER DEFAULT 1,
+            requiresAcknowledgement INTEGER DEFAULT 0,
+            requiresPhotoProof INTEGER DEFAULT 1,
+            createdBy TEXT NOT NULL,
+            createdAt TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (checkpointId) REFERENCES checkpoints(id),
+            FOREIGN KEY (assignedUserId) REFERENCES users(id),
+            FOREIGN KEY (createdBy) REFERENCES users(id)
+          );`,
+        },
+        {
+          name: 'handovers',
+          columns: 'id, shiftId, checkpointId, siteLabel, fromUserId, toUserId, summary, openIssues, equipmentStatus, photoUrl, status, acceptedNote, createdAt, acceptedAt',
+          createSql: `CREATE TABLE handovers (
+            id TEXT PRIMARY KEY,
+            shiftId TEXT,
+            checkpointId TEXT,
+            siteLabel TEXT DEFAULT '',
+            fromUserId TEXT NOT NULL,
+            toUserId TEXT,
+            summary TEXT NOT NULL,
+            openIssues TEXT DEFAULT '',
+            equipmentStatus TEXT DEFAULT '',
+            photoUrl TEXT DEFAULT '',
+            status TEXT DEFAULT 'pending',
+            acceptedNote TEXT DEFAULT '',
+            createdAt TEXT DEFAULT (datetime('now')),
+            acceptedAt TEXT,
+            FOREIGN KEY (shiftId) REFERENCES shifts(id),
+            FOREIGN KEY (checkpointId) REFERENCES checkpoints(id),
+            FOREIGN KEY (fromUserId) REFERENCES users(id),
+            FOREIGN KEY (toUserId) REFERENCES users(id)
+          );`,
+        },
+        {
+          name: 'user_site_assignments',
+          columns: 'id, userId, siteId, createdAt',
+          createSql: `CREATE TABLE user_site_assignments (
+            id TEXT PRIMARY KEY,
+            userId TEXT NOT NULL,
+            siteId TEXT NOT NULL,
+            createdAt TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (userId) REFERENCES users(id),
+            FOREIGN KEY (siteId) REFERENCES sites(id),
+            UNIQUE(userId, siteId)
+          );`,
+        },
+        {
+          name: 'reportSubmissions',
+          columns: 'id, type, title, summary, detailsJson, checkpointId, siteLabel, userId, status, submittedAt, emailedAt, deliveryPayload',
+          createSql: `CREATE TABLE reportSubmissions (
+            id TEXT PRIMARY KEY,
+            type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            summary TEXT DEFAULT '',
+            detailsJson TEXT DEFAULT '{}',
+            checkpointId TEXT,
+            siteLabel TEXT DEFAULT '',
+            userId TEXT NOT NULL,
+            status TEXT DEFAULT 'submitted',
+            submittedAt TEXT DEFAULT (datetime('now')),
+            emailedAt TEXT,
+            deliveryPayload TEXT DEFAULT '{}',
+            FOREIGN KEY (checkpointId) REFERENCES checkpoints(id),
+            FOREIGN KEY (userId) REFERENCES users(id)
+          );`,
+        },
+        {
+          name: 'emergencyEvents',
+          columns: 'id, userId, checkpointId, siteLabel, message, note, triggeredAt, emailRecipients, phoneRecipients, status, deliveryPayload',
+          createSql: `CREATE TABLE emergencyEvents (
+            id TEXT PRIMARY KEY,
+            userId TEXT NOT NULL,
+            checkpointId TEXT,
+            siteLabel TEXT DEFAULT '',
+            message TEXT NOT NULL,
+            note TEXT DEFAULT '',
+            triggeredAt TEXT DEFAULT (datetime('now')),
+            emailRecipients TEXT DEFAULT '[]',
+            phoneRecipients TEXT DEFAULT '[]',
+            status TEXT DEFAULT 'triggered',
+            deliveryPayload TEXT DEFAULT '{}',
+            FOREIGN KEY (userId) REFERENCES users(id),
+            FOREIGN KEY (checkpointId) REFERENCES checkpoints(id)
+          );`,
+        },
+        {
+          name: 'passOnLogs',
+          columns: 'id, title, instruction, priority, siteLabel, checkpointId, requiresAcknowledgement, createdBy, active, createdAt',
+          createSql: `CREATE TABLE passOnLogs (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            instruction TEXT NOT NULL,
+            priority TEXT DEFAULT 'normal',
+            siteLabel TEXT DEFAULT '',
+            checkpointId TEXT,
+            requiresAcknowledgement INTEGER DEFAULT 0,
+            createdBy TEXT NOT NULL,
+            active INTEGER DEFAULT 1,
+            createdAt TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (checkpointId) REFERENCES checkpoints(id),
+            FOREIGN KEY (createdBy) REFERENCES users(id)
+          );`,
+        },
+        {
+          name: 'postOrderCompletions',
+          columns: 'id, postOrderId, userId, shiftId, checkpointId, status, acknowledgedAt, completedAt, proofPhotoUrl, proofNote, proofGpsLatitude, proofGpsLongitude, reviewStatus, reviewedBy, reviewedAt, reviewNote, createdAt',
+          createSql: `CREATE TABLE postOrderCompletions (
+            id TEXT PRIMARY KEY,
+            postOrderId TEXT NOT NULL,
+            userId TEXT NOT NULL,
+            shiftId TEXT,
+            checkpointId TEXT,
+            status TEXT DEFAULT 'completed',
+            acknowledgedAt TEXT,
+            completedAt TEXT,
+            proofPhotoUrl TEXT DEFAULT '',
+            proofNote TEXT DEFAULT '',
+            proofGpsLatitude REAL,
+            proofGpsLongitude REAL,
+            reviewStatus TEXT DEFAULT 'pending',
+            reviewedBy TEXT,
+            reviewedAt TEXT,
+            reviewNote TEXT DEFAULT '',
+            createdAt TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (postOrderId) REFERENCES postOrders(id),
+            FOREIGN KEY (userId) REFERENCES users(id),
+            FOREIGN KEY (shiftId) REFERENCES shifts(id),
+            FOREIGN KEY (checkpointId) REFERENCES checkpoints(id),
+            FOREIGN KEY (reviewedBy) REFERENCES users(id)
+          );`,
+        },
+        {
+          name: 'passOnLogAcknowledgements',
+          columns: 'id, passOnLogId, userId, acknowledgedAt, note',
+          createSql: `CREATE TABLE passOnLogAcknowledgements (
+            id TEXT PRIMARY KEY,
+            passOnLogId TEXT NOT NULL,
+            userId TEXT NOT NULL,
+            acknowledgedAt TEXT DEFAULT (datetime('now')),
+            note TEXT DEFAULT '',
+            FOREIGN KEY (passOnLogId) REFERENCES passOnLogs(id),
+            FOREIGN KEY (userId) REFERENCES users(id)
+          );`,
+        },
+      ]
+
+      db.exec('PRAGMA foreign_keys = OFF')
+      for (const table of dependentTables) {
+        try { db.exec(`DROP TABLE IF EXISTS ${table.name}_legacy_fix`); } catch {}
+        try { db.exec(`ALTER TABLE ${table.name} RENAME TO ${table.name}_legacy_fix`); } catch {}
+      }
+
+      try { db.exec('DROP TABLE IF EXISTS users_legacy_fix'); } catch {}
+      try { db.exec('ALTER TABLE users RENAME TO users_legacy_fix'); } catch {}
+
+      db.exec(`
+        CREATE TABLE users (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          email TEXT UNIQUE NOT NULL,
+          password TEXT NOT NULL,
+          role TEXT NOT NULL CHECK(role IN ('admin','main_account','supervisor','guard')),
+          phone TEXT DEFAULT '',
+          active INTEGER DEFAULT 1,
+          clientId TEXT,
+          createdAt TEXT DEFAULT (datetime('now')),
+          FOREIGN KEY (clientId) REFERENCES clients(id)
+        );
+        INSERT INTO users (id, name, email, password, role, phone, active, clientId, createdAt)
+        SELECT
+          id,
+          name,
+          email,
+          password,
+          CASE lower(replace(role, ' ', '_'))
+            WHEN 'officer' THEN 'guard'
+            WHEN 'client_main_account' THEN 'main_account'
+            WHEN 'client-main-account' THEN 'main_account'
+            WHEN 'main-account' THEN 'main_account'
+            ELSE lower(replace(role, ' ', '_'))
+          END,
+          COALESCE(phone, ''),
+          COALESCE(active, 1),
+          clientId,
+          COALESCE(createdAt, datetime('now'))
+        FROM users_legacy_fix;
+        DROP TABLE users_legacy_fix;
+      `)
+
+      for (const table of dependentTables) {
+        db.exec(table.createSql)
+        const legacyTable = db.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", [`${table.name}_legacy_fix`])
+        if (legacyTable) {
+          db.exec(`
+            INSERT INTO ${table.name} (${table.columns})
+            SELECT ${table.columns} FROM ${table.name}_legacy_fix;
+            DROP TABLE ${table.name}_legacy_fix;
+          `)
+        }
+      }
+      db.exec('PRAGMA foreign_keys = ON')
+    }
+    try { db.exec(`CREATE TABLE IF NOT EXISTS passOnLogAcknowledgements (
+      id TEXT PRIMARY KEY,
+      passOnLogId TEXT NOT NULL,
+      userId TEXT NOT NULL,
+      acknowledgedAt TEXT DEFAULT (datetime('now')),
+      note TEXT DEFAULT '',
+      FOREIGN KEY (passOnLogId) REFERENCES passOnLogs(id),
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );`); } catch {}
   } else {
     await db.exec(pgSchema)
     try { await db.exec("ALTER TABLE shifts ADD COLUMN IF NOT EXISTS clockInPhoto TEXT DEFAULT ''"); } catch {}
@@ -381,6 +838,117 @@ async function initDb() {
     try { await db.exec("ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS expectedIntervalMinutes INTEGER DEFAULT 30"); } catch {}
     try { await db.exec("ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS scheduledTimeIn TEXT DEFAULT ''"); } catch {}
     try { await db.exec("ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS scheduledTimeOut TEXT DEFAULT ''"); } catch {}
+    try { await db.exec(`CREATE TABLE IF NOT EXISTS clients (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT DEFAULT '',
+      phone TEXT DEFAULT '',
+      active INTEGER DEFAULT 1,
+      createdAt TIMESTAMPTZ DEFAULT NOW()
+    );`); } catch {}
+    try { await db.exec(`CREATE TABLE IF NOT EXISTS sites (
+      id TEXT PRIMARY KEY,
+      clientId TEXT NOT NULL,
+      name TEXT NOT NULL,
+      location TEXT DEFAULT '',
+      active INTEGER DEFAULT 1,
+      createdAt TIMESTAMPTZ DEFAULT NOW(),
+      FOREIGN KEY (clientId) REFERENCES clients(id)
+    );`); } catch {}
+    try { await db.exec(`CREATE TABLE IF NOT EXISTS user_site_assignments (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      siteId TEXT NOT NULL,
+      createdAt TIMESTAMPTZ DEFAULT NOW(),
+      FOREIGN KEY (userId) REFERENCES users(id),
+      FOREIGN KEY (siteId) REFERENCES sites(id),
+      UNIQUE(userId, siteId)
+    );`); } catch {}
+    try { await db.exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS clientId TEXT"); } catch {}
+    try { await db.exec("ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS clientId TEXT"); } catch {}
+    try { await db.exec("ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS siteId TEXT"); } catch {}
+
+    try { await db.exec(`CREATE TABLE IF NOT EXISTS communicationSettings (
+      id TEXT PRIMARY KEY,
+      scopeType TEXT DEFAULT 'global',
+      scopeId TEXT DEFAULT '',
+      settingKey TEXT NOT NULL,
+      settingValue TEXT DEFAULT '',
+      updatedBy TEXT,
+      createdAt TIMESTAMPTZ DEFAULT NOW()
+    );`); } catch {}
+    try { await db.exec(`CREATE TABLE IF NOT EXISTS reportSubmissions (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      summary TEXT DEFAULT '',
+      detailsJson TEXT DEFAULT '{}',
+      checkpointId TEXT,
+      siteLabel TEXT DEFAULT '',
+      userId TEXT NOT NULL,
+      status TEXT DEFAULT 'submitted',
+      submittedAt TIMESTAMPTZ DEFAULT NOW(),
+      emailedAt TIMESTAMPTZ,
+      deliveryPayload TEXT DEFAULT '{}',
+      FOREIGN KEY (checkpointId) REFERENCES checkpoints(id),
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );`); } catch {}
+    try { await db.exec(`CREATE TABLE IF NOT EXISTS exportFiles (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      date TEXT NOT NULL,
+      format TEXT DEFAULT 'xlsx',
+      status TEXT DEFAULT 'ready',
+      scopeLabel TEXT DEFAULT '',
+      clientId TEXT,
+      requestedBy TEXT NOT NULL,
+      fileName TEXT NOT NULL,
+      filePath TEXT NOT NULL,
+      downloadUrl TEXT NOT NULL,
+      totalsJson TEXT DEFAULT '{}',
+      generatedAt TIMESTAMPTZ DEFAULT NOW(),
+      createdAt TIMESTAMPTZ DEFAULT NOW(),
+      FOREIGN KEY (clientId) REFERENCES clients(id),
+      FOREIGN KEY (requestedBy) REFERENCES users(id)
+    );`); } catch {}
+    try { await db.exec(`CREATE TABLE IF NOT EXISTS emergencyEvents (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      checkpointId TEXT,
+      siteLabel TEXT DEFAULT '',
+      message TEXT NOT NULL,
+      note TEXT DEFAULT '',
+      triggeredAt TIMESTAMPTZ DEFAULT NOW(),
+      emailRecipients TEXT DEFAULT '[]',
+      phoneRecipients TEXT DEFAULT '[]',
+      status TEXT DEFAULT 'triggered',
+      deliveryPayload TEXT DEFAULT '{}',
+      FOREIGN KEY (userId) REFERENCES users(id),
+      FOREIGN KEY (checkpointId) REFERENCES checkpoints(id)
+    );`); } catch {}
+    try { await db.exec(`CREATE TABLE IF NOT EXISTS passOnLogs (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      instruction TEXT NOT NULL,
+      priority TEXT DEFAULT 'normal',
+      siteLabel TEXT DEFAULT '',
+      checkpointId TEXT,
+      requiresAcknowledgement INTEGER DEFAULT 0,
+      createdBy TEXT NOT NULL,
+      active INTEGER DEFAULT 1,
+      createdAt TIMESTAMPTZ DEFAULT NOW(),
+      FOREIGN KEY (checkpointId) REFERENCES checkpoints(id),
+      FOREIGN KEY (createdBy) REFERENCES users(id)
+    );`); } catch {}
+    try { await db.exec(`CREATE TABLE IF NOT EXISTS passOnLogAcknowledgements (
+      id TEXT PRIMARY KEY,
+      passOnLogId TEXT NOT NULL,
+      userId TEXT NOT NULL,
+      acknowledgedAt TIMESTAMPTZ DEFAULT NOW(),
+      note TEXT DEFAULT '',
+      FOREIGN KEY (passOnLogId) REFERENCES passOnLogs(id),
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );`); } catch {}
   }
 }
 

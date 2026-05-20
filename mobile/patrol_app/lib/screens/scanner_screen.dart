@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:provider/provider.dart';
+import '../providers/duty_provider.dart';
 import '../services/location_service.dart';
 import '../utils/routes.dart';
 import '../utils/theme.dart';
@@ -15,20 +17,37 @@ class _ScannerScreenState extends State<ScannerScreen> {
   final controller = MobileScannerController();
   bool _flashlight = false;
   bool _processingScan = false;
+  bool _checkingAccess = true;
   bool _ready = false;
+  String? _blockedMessage;
 
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(milliseconds: 800), () {
-      if (mounted) setState(() => _ready = true);
-    });
+    _prepareScanner();
   }
 
   @override
   void dispose() {
     controller.dispose();
     super.dispose();
+  }
+
+  Future<void> _prepareScanner() async {
+    final duty = context.read<DutyProvider>();
+    if (duty.orders.isEmpty && !duty.loading) {
+      await duty.load();
+    }
+    if (!mounted) return;
+
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (!mounted) return;
+
+    setState(() {
+      _blockedMessage = null;
+      _checkingAccess = false;
+      _ready = true;
+    });
   }
 
   void _onDetect(BarcodeCapture capture) async {
@@ -86,91 +105,142 @@ class _ScannerScreenState extends State<ScannerScreen> {
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          MobileScanner(
-            controller: controller,
-            onDetect: _onDetect,
-          ),
-          Center(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final size = constraints.biggest.shortestSide * 0.75;
-                return Container(
-              width: size.clamp(200, 300),
-              height: size.clamp(200, 300),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.white, width: 2),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: CustomPaint(
-                painter: _CornerPainter(),
-              ),
-            );
-              },
-            ),
-          ),
-          Positioned(
-            bottom: 80,
-            left: 0,
-            right: 0,
-            child: Column(
-              children: [
-                Icon(Icons.my_location,
-                    color: Colors.white.withOpacity(0.8), size: 18),
-                const SizedBox(height: 4),
-                Text(
-                  'GPS captured during scan',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.8),
-                    fontSize: 13,
+      body: _checkingAccess
+          ? const Center(
+              child: CircularProgressIndicator(),
+            )
+          : _blockedMessage != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.assignment_late_outlined,
+                          size: 56,
+                          color: AppTheme.flagged,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          _blockedMessage!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: AppTheme.text,
+                            fontSize: 15,
+                            height: 1.5,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () =>
+                                Navigator.pushReplacementNamed(
+                                  context,
+                                  AppRoutes.duties,
+                                ),
+                            icon: const Icon(Icons.assignment_turned_in_outlined),
+                            label: const Text('Open Duties'),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton(
+                            onPressed: _prepareScanner,
+                            child: const Text('Re-check Access'),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Point camera at checkpoint QR code',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.6),
-                    fontSize: 14,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-          if (_processingScan)
-            Positioned.fill(
-              child: Container(
-                color: Colors.black.withOpacity(0.72),
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CircularProgressIndicator(color: AppTheme.primary),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Processing scan...',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
+                )
+              : Stack(
+                  children: [
+                    MobileScanner(
+                      controller: controller,
+                      onDetect: _onDetect,
+                    ),
+                    Center(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final size = constraints.biggest.shortestSide * 0.75;
+                          return Container(
+                        width: size.clamp(200, 300),
+                        height: size.clamp(200, 300),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.white, width: 2),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: CustomPaint(
+                          painter: _CornerPainter(),
+                        ),
+                      );
+                        },
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 80,
+                      left: 0,
+                      right: 0,
+                      child: Column(
+                        children: [
+                          Icon(Icons.my_location,
+                              color: Colors.white.withValues(alpha: 0.8), size: 18),
+                          const SizedBox(height: 4),
+                          Text(
+                            'GPS captured during scan',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.8),
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Point camera at checkpoint QR code',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.6),
+                              fontSize: 14,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_processingScan)
+                      Positioned.fill(
+                        child: Container(
+                          color: Colors.black.withValues(alpha: 0.72),
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                CircularProgressIndicator(color: AppTheme.primary),
+                                const SizedBox(height: 16),
+                                const Text(
+                                  'Processing scan...',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Getting GPS and verifying checkpoint',
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.75),
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Getting GPS and verifying checkpoint',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.75),
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
-                  ),
+                  ],
                 ),
-              ),
-            ),
-        ],
-      ),
     );
   }
 }

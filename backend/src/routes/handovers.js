@@ -6,6 +6,7 @@ import { Router } from 'express'
 import { v4 as uuidv4 } from 'uuid'
 import db from '../db.js'
 import { authMiddleware, adminOnly } from '../middleware/auth.js'
+import { normalizeRole } from '../utils/roles.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const uploadDir = path.join(__dirname, '..', 'uploads', 'handover-proofs')
@@ -47,15 +48,35 @@ function normalizeHandover(row) {
   }
 }
 
-router.get('/', async (_req, res) => {
-  const rows = await db.all(`
+router.get('/', async (req, res) => {
+  const role = normalizeRole(req.user?.role)
+  let query = `
     SELECT h.*, cp.name as checkpointName, fu.name as fromUserName, tu.name as toUserName
     FROM handovers h
     LEFT JOIN checkpoints cp ON h.checkpointId = cp.id
     JOIN users fu ON h.fromUserId = fu.id
     LEFT JOIN users tu ON h.toUserId = tu.id
-    ORDER BY h.createdAt DESC
-  `)
+  `
+  const conditions = []
+  const params = []
+
+  if (role === 'main_account') {
+    conditions.push(`(
+      h.checkpointId IN (SELECT id FROM checkpoints WHERE clientId = ?)
+      OR h.fromUserId IN (SELECT id FROM users WHERE clientId = ?)
+    )`)
+    params.push(req.user.clientId, req.user.clientId)
+  } else if (role === 'supervisor' || role === 'guard') {
+    conditions.push('(h.fromUserId = ? OR h.toUserId = ?)')
+    params.push(req.user.id, req.user.id)
+  }
+
+  if (conditions.length > 0) {
+    query += ' WHERE ' + conditions.join(' AND ')
+  }
+  query += ' ORDER BY h.createdAt DESC'
+
+  const rows = await db.all(query, params)
   res.json(rows.map(normalizeHandover))
 })
 

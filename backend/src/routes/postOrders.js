@@ -5,7 +5,8 @@ import multer from 'multer'
 import { Router } from 'express'
 import { v4 as uuidv4 } from 'uuid'
 import db from '../db.js'
-import { authMiddleware, adminOnly } from '../middleware/auth.js'
+import { authMiddleware, adminOnly, adminOrMainAccountOnly } from '../middleware/auth.js'
+import { normalizeRole } from '../utils/roles.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const uploadDir = path.join(__dirname, '..', 'uploads', 'post-order-proofs')
@@ -35,10 +36,10 @@ function normalizeOrder(row) {
     checkpointName: row.checkpointName ?? row.checkpointname ?? null,
     assignedUserId: row.assignedUserId ?? row.assigneduserid ?? null,
     assignedUserName: row.assignedUserName ?? row.assignedusername ?? null,
-    assignedRole: row.assignedRole ?? row.assignedrole ?? 'officer',
+    assignedRole: row.assignedRole ?? row.assignedrole ?? 'guard',
     priority: row.priority ?? 'normal',
     active: !!(row.active ?? row.active === 1),
-    requiresAcknowledgement: !!(row.requiresAcknowledgement ?? row.requiresacknowledgement ?? true),
+    requiresAcknowledgement: !!(row.requiresAcknowledgement ?? row.requiresacknowledgement ?? false),
     requiresPhotoProof: !!(row.requiresPhotoProof ?? row.requiresphotoproof ?? true),
     createdBy: row.createdBy ?? row.createdby ?? '',
     createdByName: row.createdByName ?? row.createdbyname ?? '',
@@ -79,6 +80,7 @@ router.get('/', async (req, res) => {
   const { checkpointId, active = 'true' } = req.query
   const conditions = []
   const params = []
+  const role = normalizeRole(req.user?.role)
 
   if (active !== 'all') {
     conditions.push('po.active = ?')
@@ -88,11 +90,16 @@ router.get('/', async (req, res) => {
     conditions.push('po.checkpointId = ?')
     params.push(checkpointId)
   }
-  if (req.user.role !== 'admin') {
-    conditions.push('(po.assignedUserId IS NULL OR po.assignedUserId = ?)')
-    params.push(req.user.id)
-    conditions.push('(po.assignedRole IS NULL OR po.assignedRole = ?)')
-    params.push(req.user.role)
+  if (role !== 'admin') {
+    if (role === 'main_account') {
+      conditions.push(`po.checkpointId IN (SELECT id FROM checkpoints WHERE clientId = ?)`)
+      params.push(req.user.clientId)
+    } else {
+      conditions.push('(po.assignedUserId IS NULL OR po.assignedUserId = ?)')
+      params.push(req.user.id)
+      conditions.push('(po.assignedRole IS NULL OR po.assignedRole = ?)')
+      params.push(role)
+    }
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
@@ -108,7 +115,7 @@ router.get('/', async (req, res) => {
 
   const orders = await Promise.all(rows.map(async (row) => {
     const order = normalizeOrder(row)
-    if (req.user.role === 'admin') return order
+    if (role === 'admin' || role === 'main_account') return order
     const completion = await db.get(`
       SELECT poc.*, u.name as userName, c.name as checkpointName
       FROM postOrderCompletions poc
@@ -124,32 +131,49 @@ router.get('/', async (req, res) => {
   res.json(orders)
 })
 
-router.get('/completions', adminOnly, async (_req, res) => {
-  const rows = await db.all(`
+router.get('/completions', async (req, res) => {
+  const role = normalizeRole(req.user?.role)
+  let query = `
     SELECT poc.*, u.name as userName, c.name as checkpointName, po.title as postOrderTitle
     FROM postOrderCompletions poc
     JOIN users u ON poc.userId = u.id
     JOIN postOrders po ON poc.postOrderId = po.id
     LEFT JOIN checkpoints c ON poc.checkpointId = c.id
-    ORDER BY poc.createdAt DESC
-  `)
+  `
+  const conditions = []
+  const params = []
+
+  if (role === 'main_account') {
+    conditions.push(`po.checkpointId IN (SELECT id FROM checkpoints WHERE clientId = ?)`)
+    params.push(req.user.clientId)
+  } else if (role === 'supervisor' || role === 'guard') {
+    conditions.push('poc.userId = ?')
+    params.push(req.user.id)
+  }
+
+  if (conditions.length > 0) {
+    query += ' WHERE ' + conditions.join(' AND ')
+  }
+  query += ' ORDER BY poc.createdAt DESC'
+
+  const rows = await db.all(query, params)
   res.json(rows.map((row) => ({
     ...normalizeCompletion(row),
     postOrderTitle: row.postOrderTitle ?? row.postordertitle ?? '',
   })))
 })
 
-router.post('/', adminOnly, async (req, res) => {
+router.post('/', adminOrMainAccountOnly, async (req, res) => {
   const {
     title,
     summary,
     instructions,
     checkpointId,
     assignedUserId,
-    assignedRole = 'officer',
+    assignedRole = 'guard',
     priority = 'normal',
     active = true,
-    requiresAcknowledgement = true,
+    requiresAcknowledgement = false,
     requiresPhotoProof = true,
   } = req.body
 
@@ -191,7 +215,7 @@ router.post('/', adminOnly, async (req, res) => {
   res.status(201).json(normalizeOrder(created))
 })
 
-router.put('/:id', adminOnly, async (req, res) => {
+router.put('/:id', adminOrMainAccountOnly, async (req, res) => {
   const existing = await db.get('SELECT * FROM postOrders WHERE id = ?', [req.params.id])
   if (!existing) return res.status(404).json({ message: 'Post order not found' })
 
@@ -211,7 +235,7 @@ router.put('/:id', adminOnly, async (req, res) => {
     merged.instructions,
     merged.checkpointId || null,
     merged.assignedUserId || null,
-    merged.assignedRole || 'officer',
+    merged.assignedRole || 'guard',
     merged.priority || 'normal',
     merged.active ? 1 : 0,
     merged.requiresAcknowledgement ? 1 : 0,
@@ -332,10 +356,15 @@ router.post('/:id/complete', upload.single('photo'), async (req, res) => {
   res.status(201).json(normalizeCompletion(created))
 })
 
-router.patch('/completions/:id/review', adminOnly, async (req, res) => {
+router.patch('/completions/:id/review', async (req, res) => {
   const { reviewStatus, reviewNote = '' } = req.body
   if (!['verified', 'rejected'].includes(reviewStatus)) {
     return res.status(400).json({ message: 'reviewStatus must be verified or rejected' })
+  }
+
+  const role = normalizeRole(req.user?.role)
+  if (role !== 'admin' && role !== 'main_account' && role !== 'supervisor') {
+    return res.status(403).json({ message: 'Access denied' })
   }
 
   const existing = await db.get('SELECT * FROM postOrderCompletions WHERE id = ?', [req.params.id])

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/duty_provider.dart';
 import '../providers/scan_provider.dart';
+import '../providers/shift_provider.dart';
 import '../utils/routes.dart';
 import '../utils/theme.dart';
 
@@ -29,6 +31,8 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
     final auth = context.read<AuthProvider>();
     final scan = context.read<ScanProvider>();
+    final shift = context.read<ShiftProvider>();
+    final duty = context.read<DutyProvider>();
     final navigator = Navigator.of(context);
     final ok = await auth.login(
       _emailCtrl.text.trim(),
@@ -38,6 +42,9 @@ class _LoginScreenState extends State<LoginScreen> {
     if (ok) {
       await scan.loadScans();
       await scan.loadCheckpoints();
+      await shift.loadStatus();
+      await duty.load();
+      if (!mounted) return;
       navigator.pushReplacementNamed(AppRoutes.home);
     }
   }
@@ -66,7 +73,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: AppTheme.primary.withOpacity(0.15),
+                        color: AppTheme.primary.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: const Icon(
@@ -89,7 +96,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       'Security Patrol System',
                       style: TextStyle(
                         fontSize: 13,
-                        color: Colors.white.withOpacity(0.5),
+                        color: Colors.white.withValues(alpha: 0.5),
                       ),
                     ),
                     const SizedBox(height: 40),
@@ -177,13 +184,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(Icons.business,
-                            size: 14, color: Colors.white.withOpacity(0.4)),
+                            size: 14, color: Colors.white.withValues(alpha: 0.4)),
                         const SizedBox(width: 6),
                         Text(
                           'Company account only',
                           style: TextStyle(
                             fontSize: 12,
-                            color: Colors.white.withOpacity(0.4),
+                            color: Colors.white.withValues(alpha: 0.4),
                           ),
                         ),
                       ],

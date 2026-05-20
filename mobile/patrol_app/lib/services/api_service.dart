@@ -215,13 +215,36 @@ class ApiService {
     return jsonDecode(res.body);
   }
 
+  static Future<Map<String, dynamic>> triggerEmergency({
+    String? checkpointId,
+    String siteLabel = '',
+    String note = '',
+    String location = '',
+  }) async {
+    await _ensureOnline();
+    final res = await _client.post(
+      Uri.parse('$baseUrl/emergency/trigger'),
+      headers: await _headers(),
+      body: jsonEncode({
+        'checkpointId': checkpointId,
+        'siteLabel': siteLabel,
+        'note': note,
+        'location': location,
+      }),
+    ).timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to trigger emergency alert');
+    }
+    return jsonDecode(res.body);
+  }
+
   static Future<Map<String, dynamic>> submitPassOnLog({
     required String title,
     required String instruction,
     String priority = 'normal',
     String siteLabel = '',
     String? checkpointId,
-    bool requiresAcknowledgement = true,
+    bool requiresAcknowledgement = false,
   }) async {
     await _ensureOnline();
     final res = await _client.post(
@@ -256,6 +279,18 @@ class ApiService {
     ).timeout(_timeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to request daily tour export');
+    }
+    return jsonDecode(res.body);
+  }
+
+  static Future<List<dynamic>> getDailyTourExports() async {
+    await _ensureOnline();
+    final res = await _client.get(
+      Uri.parse('$baseUrl/scans/export/daily'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to load export archive');
     }
     return jsonDecode(res.body);
   }

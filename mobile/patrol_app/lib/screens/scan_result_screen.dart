@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import '../models/checkpoint.dart';
+import '../models/post_order.dart';
+import '../providers/duty_provider.dart';
 import '../providers/scan_provider.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
@@ -43,6 +45,14 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
     _loadCheckpoint();
   }
 
+  List<PostOrder> _matchingOrders(List<PostOrder> orders) {
+    if (_checkpoint == null) return const [];
+    return orders.where((order) {
+      if (!order.active) return false;
+      return order.checkpointId == _checkpoint!.id;
+    }).toList();
+  }
+
   double _haversine(double lat1, double lon1, double lat2, double lon2) {
     const R = 6371000.0;
     final dLat = (lat2 - lat1) * math.pi / 180;
@@ -69,7 +79,11 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
     final code = data['checkpointCode'] as String? ?? '';
 
     final scanProvider = context.read<ScanProvider>();
+    final dutyProvider = context.read<DutyProvider>();
     await scanProvider.loadCheckpoints();
+    if (dutyProvider.orders.isEmpty && !dutyProvider.loading) {
+      await dutyProvider.load();
+    }
 
     Checkpoint? checkpoint;
     try {
@@ -304,6 +318,9 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final duty = context.watch<DutyProvider>();
+    final matchingOrders = _matchingOrders(duty.orders);
+
     if (_loading) {
       return Scaffold(
         body: Center(
@@ -509,7 +526,110 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                 ),
               ),
             ),
-            if (_errorMessage != null) ...[
+            if (matchingOrders.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Card(
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(color: AppTheme.border),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Post Orders For This Tour Stop',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.text,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Read these instructions before completing the patrol scan.',
+                        style: TextStyle(
+                          color: AppTheme.textSecondary,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      ...matchingOrders.map((order) => Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: AppTheme.primary.withValues(alpha: 0.06),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: AppTheme.primary.withValues(alpha: 0.15),
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          order.title,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            color: AppTheme.text,
+                                          ),
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: AppTheme.flagged.withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(999),
+                                        ),
+                                        child: Text(
+                                          order.priority.toUpperCase(),
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppTheme.flagged,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (order.summary.isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      order.summary,
+                                      style: const TextStyle(
+                                        color: AppTheme.textSecondary,
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                  ],
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    order.instructions,
+                                    style: const TextStyle(
+                                      color: AppTheme.text,
+                                      height: 1.5,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+             if (_errorMessage != null) ...[
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(12),

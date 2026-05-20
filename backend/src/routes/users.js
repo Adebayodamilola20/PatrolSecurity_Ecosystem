@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import { v4 as uuidv4 } from 'uuid'
 import db from '../db.js'
 import { authMiddleware, adminOnly } from '../middleware/auth.js'
+import { normalizeRole, buildUserScopeFilter } from '../utils/roles.js'
 
 const router = Router()
 
@@ -17,6 +18,7 @@ function normalizeUser(user) {
     role: user.role,
     phone: user.phone ?? '',
     active: !!(user.active ?? user.active === 1),
+    clientId: user.clientId ?? null,
     createdAt: user.createdAt ?? user.createdat ?? null,
     onDuty: !!(user.onDuty ?? user.onduty),
     lastClockIn: user.lastClockIn ?? user.lastclockin ?? null,
@@ -55,9 +57,10 @@ function normalizeScan(scan) {
 }
 
 router.get('/', async (req, res) => {
-  const users = await db.all(`
+  const scope = buildUserScopeFilter(req.user, { userPrefix: 'u' })
+  const query = `
     SELECT
-      u.id, u.name, u.email, u.role, u.phone, u.active, u.createdAt,
+      u.id, u.name, u.email, u.role, u.phone, u.active, u.createdAt, u.clientId,
       EXISTS(
         SELECT 1 FROM shifts s
         WHERE s.userId = u.id AND s.status = 'active'
@@ -75,15 +78,17 @@ router.get('/', async (req, res) => {
         LIMIT 1
       ) as lastClockOut
     FROM users u
+    ${scope.conditions.length > 0 ? 'WHERE ' + scope.conditions.join(' AND ') : ''}
     ORDER BY u.createdAt DESC
-  `)
+  `
+  const users = await db.all(query, scope.params)
   res.json(users.map(normalizeUser))
 })
 
 router.get('/:id', async (req, res) => {
   const user = await db.get(`
     SELECT
-      u.id, u.name, u.email, u.role, u.phone, u.active, u.createdAt,
+      u.id, u.name, u.email, u.role, u.phone, u.active, u.createdAt, u.clientId,
       EXISTS(
         SELECT 1 FROM shifts s
         WHERE s.userId = u.id AND s.status = 'active'
@@ -105,6 +110,14 @@ router.get('/:id', async (req, res) => {
   `, [req.params.id])
 
   if (!user) return res.status(404).json({ message: 'User not found' })
+
+  const role = normalizeRole(req.user?.role)
+  if (role === 'main_account' && user.clientId !== req.user.clientId) {
+    return res.status(403).json({ message: 'Access denied' })
+  }
+  if ((role === 'supervisor' || role === 'guard') && user.id !== req.user.id) {
+    return res.status(403).json({ message: 'Access denied' })
+  }
 
   const shifts = await db.all(`
     SELECT id, clockIn, clockOut, status, createdAt, scheduledStart, scheduledEnd
@@ -131,7 +144,7 @@ router.get('/:id', async (req, res) => {
 })
 
 router.post('/', adminOnly, async (req, res) => {
-  const { name, email, password, role, phone } = req.body
+  const { name, email, password, role, phone, clientId, siteIds } = req.body
 
   if (!name || !email || !password) {
     return res.status(400).json({ message: 'name, email, password are required' })
@@ -142,8 +155,9 @@ router.post('/', adminOnly, async (req, res) => {
     return res.status(409).json({ message: 'Email already in use' })
   }
 
-  const validRoles = ['admin', 'supervisor', 'officer']
-  const userRole = validRoles.includes(role) ? role : 'officer'
+  const validRoles = ['admin', 'main_account', 'supervisor', 'guard']
+  const normalizedRole = normalizeRole(role)
+  const userRole = validRoles.includes(normalizedRole) ? normalizedRole : 'guard'
 
   const hashed = bcrypt.hashSync(password, 10)
   const user = {
@@ -154,12 +168,22 @@ router.post('/', adminOnly, async (req, res) => {
     role: userRole,
     phone: phone || '',
     active: 1,
+    clientId: clientId || null,
   }
 
   await db.run(`
-    INSERT INTO users (id, name, email, password, role, phone, active)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO users (id, name, email, password, role, phone, active, clientId)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `, Object.values(user))
+
+  if (siteIds && Array.isArray(siteIds) && siteIds.length > 0) {
+    for (const siteId of siteIds) {
+      await db.run(
+        'INSERT OR IGNORE INTO user_site_assignments (id, userId, siteId) VALUES (?, ?, ?)',
+        [uuidv4(), user.id, siteId]
+      )
+    }
+  }
 
   const { password: _, ...safeUser } = user
   res.status(201).json({ ...safeUser, active: !!safeUser.active })

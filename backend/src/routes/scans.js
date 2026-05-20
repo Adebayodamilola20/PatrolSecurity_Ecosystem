@@ -2,6 +2,8 @@ import { Router } from 'express'
 import { v4 as uuidv4 } from 'uuid'
 import db from '../db.js'
 import { authMiddleware } from '../middleware/auth.js'
+import { canExport, normalizeRole } from '../utils/roles.js'
+import { buildDayRange, createDailyExportWorkbook } from '../services/excelExport.js'
 
 function normalizeCheckpoint(cp) {
   if (!cp) return cp
@@ -23,7 +25,7 @@ function normalizeCheckpoint(cp) {
 function normalizeScan(scan) {
   if (!scan) return scan
 
-  const normalized = {
+  return {
     id: scan.id,
     officerId: scan.officerId ?? scan.officerid ?? '',
     officerName: scan.officerName ?? scan.officername ?? '',
@@ -40,16 +42,43 @@ function normalizeScan(scan) {
     notes: scan.notes ?? '',
     checkpointActive: !!(scan.checkpointActive ?? scan.checkpointactive),
   }
+}
 
-  return normalized
+function normalizeExportFile(row) {
+  if (!row) return row
+  let totals = {}
+  try {
+    totals = JSON.parse(row.totalsJson ?? row.totalsjson ?? '{}')
+  } catch {}
+
+  return {
+    id: row.id,
+    type: row.type,
+    date: row.date,
+    format: row.format ?? 'xlsx',
+    status: row.status ?? 'ready',
+    scopeLabel: row.scopeLabel ?? row.scopelabel ?? '',
+    clientId: row.clientId ?? row.clientid ?? null,
+    requestedBy: row.requestedBy ?? row.requestedby ?? '',
+    requestedByName: row.requestedByName ?? row.requestedbyname ?? '',
+    fileName: row.fileName ?? row.filename ?? '',
+    filePath: row.filePath ?? row.filepath ?? '',
+    downloadUrl: row.downloadUrl ?? row.downloadurl ?? '',
+    totals,
+    generatedAt: row.generatedAt ?? row.generatedat ?? null,
+    createdAt: row.createdAt ?? row.createdat ?? null,
+  }
 }
 
 async function createIncident(officerId, checkpointId, title, description, severity, app) {
   const incident = {
     id: uuidv4(),
-    officerId, checkpointId: checkpointId || null,
-    title, description: description || '',
-    severity, status: 'open',
+    officerId,
+    checkpointId: checkpointId || null,
+    title,
+    description: description || '',
+    severity,
+    status: 'open',
   }
   await db.run(`
     INSERT INTO incidents (id, officerId, checkpointId, title, description, severity, status)
@@ -76,9 +105,21 @@ router.get('/', async (req, res) => {
   `
   const conditions = []
   const params = []
-  if (req.user?.role === 'officer') {
+  const role = normalizeRole(req.user?.role)
+  if (role === 'guard') {
     conditions.push('s.officerId = ?')
     params.push(req.user.id)
+  }
+  if (role === 'main_account') {
+    conditions.push('c.clientId = ?')
+    params.push(req.user.clientId)
+  }
+  if (role === 'supervisor') {
+    conditions.push(`(
+      c.siteId IN (SELECT usa.siteId FROM user_site_assignments usa WHERE usa.userId = ?)
+      OR s.officerId IN (SELECT usam.userId FROM user_site_assignments usam WHERE usam.userId = ?)
+    )`)
+    params.push(req.user.id, req.user.id)
   }
   if (officer) {
     conditions.push('s.officerId = ?')
@@ -101,9 +142,21 @@ router.get('/', async (req, res) => {
 router.get('/recent', async (req, res) => {
   const conditions = []
   const params = []
-  if (req.user?.role === 'officer') {
+  const role = normalizeRole(req.user?.role)
+  if (role === 'guard') {
     conditions.push('s.officerId = ?')
     params.push(req.user.id)
+  }
+  if (role === 'main_account') {
+    conditions.push('c.clientId = ?')
+    params.push(req.user.clientId)
+  }
+  if (role === 'supervisor') {
+    conditions.push(`(
+      c.siteId IN (SELECT usa.siteId FROM user_site_assignments usa WHERE usa.userId = ?)
+      OR s.officerId IN (SELECT usam.userId FROM user_site_assignments usam WHERE usam.userId = ?)
+    )`)
+    params.push(req.user.id, req.user.id)
   }
 
   let query = `
@@ -132,7 +185,8 @@ router.get('/:id', async (req, res) => {
     WHERE s.id = ?
   `
   const params = [req.params.id]
-  if (req.user?.role === 'officer') {
+  const role = normalizeRole(req.user?.role)
+  if (role === 'guard') {
     query += ' AND s.officerId = ?'
     params.push(req.user.id)
   }
@@ -171,7 +225,8 @@ router.post('/', async (req, res) => {
     gpsValid = distanceMeters <= checkpoint.radiusMeters
     if (!gpsValid) {
       await createIncident(
-        req.user.id, checkpointId,
+        req.user.id,
+        checkpointId,
         'Geofence Breach',
         `Guard scanned ${checkpoint.name} from ${distanceMeters}m away (radius: ${checkpoint.radiusMeters}m)`,
         'high',
@@ -213,6 +268,154 @@ router.post('/', async (req, res) => {
   }
 
   res.status(201).json(scanResult)
+})
+
+router.get('/export/daily', async (req, res) => {
+  if (!canExport(req.user.role)) {
+    return res.status(403).json({ message: 'Only Admin and Main Account can review exports' })
+  }
+
+  try {
+    const role = normalizeRole(req.user?.role)
+    const params = []
+    let where = ''
+
+    if (role === 'main_account') {
+      where = 'WHERE ef.clientId = ?'
+      params.push(req.user.clientId)
+    }
+
+    const rows = await db.all(`
+      SELECT ef.*, u.name as requestedByName
+      FROM exportFiles ef
+      JOIN users u ON ef.requestedBy = u.id
+      ${where}
+      ORDER BY ef.generatedAt DESC, ef.createdAt DESC
+    `, params)
+
+    res.json(rows.map(normalizeExportFile))
+  } catch (error) {
+    console.error('[scans:export:daily:list]', error)
+    res.status(500).json({ message: 'Failed to load export archive' })
+  }
+})
+
+router.post('/export/daily', async (req, res) => {
+  if (!canExport(req.user.role)) {
+    return res.status(403).json({ message: 'Only Admin and Main Account can request exports' })
+  }
+
+  const { date, format = 'xlsx' } = req.body
+  if (!date) {
+    return res.status(400).json({ message: 'date is required' })
+  }
+  if (String(format).toLowerCase() !== 'xlsx') {
+    return res.status(400).json({ message: 'Only xlsx export is currently supported' })
+  }
+
+  try {
+    const { startIso, endIso } = buildDayRange(date)
+    const role = normalizeRole(req.user?.role)
+
+    const scanParams = [startIso, endIso]
+    let scanWhere = 'WHERE s.scannedAt >= ? AND s.scannedAt <= ?'
+    let scopeLabel = 'All clients'
+
+    if (role === 'main_account') {
+      scanWhere += ' AND c.clientId = ?'
+      scanParams.push(req.user.clientId)
+      const client = await db.get('SELECT name FROM clients WHERE id = ?', [req.user.clientId])
+      scopeLabel = client?.name || client?.Name || 'Client scope'
+    }
+
+    const scans = await db.all(`
+      SELECT s.*, u.name as officerName, u.email as officerEmail, u.phone as officerPhone,
+             c.name as checkpointName, c.code as checkpointCode, c.clientId, c.siteId,
+             sites.name as siteName, clients.name as clientName
+      FROM scans s
+      JOIN users u ON s.officerId = u.id
+      JOIN checkpoints c ON s.checkpointId = c.id
+      LEFT JOIN sites ON c.siteId = sites.id
+      LEFT JOIN clients ON c.clientId = clients.id
+      ${scanWhere}
+      ORDER BY s.scannedAt ASC
+    `, scanParams)
+
+    const shiftParams = [endIso, startIso]
+    let shiftWhere = 'WHERE s.clockIn <= ? AND (s.clockOut IS NULL OR s.clockOut >= ?)'
+    if (role === 'main_account') {
+      shiftWhere += ' AND u.clientId = ?'
+      shiftParams.push(req.user.clientId)
+    }
+
+    const shifts = await db.all(`
+      SELECT s.*, u.name as userName, u.email as userEmail, u.phone as userPhone,
+             u.clientId, clients.name as clientName
+      FROM shifts s
+      JOIN users u ON s.userId = u.id
+      LEFT JOIN clients ON u.clientId = clients.id
+      ${shiftWhere}
+      ORDER BY s.clockIn ASC
+    `, shiftParams)
+
+    const exportFile = await createDailyExportWorkbook({
+      date,
+      requestedBy: req.user,
+      scans,
+      shifts,
+      scopeLabel,
+    })
+
+    const exportRecord = {
+      id: uuidv4(),
+      type: 'daily_tour',
+      date,
+      format: 'xlsx',
+      status: 'ready',
+      scopeLabel,
+      clientId: role === 'main_account' ? req.user.clientId : null,
+      requestedBy: req.user.id,
+      fileName: exportFile.fileName,
+      filePath: exportFile.filePath,
+      downloadUrl: exportFile.downloadUrl,
+      totalsJson: JSON.stringify(exportFile.totals),
+      generatedAt: new Date().toISOString(),
+    }
+
+    await db.run(`
+      INSERT INTO exportFiles (
+        id, type, date, format, status, scopeLabel, clientId, requestedBy,
+        fileName, filePath, downloadUrl, totalsJson, generatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      exportRecord.id,
+      exportRecord.type,
+      exportRecord.date,
+      exportRecord.format,
+      exportRecord.status,
+      exportRecord.scopeLabel,
+      exportRecord.clientId,
+      exportRecord.requestedBy,
+      exportRecord.fileName,
+      exportRecord.filePath,
+      exportRecord.downloadUrl,
+      exportRecord.totalsJson,
+      exportRecord.generatedAt,
+    ])
+
+    const saved = await db.get(`
+      SELECT ef.*, u.name as requestedByName
+      FROM exportFiles ef
+      JOIN users u ON ef.requestedBy = u.id
+      WHERE ef.id = ?
+    `, [exportRecord.id])
+
+    res.status(201).json(normalizeExportFile(saved))
+  } catch (error) {
+    console.error('[scans:export:daily]', error)
+    const message = error?.message || 'Failed to generate daily export'
+    res.status(500).json({ message })
+  }
 })
 
 export default router
