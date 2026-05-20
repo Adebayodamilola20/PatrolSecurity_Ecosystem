@@ -856,16 +856,10 @@ async function initDb() {
     );`); } catch {}
   } else {
     await db.exec(pgSchema)
-    try {
-      await db.exec(`
-        UPDATE users SET role = 'guard' WHERE role = 'officer';
-        UPDATE users SET role = 'main_account' WHERE role IN ('client_main_account', 'client-main-account', 'main-account');
-        ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
-        ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'main_account', 'supervisor', 'guard'));
-      `)
-    } catch (e) {
-      console.log('[PG Migration] Non-critical error adjusting users check constraint:', e.message)
-    }
+    try { await db.exec("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check"); } catch (e) { console.log('[PG] Drop constraint:', e.message) }
+    try { await db.exec("UPDATE users SET role = 'guard' WHERE role = 'officer'"); } catch (e) { console.log('[PG] Update officer->guard:', e.message) }
+    try { await db.exec("UPDATE users SET role = 'main_account' WHERE role IN ('client_main_account', 'client-main-account', 'main-account')"); } catch (e) { console.log('[PG] Update legacy roles:', e.message) }
+    try { await db.exec("ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'main_account', 'supervisor', 'guard'))"); } catch (e) { console.log('[PG] Add constraint:', e.message) }
     try { await db.exec("ALTER TABLE shifts ADD COLUMN IF NOT EXISTS clockInPhoto TEXT DEFAULT ''"); } catch {}
     try { await db.exec("ALTER TABLE shifts ADD COLUMN IF NOT EXISTS clockInLatitude DOUBLE PRECISION"); } catch {}
     try { await db.exec("ALTER TABLE shifts ADD COLUMN IF NOT EXISTS clockInLongitude DOUBLE PRECISION"); } catch {}
