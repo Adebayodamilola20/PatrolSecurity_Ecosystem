@@ -22,10 +22,34 @@ function formatDuration(minutes) {
   return `${hours}h ${remainder}m`
 }
 
+// Case-insensitive / casing-agnostic property getter for database compatibility (SQLite vs PostgreSQL)
+function getProp(obj, key) {
+  if (!obj) return ''
+  if (key in obj) return obj[key]
+  const lowerKey = key.toLowerCase()
+  for (const k of Object.keys(obj)) {
+    if (k.toLowerCase() === lowerKey) return obj[k]
+  }
+  return ''
+}
+
+// Numeric case-insensitive getter
+function getPropNum(obj, key, fallback = '') {
+  if (!obj) return fallback
+  if (key in obj) return obj[key] ?? fallback
+  const lowerKey = key.toLowerCase()
+  for (const k of Object.keys(obj)) {
+    if (k.toLowerCase() === lowerKey) return obj[k] ?? fallback
+  }
+  return fallback
+}
+
 function computeShiftMinutes(shift, rangeStartMs, rangeEndMs) {
-  const startMs = new Date(shift.clockIn).getTime()
+  const clockIn = getProp(shift, 'clockIn')
+  const clockOut = getProp(shift, 'clockOut')
+  const startMs = new Date(clockIn).getTime()
   if (Number.isNaN(startMs)) return 0
-  const rawEndMs = shift.clockOut ? new Date(shift.clockOut).getTime() : rangeEndMs
+  const rawEndMs = clockOut ? new Date(clockOut).getTime() : rangeEndMs
   const endMs = Number.isNaN(rawEndMs) ? rangeEndMs : rawEndMs
   const effectiveStart = Math.max(startMs, rangeStartMs)
   const effectiveEnd = Math.min(endMs, rangeEndMs)
@@ -33,27 +57,59 @@ function computeShiftMinutes(shift, rangeStartMs, rangeEndMs) {
   return Math.round((effectiveEnd - effectiveStart) / 60000)
 }
 
+const thinBorder = {
+  top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+  left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+  bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+  right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+}
+
+const stripeFill = {
+  type: 'pattern',
+  pattern: 'solid',
+  fgColor: { argb: 'FFF8FAFC' }
+}
+
 function applyHeaderStyle(row) {
-  row.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+  row.font = { bold: true, color: { argb: 'FFFFFFFF' }, name: 'Segoe UI', size: 11 }
   row.fill = {
     type: 'pattern',
     pattern: 'solid',
-    fgColor: { argb: 'FF1F4E78' },
+    fgColor: { argb: 'FF1E293B' }, // Premium Dark Slate
   }
-  row.alignment = { vertical: 'middle' }
+  row.alignment = { vertical: 'middle', horizontal: 'left' }
+  row.height = 24
+}
+
+function styleRow(row, isStripe = false) {
+  row.height = 20
+  row.eachCell({ includeEmpty: true }, (cell) => {
+    cell.border = thinBorder
+    cell.font = { name: 'Segoe UI', size: 10 }
+    if (isStripe) {
+      cell.fill = stripeFill
+    }
+
+    // Proactively highlight status cells
+    const val = String(cell.value || '').trim().toLowerCase()
+    if (val === 'yes' || val === 'verified' || val === 'active' || val === 'completed') {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2F0D9' } } // Soft green
+      cell.font = { color: { argb: 'FF385723' }, bold: true, name: 'Segoe UI', size: 10 }
+    } else if (val === 'no' || val === 'flagged') {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFCE4D6' } } // Soft red
+      cell.font = { color: { argb: 'FFC00000' }, bold: true, name: 'Segoe UI', size: 10 }
+    }
+  })
 }
 
 function autoSizeColumns(worksheet) {
-  worksheet.columns = worksheet.columns.map((column) => {
+  worksheet.columns.forEach((column) => {
     let maxLength = 12
     column.eachCell?.({ includeEmpty: true }, (cell) => {
       const value = cell.value == null ? '' : String(cell.value)
       maxLength = Math.max(maxLength, Math.min(40, value.length + 2))
     })
-    return {
-      ...column,
-      width: maxLength,
-    }
+    column.width = maxLength
   })
 }
 
@@ -90,10 +146,10 @@ export async function createDailyExportWorkbook({
   workbook.company = 'Patrol Monitoring'
 
   const range = buildDayRange(date)
-  const verifiedScans = scans.filter((scan) => scan.gpsValid).length
+  const verifiedScans = scans.filter((scan) => getProp(scan, 'gpsValid')).length
   const flaggedScans = scans.length - verifiedScans
-  const officers = new Set(scans.map((scan) => scan.officerName).filter(Boolean))
-  const checkpoints = new Set(scans.map((scan) => scan.checkpointName).filter(Boolean))
+  const officers = new Set(scans.map((scan) => getProp(scan, 'officerName')).filter(Boolean))
+  const checkpoints = new Set(scans.map((scan) => getProp(scan, 'checkpointName')).filter(Boolean))
 
   const shiftsWithDuration = shifts.map((shift) => {
     const durationMinutes = computeShiftMinutes(shift, range.startMs, range.endMs)
@@ -106,6 +162,7 @@ export async function createDailyExportWorkbook({
 
   const totalShiftMinutes = shiftsWithDuration.reduce((sum, shift) => sum + shift.durationMinutes, 0)
 
+  // 1. SUMMARY SHEET
   const summarySheet = workbook.addWorksheet('Summary')
   summarySheet.columns = [
     { header: 'Metric', key: 'metric', width: 28 },
@@ -123,13 +180,29 @@ export async function createDailyExportWorkbook({
     { metric: 'Unique officers', value: officers.size },
     { metric: 'Unique checkpoints', value: checkpoints.size },
     { metric: 'Total shifts overlapping day', value: shiftsWithDuration.length },
-    { metric: 'Active shifts', value: shiftsWithDuration.filter((shift) => shift.status === 'active').length },
-    { metric: 'Completed shifts', value: shiftsWithDuration.filter((shift) => shift.status !== 'active').length },
+    { metric: 'Active shifts', value: shiftsWithDuration.filter((shift) => getProp(shift, 'status') === 'active').length },
+    { metric: 'Completed shifts', value: shiftsWithDuration.filter((shift) => getProp(shift, 'status') !== 'active').length },
     { metric: 'Total shift hours', value: (totalShiftMinutes / 60).toFixed(2) },
   ])
-  summarySheet.views = [{ state: 'frozen', ySplit: 1 }]
+  summarySheet.views = [{ state: 'frozen', ySplit: 1, showGridLines: true }]
+  summarySheet.eachRow((row, rowNum) => {
+    row.height = 20
+    row.eachCell({ includeEmpty: true }, (cell) => {
+      cell.border = thinBorder
+      cell.font = { name: 'Segoe UI', size: 10 }
+      if (rowNum > 1) {
+        if (cell.col === 1) cell.font = { bold: true, name: 'Segoe UI', size: 10 }
+        // highlight total scans / verified scans / flagged scans / total shift hours!
+        const metricVal = String(row.getCell(1).value || '')
+        if (metricVal.includes('Total scans') || metricVal.includes('Verified') || metricVal.includes('Flagged') || metricVal.includes('Total shift hours')) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } } // Sleek gray highlight
+        }
+      }
+    })
+  })
   autoSizeColumns(summarySheet)
 
+  // 2. PATROL SCANS SHEET
   const scansSheet = workbook.addWorksheet('Patrol Scans')
   scansSheet.columns = [
     { header: 'Officer', key: 'officerName' },
@@ -149,26 +222,29 @@ export async function createDailyExportWorkbook({
   ]
   applyHeaderStyle(scansSheet.getRow(1))
   for (const scan of scans) {
-    scansSheet.addRow({
-      officerName: scan.officerName || '',
-      officerEmail: scan.officerEmail || '',
-      officerPhone: scan.officerPhone || '',
-      checkpointName: scan.checkpointName || '',
-      checkpointCode: scan.checkpointCode || '',
-      siteName: scan.siteName || '',
-      clientName: scan.clientName || '',
-      scannedAt: formatDateTime(scan.scannedAt),
-      receivedAt: formatDateTime(scan.receivedAt),
-      gpsValid: scan.gpsValid ? 'Yes' : 'No',
-      distanceMeters: scan.distanceMeters ?? '',
-      gpsLatitude: scan.gpsLatitude ?? '',
-      gpsLongitude: scan.gpsLongitude ?? '',
-      notes: scan.notes || '',
+    const isStripe = scansSheet.rowCount % 2 === 1
+    const row = scansSheet.addRow({
+      officerName: getProp(scan, 'officerName'),
+      officerEmail: getProp(scan, 'officerEmail'),
+      officerPhone: getProp(scan, 'officerPhone'),
+      checkpointName: getProp(scan, 'checkpointName'),
+      checkpointCode: getProp(scan, 'checkpointCode'),
+      siteName: getProp(scan, 'siteName'),
+      clientName: getProp(scan, 'clientName'),
+      scannedAt: formatDateTime(getProp(scan, 'scannedAt')),
+      receivedAt: formatDateTime(getProp(scan, 'receivedAt')),
+      gpsValid: getProp(scan, 'gpsValid') ? 'Yes' : 'No',
+      distanceMeters: getPropNum(scan, 'distanceMeters'),
+      gpsLatitude: getPropNum(scan, 'gpsLatitude'),
+      gpsLongitude: getPropNum(scan, 'gpsLongitude'),
+      notes: getProp(scan, 'notes'),
     })
+    styleRow(row, isStripe)
   }
-  scansSheet.views = [{ state: 'frozen', ySplit: 1 }]
+  scansSheet.views = [{ state: 'frozen', ySplit: 1, showGridLines: true }]
   autoSizeColumns(scansSheet)
 
+  // 3. ATTENDANCE SHEET
   const shiftsSheet = workbook.addWorksheet('Attendance')
   shiftsSheet.columns = [
     { header: 'Officer', key: 'userName' },
@@ -188,35 +264,40 @@ export async function createDailyExportWorkbook({
   ]
   applyHeaderStyle(shiftsSheet.getRow(1))
   for (const shift of shiftsWithDuration) {
-    shiftsSheet.addRow({
-      userName: shift.userName || '',
-      userEmail: shift.userEmail || '',
-      userPhone: shift.userPhone || '',
-      clientName: shift.clientName || '',
-      clockIn: formatDateTime(shift.clockIn),
-      clockOut: formatDateTime(shift.clockOut),
-      status: shift.status || '',
-      siteLabel: shift.siteLabel || '',
+    const isStripe = shiftsSheet.rowCount % 2 === 1
+    const row = shiftsSheet.addRow({
+      userName: getProp(shift, 'userName'),
+      userEmail: getProp(shift, 'userEmail'),
+      userPhone: getProp(shift, 'userPhone'),
+      clientName: getProp(shift, 'clientName'),
+      clockIn: formatDateTime(getProp(shift, 'clockIn')),
+      clockOut: formatDateTime(getProp(shift, 'clockOut')),
+      status: getProp(shift, 'status'),
+      siteLabel: getProp(shift, 'siteLabel'),
       durationMinutes: shift.durationMinutes,
       durationLabel: shift.durationLabel,
-      clockInLatitude: shift.clockInLatitude ?? '',
-      clockInLongitude: shift.clockInLongitude ?? '',
-      clockOutLatitude: shift.clockOutLatitude ?? '',
-      clockOutLongitude: shift.clockOutLongitude ?? '',
+      clockInLatitude: getPropNum(shift, 'clockInLatitude'),
+      clockInLongitude: getPropNum(shift, 'clockInLongitude'),
+      clockOutLatitude: getPropNum(shift, 'clockOutLatitude'),
+      clockOutLongitude: getPropNum(shift, 'clockOutLongitude'),
     })
+    styleRow(row, isStripe)
   }
-  shiftsSheet.views = [{ state: 'frozen', ySplit: 1 }]
+  shiftsSheet.views = [{ state: 'frozen', ySplit: 1, showGridLines: true }]
   autoSizeColumns(shiftsSheet)
 
+  // 4. CHECKPOINT SUMMARY SHEET
   const checkpointSummary = new Map()
   for (const scan of scans) {
-    const key = scan.checkpointId || scan.checkpointName || 'unknown'
+    const cpId = getProp(scan, 'checkpointId')
+    const cpName = getProp(scan, 'checkpointName')
+    const key = cpId || cpName || 'unknown'
     if (!checkpointSummary.has(key)) {
       checkpointSummary.set(key, {
-        checkpointName: scan.checkpointName || 'Unknown checkpoint',
-        checkpointCode: scan.checkpointCode || '',
-        siteName: scan.siteName || '',
-        clientName: scan.clientName || '',
+        checkpointName: cpName || 'Unknown checkpoint',
+        checkpointCode: getProp(scan, 'checkpointCode') || '',
+        siteName: getProp(scan, 'siteName') || '',
+        clientName: getProp(scan, 'clientName') || '',
         totalScans: 0,
         verifiedScans: 0,
         flaggedScans: 0,
@@ -225,10 +306,12 @@ export async function createDailyExportWorkbook({
     }
     const item = checkpointSummary.get(key)
     item.totalScans += 1
-    item.verifiedScans += scan.gpsValid ? 1 : 0
-    item.flaggedScans += scan.gpsValid ? 0 : 1
-    if (!item.lastScannedAt || new Date(scan.scannedAt).getTime() > new Date(item.lastScannedAt).getTime()) {
-      item.lastScannedAt = scan.scannedAt
+    const gpsValid = getProp(scan, 'gpsValid')
+    item.verifiedScans += gpsValid ? 1 : 0
+    item.flaggedScans += gpsValid ? 0 : 1
+    const scannedAt = getProp(scan, 'scannedAt')
+    if (!item.lastScannedAt || new Date(scannedAt).getTime() > new Date(item.lastScannedAt).getTime()) {
+      item.lastScannedAt = scannedAt
     }
   }
 
@@ -244,13 +327,15 @@ export async function createDailyExportWorkbook({
     { header: 'Last Scan', key: 'lastScannedAt' },
   ]
   applyHeaderStyle(checkpointSheet.getRow(1))
-  for (const row of checkpointSummary.values()) {
-    checkpointSheet.addRow({
-      ...row,
-      lastScannedAt: formatDateTime(row.lastScannedAt),
+  for (const rowData of checkpointSummary.values()) {
+    const isStripe = checkpointSheet.rowCount % 2 === 1
+    const row = checkpointSheet.addRow({
+      ...rowData,
+      lastScannedAt: formatDateTime(rowData.lastScannedAt),
     })
+    styleRow(row, isStripe)
   }
-  checkpointSheet.views = [{ state: 'frozen', ySplit: 1 }]
+  checkpointSheet.views = [{ state: 'frozen', ySplit: 1, showGridLines: true }]
   autoSizeColumns(checkpointSheet)
 
   const safeScope = scopeLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'all-clients'

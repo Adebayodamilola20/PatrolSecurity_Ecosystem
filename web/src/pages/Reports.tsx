@@ -19,6 +19,7 @@ export default function Reports() {
   const [requestingExport, setRequestingExport] = useState(false)
   const [exportDate, setExportDate] = useState(new Date().toISOString().slice(0, 10))
   const [form, setForm] = useState({ clientEmail: '', periodStart: '', periodEnd: '' })
+  const [exportError, setExportError] = useState<string | null>(null)
 
   const loadData = async () => {
     const [reportList, exportList] = await Promise.all([
@@ -51,13 +52,17 @@ export default function Reports() {
   const handleRequestExport = async () => {
     if (!exportDate) return
     try {
+      setExportError(null)
       setRequestingExport(true)
       const created = await api.scans.exportDaily({ date: exportDate, format: 'xlsx' })
       await loadData()
       if (created?.downloadUrl) {
         window.open(apiFileUrl(created.downloadUrl), '_blank', 'noopener,noreferrer')
       }
-    } catch {
+    } catch (err: any) {
+      console.error('Excel export error:', err)
+      const msg = err.response?.data?.message || err.message || 'Failed to generate Excel export'
+      setExportError(msg)
     } finally {
       setRequestingExport(false)
     }
@@ -107,6 +112,14 @@ export default function Reports() {
             </button>
           </div>
         </div>
+        {exportError && (
+          <div className="mt-4 flex items-center justify-between rounded-lg bg-destructive/15 px-3 py-2 text-sm text-destructive animate-in fade-in slide-in-from-top-1 duration-200">
+            <span>{exportError}</span>
+            <button onClick={() => setExportError(null)} className="text-destructive hover:opacity-80" aria-label="Clear error">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
