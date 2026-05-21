@@ -13,6 +13,7 @@ import {
   LogOut,
   Clock,
   ClipboardCheck,
+  User,
 } from 'lucide-react'
 import { useAuthStore, useCanManageUsers, useCanViewAlerts } from '../../stores/useAuthStore'
 
@@ -21,13 +22,19 @@ function useNav() {
   const canManageUsers = useCanManageUsers()
   const canViewAlerts = useCanViewAlerts()
 
+  if (role === 'guard') {
+    return [
+      { to: '/profile', label: 'Profile', icon: User },
+      { to: '/scans', label: 'My Scan History', icon: ClipboardList },
+      { to: '/timesheets', label: 'My Timesheets', icon: Clock },
+    ]
+  }
+
   const items = [
     { to: '/', label: 'Overview', icon: LayoutDashboard },
   ]
 
-  if (role !== 'guard') {
-    items.push({ to: '/monitoring', label: 'Live Monitoring', icon: MapPin })
-  }
+  items.push({ to: '/monitoring', label: 'Live Monitoring', icon: MapPin })
 
   if (canManageUsers) {
     items.push({ to: '/users', label: 'Personnel', icon: Users })

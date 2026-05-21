@@ -17,14 +17,34 @@ import Timesheets from './pages/Timesheets'
 import PostOrders from './pages/PostOrders'
 import Handovers from './pages/Handovers'
 import Login from './pages/Login'
-import { useAuthStore } from './stores/useAuthStore'
+import { useAuthStore, type UserRole } from './stores/useAuthStore'
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
+const roleHomePath: Record<UserRole, string> = {
+  admin: '/',
+  main_account: '/',
+  supervisor: '/',
+  guard: '/profile',
+}
+
+function RoleHomeRedirect() {
+  const role = useAuthStore((s) => s.user?.role)
+  return <Navigate to={role ? roleHomePath[role] : '/login'} replace />
+}
+
+function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles?: UserRole[] }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const loading = useAuthStore((s) => s.loading)
+  const role = useAuthStore((s) => s.user?.role)
   if (loading) return null
   if (!isAuthenticated) return <Navigate to="/login" replace />
+  if (allowedRoles && (!role || !allowedRoles.includes(role))) {
+    return <Navigate to={role ? roleHomePath[role] : '/login'} replace />
+  }
   return <>{children}</>
+}
+
+function RoleRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: UserRole[] }) {
+  return <ProtectedRoute allowedRoles={allowedRoles}>{children}</ProtectedRoute>
 }
 
 export default function App() {
@@ -46,24 +66,24 @@ export default function App() {
             </ProtectedRoute>
           }
         >
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/monitoring" element={<Monitoring />} />
-          <Route path="/scans" element={<Scans />} />
-          <Route path="/scans/:id" element={<ScanDetail />} />
-          <Route path="/checkpoints" element={<Checkpoints />} />
-          <Route path="/checkpoints/:id" element={<CheckpointDetail />} />
-          <Route path="/reports" element={<Reports />} />
-          <Route path="/users" element={<Users />} />
-          <Route path="/users/:id" element={<UserDetail />} />
+          <Route path="/" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Dashboard /></RoleRoute>} />
+          <Route path="/monitoring" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Monitoring /></RoleRoute>} />
+          <Route path="/scans" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><Scans /></RoleRoute>} />
+          <Route path="/scans/:id" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><ScanDetail /></RoleRoute>} />
+          <Route path="/checkpoints" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Checkpoints /></RoleRoute>} />
+          <Route path="/checkpoints/:id" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><CheckpointDetail /></RoleRoute>} />
+          <Route path="/reports" element={<RoleRoute allowedRoles={['admin', 'main_account']}><Reports /></RoleRoute>} />
+          <Route path="/users" element={<RoleRoute allowedRoles={['admin']}><Users /></RoleRoute>} />
+          <Route path="/users/:id" element={<RoleRoute allowedRoles={['admin']}><UserDetail /></RoleRoute>} />
           <Route path="/profile" element={<Profile />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/alerts" element={<Alerts />} />
-          <Route path="/timesheets" element={<Timesheets />} />
-          <Route path="/post-orders" element={<PostOrders />} />
-          <Route path="/handovers" element={<Handovers />} />
+          <Route path="/settings" element={<RoleRoute allowedRoles={['admin']}><Settings /></RoleRoute>} />
+          <Route path="/alerts" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Alerts /></RoleRoute>} />
+          <Route path="/timesheets" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><Timesheets /></RoleRoute>} />
+          <Route path="/post-orders" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><PostOrders /></RoleRoute>} />
+          <Route path="/handovers" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Handovers /></RoleRoute>} />
         </Route>
 
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<ProtectedRoute><RoleHomeRedirect /></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   )

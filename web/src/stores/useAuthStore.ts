@@ -100,32 +100,34 @@ export const useAuthStore = create<AuthStore>((set) => ({
 }))
 
 export function useIsAdmin() {
-  return useAuthStore((s) => s.user?.role === 'admin')
+  return useAuthStore((s) => s.user?.role?.trim()?.toLowerCase() === 'admin')
 }
 
 export function useIsMainAccount() {
-  return useAuthStore((s) => s.user?.role === 'main_account')
+  const role = useAuthStore((s) => s.user?.role?.trim()?.toLowerCase()?.replace(/[-_\s]+/g, '_'))
+  return role === 'main_account' || role === 'client_main_account'
 }
 
 export function useIsSupervisor() {
-  return useAuthStore((s) => s.user?.role === 'supervisor')
+  return useAuthStore((s) => s.user?.role?.trim()?.toLowerCase() === 'supervisor')
 }
 
 export function useIsGuard() {
-  return useAuthStore((s) => s.user?.role === 'guard')
+  const role = useAuthStore((s) => s.user?.role?.trim()?.toLowerCase())
+  return role === 'guard' || role === 'officer'
 }
 
 export function useCanManageUsers() {
-  const role = useAuthStore((s) => s.user?.role)
+  const role = useAuthStore((s) => s.user?.role?.trim()?.toLowerCase())
   return role === 'admin'
 }
 
 export function useCanManageCheckpoints() {
-  const role = useAuthStore((s) => s.user?.role)
-  return role === 'admin' || role === 'main_account'
+  const role = useAuthStore((s) => s.user?.role?.trim()?.toLowerCase()?.replace(/[-_\s]+/g, '_'))
+  return role === 'admin' || role === 'main_account' || role === 'client_main_account'
 }
 
 export function useCanViewAlerts() {
-  const role = useAuthStore((s) => s.user?.role)
-  return role !== 'guard'
+  const role = useAuthStore((s) => s.user?.role?.trim()?.toLowerCase())
+  return role !== 'guard' && role !== 'officer'
 }

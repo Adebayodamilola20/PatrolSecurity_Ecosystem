@@ -1,5 +1,6 @@
 import express from 'express'
 import cors from 'cors'
+import rateLimit from 'express-rate-limit'
 import { createServer } from 'http'
 import { Server } from 'socket.io'
 import jwt from 'jsonwebtoken'
@@ -82,6 +83,22 @@ io.on('connection', (socket) => {
   })
 })
 
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' },
+})
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts, please try again later.' },
+})
+
 app.set('io', io)
 app.use(cors({
   origin: allowedOrigins,
@@ -91,7 +108,8 @@ app.use(express.json({ limit: '10mb' }))
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')))
 app.use('/exports', express.static(path.join(__dirname, '..', 'exports')))
 
-app.use('/api/v1/auth', authRoutes)
+app.use('/api/v1/auth', authLimiter, authRoutes)
+app.use('/api/v1', limiter)
 app.use('/api/v1/scans', scanRoutes)
 app.use('/api/v1/checkpoints', checkpointRoutes)
 app.use('/api/v1/reports', reportRoutes)
