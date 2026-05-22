@@ -6,7 +6,6 @@ import { buildFiveWsAndH, sendNotificationBundle } from '../services/notificatio
 import { canExport, normalizeRole } from '../utils/roles.js'
 
 const router = Router()
-router.use(authMiddleware)
 
 async function getSetting(key, fallback = '') {
   const row = await db.get('SELECT settingValue FROM communicationSettings WHERE settingKey = ? ORDER BY createdAt DESC LIMIT 1', [key])
@@ -159,10 +158,10 @@ async function sendReportEmail(report) {
     emails: allRecipients,
     subject: `Patrol Report — ${new Date(report.periodStart).toLocaleDateString()} to ${new Date(report.periodEnd).toLocaleDateString()}`,
     html,
-    text: `Patrol Report\nPeriod: ${report.periodStart} — ${report.periodEnd}\nTotal scans: ${data.scans.length}\nVerified: ${data.verified}\nFlagged: ${data.flagged}\nPatrol hours: ${Math.round(data.totalHours / 3600000 * 10) / 10}h`,
+    text,
   })
 
-  return result
+  return { ...result, skipped: result.email?.skipped !== false }
 }
 
 router.get('/', async (req, res) => {
@@ -271,15 +270,16 @@ router.post('/generate', async (req, res) => {
 
   try {
     const result = await sendReportEmail(report)
+    const skipped = result.email?.skipped !== false
 
     await db.run(
       `UPDATE reports SET status = ?, sentAt = ? WHERE id = ?`,
-      [result.skipped ? 'failed' : 'sent', result.skipped ? null : new Date().toISOString(), report.id]
+      [skipped ? 'failed' : 'sent', skipped ? null : new Date().toISOString(), report.id]
     )
 
     res.status(201).json({
       ...report,
-      status: result.skipped ? 'failed' : 'sent',
+      status: skipped ? 'failed' : 'sent',
       delivery: result,
     })
   } catch (err) {
@@ -298,13 +298,14 @@ router.post('/:id/resend', async (req, res) => {
 
   try {
     const result = await sendReportEmail(report)
+    const skipped = result.email?.skipped !== false
 
     await db.run(
       `UPDATE reports SET status = ?, sentAt = ? WHERE id = ?`,
-      [result.skipped ? 'failed' : 'sent', result.skipped ? null : new Date().toISOString(), report.id]
+      [skipped ? 'failed' : 'sent', skipped ? null : new Date().toISOString(), report.id]
     )
 
-    res.json({ ...report, status: result.skipped ? 'failed' : 'sent', delivery: result })
+    res.json({ ...report, status: skipped ? 'failed' : 'sent', delivery: result })
   } catch (err) {
     await db.run(`UPDATE reports SET status = ? WHERE id = ?`, ['failed', report.id])
     res.status(500).json({ message: err.message })
@@ -354,8 +355,12 @@ router.get('/:id/pdf', async (req, res) => {
   const data = await buildReportData(report)
   const html = buildReportHtml({ report, ...data })
 
-  res.setHeader('Content-Type', 'text/html')
+  const fileName = report.clientEmail ? `patrol-report-${report.clientEmail.replace(/[@.]/g, '-')}` : `patrol-report-${report.id.slice(0, 8)}`
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.setHeader('Content-Disposition', `inline; filename="${fileName}.html"`)
   res.send(html)
 })
+
+router.use(authMiddleware)
 
 export default router

@@ -110,7 +110,14 @@ app.use(cors({
 }))
 app.use(express.json({ limit: '10mb' }))
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')))
-app.use('/exports', express.static(path.join(__dirname, '..', 'exports')))
+app.use('/exports', express.static(path.join(__dirname, '..', 'exports'), {
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.xlsx')) {
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      res.setHeader('Content-Disposition', 'attachment')
+    }
+  },
+}))
 
 app.use('/api/v1/auth', authLimiter, authRoutes)
 app.use('/api/v1', limiter)
