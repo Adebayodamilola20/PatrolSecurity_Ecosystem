@@ -247,7 +247,7 @@ export default function Reports() {
                 </div>
               </div>
               <div className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Calendar className="h-3.5 w-3.5" /> {new Date(r.createdAt).toLocaleDateString()}
+                <Calendar className="h-3.5 w-3.5" /> {r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '—'}
               </div>
               <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase ${statusColor[r.status]}`}>
                 {r.status}
