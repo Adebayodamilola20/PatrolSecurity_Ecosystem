@@ -8,36 +8,54 @@ import '../services/location_service.dart';
 class DutyProvider extends ChangeNotifier {
   List<PostOrder> _orders = [];
   List<Handover> _pendingHandovers = [];
+  List<Map<String, dynamic>> _pendingPassOnLogs = [];
   bool _loading = false;
   bool _submitting = false;
   String? _error;
+  int _pendingAcknowledgementCount = 0;
 
   List<PostOrder> get orders => _orders;
   List<Handover> get pendingHandovers => _pendingHandovers;
-  List<PostOrder> get pendingAcknowledgementOrders => _orders.where((order) {
-        return false;
-      }).toList();
+  List<Map<String, dynamic>> get pendingPassOnLogs => _pendingPassOnLogs;
   bool get loading => _loading;
   bool get submitting => _submitting;
   String? get error => _error;
-  bool get hasPendingAcknowledgements => pendingAcknowledgementOrders.isNotEmpty;
+  int get pendingAcknowledgementCount => _pendingAcknowledgementCount;
+  bool get hasPendingAcknowledgements => _pendingAcknowledgementCount > 0;
+  List<Map<String, dynamic>> get pendingAcknowledgementOrders => _pendingPassOnLogs;
 
   Future<void> load() async {
     _loading = true;
-    _error = null;
     notifyListeners();
-    try {
-      final results = await Future.wait([
-        ApiService.getPostOrders(),
-        ApiService.getPendingHandovers(),
-      ]);
-      _orders = results[0].map((item) => PostOrder.fromJson(item as Map<String, dynamic>)).toList();
-      _pendingHandovers = results[1].map((item) => Handover.fromJson(item as Map<String, dynamic>)).toList();
-    } catch (e) {
-      _error = e.toString().replaceFirst('Exception: ', '');
-    }
+
+    final results = await Future.wait([
+      ApiService.getPostOrders().catchError((_) => <dynamic>[]),
+      ApiService.getPendingHandovers().catchError((_) => <dynamic>[]),
+      ApiService.getPendingPassOnLogs().catchError((_) => <dynamic>[]),
+    ]);
+
+    _orders = results[0]
+        .map((item) => PostOrder.fromJson(item as Map<String, dynamic>)).toList();
+    _pendingHandovers = results[1]
+        .map((item) => Handover.fromJson(item as Map<String, dynamic>)).toList();
+    _pendingPassOnLogs = results[2]
+        .map((item) => item as Map<String, dynamic>).toList();
+    _pendingAcknowledgementCount = _pendingPassOnLogs.length;
+
+    _error = null;
     _loading = false;
     notifyListeners();
+  }
+
+  Future<void> checkPendingAcknowledgements() async {
+    try {
+      final result = await ApiService.checkPendingAcknowledgements();
+      _pendingAcknowledgementCount = result['count'] as int? ?? 0;
+      notifyListeners();
+    } catch (_) {
+      _pendingAcknowledgementCount = 0;
+      notifyListeners();
+    }
   }
 
   Future<bool> acknowledge(String orderId) async {
@@ -46,6 +64,23 @@ class DutyProvider extends ChangeNotifier {
     notifyListeners();
     try {
       await ApiService.acknowledgePostOrder(orderId);
+      await load();
+      return true;
+    } catch (e) {
+      _error = e.toString().replaceFirst('Exception: ', '');
+      return false;
+    } finally {
+      _submitting = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> acknowledgePassOnLog(String logId, {String note = ''}) async {
+    _submitting = true;
+    _error = null;
+    notifyListeners();
+    try {
+      await ApiService.acknowledgePassOnLog(logId, note: note);
       await load();
       return true;
     } catch (e) {

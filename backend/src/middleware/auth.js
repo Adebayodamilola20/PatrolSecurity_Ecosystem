@@ -1,7 +1,13 @@
 import jwt from 'jsonwebtoken'
 import { normalizeRole, isAdmin, isMainAccount } from '../utils/roles.js'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'patrol-monitoring-secret-key-2024'
+export function getJwtSecret() {
+  const secret = process.env.JWT_SECRET?.trim()
+  if (!secret) {
+    throw new Error('JWT_SECRET is required')
+  }
+  return secret
+}
 
 export function generateToken(user) {
   const siteIds = Array.isArray(user.siteIds) ? user.siteIds : []
@@ -14,7 +20,7 @@ export function generateToken(user) {
       clientId: user.clientId || null,
       siteIds,
     },
-    JWT_SECRET,
+    getJwtSecret(),
     { expiresIn: '24h' }
   )
 }
@@ -27,7 +33,7 @@ export function authMiddleware(req, res, next) {
 
   const token = header.split(' ')[1]
   try {
-    const decoded = jwt.verify(token, JWT_SECRET)
+    const decoded = jwt.verify(token, getJwtSecret())
     req.user = decoded
     next()
   } catch {

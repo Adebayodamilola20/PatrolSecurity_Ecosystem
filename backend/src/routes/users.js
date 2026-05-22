@@ -19,6 +19,7 @@ function normalizeUser(user) {
     phone: user.phone ?? '',
     active: !!(user.active ?? user.active === 1),
     clientId: user.clientId ?? null,
+    liveTracking: !!(user.liveTracking ?? user.livetracking ?? 1),
     createdAt: user.createdAt ?? user.createdat ?? null,
     onDuty: !!(user.onDuty ?? user.onduty),
     lastClockIn: user.lastClockIn ?? user.lastclockin ?? null,

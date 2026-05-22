@@ -4,28 +4,25 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../utils/constants.dart';
 
+class TokenExpiredException implements Exception {
+  final String message;
+  const TokenExpiredException([this.message = 'Session expired. Please sign in again.']);
+  @override
+  String toString() => message;
+}
+
 class ApiService {
   static final _storage = FlutterSecureStorage();
   static final _client = http.Client();
-  static const _timeout = Duration(seconds: 20);
+  static const _timeout = Duration(seconds: 60);
 
-  static Future<void> _ensureOnline() async {
-    try {
-      final result =
-          await InternetAddress.lookup('example.com').timeout(
-        const Duration(seconds: 6),
-      );
-      if (result.isEmpty || result.first.rawAddress.isEmpty) {
-        throw const SocketException('No route to internet');
-      }
-    } catch (_) {
-      throw Exception(
-        'No internet or slow connection. Please reconnect and try again.',
-      );
-    }
-  }
+  static void Function()? onUnauthorized;
 
   static Exception _apiException(http.Response res, String fallback) {
+    if (res.statusCode == 401) {
+      onUnauthorized?.call();
+      return const TokenExpiredException();
+    }
     try {
       final body = jsonDecode(res.body);
       if (body is Map<String, dynamic> && body['message'] is String) {
@@ -48,11 +45,14 @@ class ApiService {
 
   static Future<Map<String, dynamic>> login(
       String email, String password) async {
-    await _ensureOnline();
     final res = await _client.post(
       Uri.parse('$baseUrl/auth/login'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'email': email, 'password': password}),
+      body: jsonEncode({
+        'email': email,
+        'password': password,
+        'clientType': 'mobile',
+      }),
     ).timeout(_timeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Unable to sign in');
@@ -63,7 +63,6 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getScans({Map<String, String>? params}) async {
-    await _ensureOnline();
     final uri = Uri.parse('$baseUrl/scans').replace(queryParameters: params);
     final res = await _client
         .get(uri, headers: await _headers())
@@ -76,7 +75,6 @@ class ApiService {
 
   static Future<Map<String, dynamic>> submitScan(
       Map<String, dynamic> scanData) async {
-    await _ensureOnline();
     final res = await _client.post(
       Uri.parse('$baseUrl/scans'),
       headers: await _headers(),
@@ -89,7 +87,7 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getCheckpoints() async {
-    await _ensureOnline();
+    
     final res = await _client.get(
       Uri.parse('$baseUrl/checkpoints'),
       headers: await _headers(),
@@ -104,11 +102,15 @@ class ApiService {
     await _storage.delete(key: 'patrol_token');
   }
 
-  static Future<Map<String, dynamic>> clockIn() async {
-    await _ensureOnline();
+  static Future<Map<String, dynamic>> clockIn({double? latitude, double? longitude}) async {
+    
+    final body = <String, dynamic>{};
+    if (latitude != null) body['gpsLatitude'] = latitude;
+    if (longitude != null) body['gpsLongitude'] = longitude;
     final res = await _client.post(
       Uri.parse('$baseUrl/shifts/clock-in'),
       headers: await _headers(),
+      body: jsonEncode(body),
     ).timeout(_timeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to clock in');
@@ -116,11 +118,15 @@ class ApiService {
     return jsonDecode(res.body);
   }
 
-  static Future<Map<String, dynamic>> clockOut() async {
-    await _ensureOnline();
+  static Future<Map<String, dynamic>> clockOut({double? latitude, double? longitude}) async {
+    
+    final body = <String, dynamic>{};
+    if (latitude != null) body['gpsLatitude'] = latitude;
+    if (longitude != null) body['gpsLongitude'] = longitude;
     final res = await _client.post(
       Uri.parse('$baseUrl/shifts/clock-out'),
       headers: await _headers(),
+      body: jsonEncode(body),
     ).timeout(_timeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to clock out');
@@ -128,8 +134,31 @@ class ApiService {
     return jsonDecode(res.body);
   }
 
+  static Future<void> updatePosition({
+    required double latitude,
+    required double longitude,
+    double? accuracy,
+    double? speed,
+    double? heading,
+  }) async {
+    try {
+      await _client.post(
+        Uri.parse('$baseUrl/positions'),
+        headers: await _headers(),
+        body: jsonEncode({
+          'latitude': latitude,
+          'longitude': longitude,
+          'accuracy': accuracy,
+          'speed': speed,
+          'heading': heading,
+          'capturedAt': DateTime.now().toIso8601String(),
+        }),
+      ).timeout(const Duration(seconds: 10));
+    } catch (_) {}
+  }
+
   static Future<Map<String, dynamic>> getShiftStatus() async {
-    await _ensureOnline();
+    
     final res = await _client.get(
       Uri.parse('$baseUrl/shifts/status'),
       headers: await _headers(),
@@ -146,7 +175,7 @@ class ApiService {
     String? checkpointId,
     String severity = 'low',
   }) async {
-    await _ensureOnline();
+    
     final res = await _client.post(
       Uri.parse('$baseUrl/incidents'),
       headers: await _headers(),
@@ -171,7 +200,7 @@ class ApiService {
     String? checkpointId,
     String shiftWindow = '',
   }) async {
-    await _ensureOnline();
+    
     final res = await _client.post(
       Uri.parse('$baseUrl/reports/daily-activity'),
       headers: await _headers(),
@@ -197,7 +226,7 @@ class ApiService {
     String severity = 'medium',
     String? checkpointId,
   }) async {
-    await _ensureOnline();
+    
     final res = await _client.post(
       Uri.parse('$baseUrl/reports/maintenance'),
       headers: await _headers(),
@@ -221,7 +250,7 @@ class ApiService {
     String note = '',
     String location = '',
   }) async {
-    await _ensureOnline();
+    
     final res = await _client.post(
       Uri.parse('$baseUrl/emergency/trigger'),
       headers: await _headers(),
@@ -246,7 +275,7 @@ class ApiService {
     String? checkpointId,
     bool requiresAcknowledgement = false,
   }) async {
-    await _ensureOnline();
+    
     final res = await _client.post(
       Uri.parse('$baseUrl/pass-on-logs'),
       headers: await _headers(),
@@ -268,7 +297,7 @@ class ApiService {
   static Future<Map<String, dynamic>> requestDailyTourExport({
     required String date,
   }) async {
-    await _ensureOnline();
+    
     final res = await _client.post(
       Uri.parse('$baseUrl/scans/export/daily'),
       headers: await _headers(),
@@ -284,7 +313,7 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getDailyTourExports() async {
-    await _ensureOnline();
+    
     final res = await _client.get(
       Uri.parse('$baseUrl/scans/export/daily'),
       headers: await _headers(),
@@ -295,8 +324,57 @@ class ApiService {
     return jsonDecode(res.body);
   }
 
+  static Future<List<dynamic>> getPassOnLogs() async {
+    
+    final res = await _client.get(
+      Uri.parse('$baseUrl/pass-on-logs'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to load pass-on logs');
+    }
+    return jsonDecode(res.body);
+  }
+
+  static Future<Map<String, dynamic>> checkPendingAcknowledgements() async {
+    
+    final res = await _client.get(
+      Uri.parse('$baseUrl/pass-on-logs/pending-acknowledgements'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      return {'hasPending': false, 'count': 0};
+    }
+    return jsonDecode(res.body);
+  }
+
+  static Future<List<dynamic>> getPendingPassOnLogs() async {
+    
+    final res = await _client.get(
+      Uri.parse('$baseUrl/pass-on-logs/pending'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to load pending pass-on logs');
+    }
+    return jsonDecode(res.body);
+  }
+
+  static Future<Map<String, dynamic>> acknowledgePassOnLog(String id, {String note = ''}) async {
+    
+    final res = await _client.post(
+      Uri.parse('$baseUrl/pass-on-logs/$id/acknowledge'),
+      headers: await _headers(),
+      body: jsonEncode({'note': note}),
+    ).timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to acknowledge pass-on log');
+    }
+    return jsonDecode(res.body);
+  }
+
   static Future<List<dynamic>> getPostOrders() async {
-    await _ensureOnline();
+    
     final res = await _client.get(
       Uri.parse('$baseUrl/post-orders'),
       headers: await _headers(),
@@ -308,7 +386,7 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> acknowledgePostOrder(String id) async {
-    await _ensureOnline();
+    
     final res = await _client.post(
       Uri.parse('$baseUrl/post-orders/$id/acknowledge'),
       headers: await _headers(),
@@ -326,7 +404,7 @@ class ApiService {
     double? gpsLatitude,
     double? gpsLongitude,
   }) async {
-    await _ensureOnline();
+    
     final token = await getToken();
     final request = http.MultipartRequest(
       'POST',
@@ -346,7 +424,7 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getPendingHandovers() async {
-    await _ensureOnline();
+    
     final res = await _client.get(
       Uri.parse('$baseUrl/handovers/pending'),
       headers: await _headers(),
@@ -365,7 +443,7 @@ class ApiService {
     String? checkpointId,
     File? photo,
   }) async {
-    await _ensureOnline();
+    
     final token = await getToken();
     final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/handovers'));
     if (token != null) request.headers['Authorization'] = 'Bearer $token';
@@ -389,7 +467,7 @@ class ApiService {
     String id, {
     String acceptedNote = '',
   }) async {
-    await _ensureOnline();
+    
     final res = await _client.patch(
       Uri.parse('$baseUrl/handovers/$id/accept'),
       headers: await _headers(),

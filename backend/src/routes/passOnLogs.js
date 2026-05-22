@@ -101,6 +101,51 @@ router.post('/', async (req, res) => {
   res.status(201).json({ ...record, delivery })
 })
 
+router.get('/pending-acknowledgements', async (req, res) => {
+  const query = `
+    SELECT COUNT(*) as count
+    FROM passOnLogs pl
+    WHERE pl.active = 1
+      AND pl.requiresAcknowledgement = 1
+      AND pl.id NOT IN (
+        SELECT pla.passOnLogId FROM passOnLogAcknowledgements pla WHERE pla.userId = ?
+      )
+      AND (
+        pl.checkpointId IN (SELECT c.id FROM checkpoints c WHERE c.siteId IN (
+          SELECT usa.siteId FROM user_site_assignments usa WHERE usa.userId = ?
+        ))
+        OR pl.siteLabel = ''
+        OR pl.createdBy = ?
+      )
+  `
+  const result = await db.get(query, [req.user.id, req.user.id, req.user.id])
+  const count = Number(result?.count ?? result?.Count ?? 0)
+  res.json({ hasPending: count > 0, count })
+})
+
+router.get('/pending', async (req, res) => {
+  const query = `
+    SELECT pl.*, u.name as createdByName,
+      CASE WHEN pla.id IS NOT NULL THEN 1 ELSE 0 END as acknowledged
+    FROM passOnLogs pl
+    JOIN users u ON pl.createdBy = u.id
+    LEFT JOIN passOnLogAcknowledgements pla ON pla.passOnLogId = pl.id AND pla.userId = ?
+    WHERE pl.active = 1
+      AND (
+        pl.checkpointId IN (SELECT c.id FROM checkpoints c WHERE c.siteId IN (
+          SELECT usa.siteId FROM user_site_assignments usa WHERE usa.userId = ?
+        ))
+        OR pl.siteLabel = ''
+        OR pl.createdBy = ?
+      )
+    ORDER BY
+      CASE pl.priority WHEN 'critical' THEN 0 WHEN 'urgent' THEN 1 ELSE 2 END,
+      pl.createdAt DESC
+  `
+  const logs = await db.all(query, [req.user.id, req.user.id, req.user.id])
+  res.json(logs)
+})
+
 router.post('/:id/acknowledge', async (req, res) => {
   const existing = await db.get('SELECT * FROM passOnLogs WHERE id = ? AND active = 1', [req.params.id])
   if (!existing) {

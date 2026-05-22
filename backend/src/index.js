@@ -6,6 +6,7 @@ import { Server } from 'socket.io'
 import jwt from 'jsonwebtoken'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { authMiddleware, getJwtSecret } from './middleware/auth.js'
 import { normalizeRole } from './utils/roles.js'
 
 import authRoutes from './routes/auth.js'
@@ -20,6 +21,7 @@ import postOrderRoutes from './routes/postOrders.js'
 import handoverRoutes from './routes/handovers.js'
 import emergencyRoutes from './routes/emergency.js'
 import passOnLogRoutes from './routes/passOnLogs.js'
+import positionRoutes from './routes/positions.js'
 import clientRoutes from './routes/clients.js'
 import siteRoutes from './routes/sites.js'
 
@@ -49,7 +51,7 @@ io.use((socket, next) => {
   if (!token) return next(new Error('Authentication required'))
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'patrol-monitoring-secret-key-2024')
+    const decoded = jwt.verify(token, getJwtSecret())
     decoded.role = normalizeRole(decoded.role)
     socket.user = decoded
     next()
@@ -121,6 +123,7 @@ app.use('/api/v1/post-orders', postOrderRoutes)
 app.use('/api/v1/handovers', handoverRoutes)
 app.use('/api/v1/emergency', emergencyRoutes)
 app.use('/api/v1/pass-on-logs', passOnLogRoutes)
+app.use('/api/v1/positions', positionRoutes)
 app.use('/api/v1/clients', clientRoutes)
 app.use('/api/v1/sites', siteRoutes)
 
@@ -132,3 +135,6 @@ const PORT = process.env.PORT || 3000
 server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)
 })
+
+import { startReportScheduler } from './services/reportScheduler.js'
+startReportScheduler(Number(process.env.REPORT_SCHEDULE_INTERVAL_MINUTES) || 60)

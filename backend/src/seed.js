@@ -116,7 +116,7 @@ const checkpoint = {
   code: 'SHOPRITE-001',
   latitude: 6.5244,
   longitude: 3.3792,
-  radiusMeters: 50,
+  radiusMeters: 10,
   active: 1,
 }
 

@@ -13,7 +13,7 @@ function normalizeCheckpoint(cp) {
     code: cp.code,
     latitude: cp.latitude,
     longitude: cp.longitude,
-    radiusMeters: cp.radiusMeters ?? cp.radiusmeters ?? 50,
+    radiusMeters: cp.radiusMeters ?? cp.radiusmeters ?? 10,
     expectedIntervalMinutes: cp.expectedIntervalMinutes ?? cp.expectedintervalminutes ?? 30,
     scheduledTimeIn: cp.scheduledTimeIn ?? cp.scheduledtimein ?? '',
     scheduledTimeOut: cp.scheduledTimeOut ?? cp.scheduledtimeout ?? '',
@@ -117,7 +117,13 @@ router.get('/', async (req, res) => {
   if (role === 'supervisor') {
     conditions.push(`(
       c.siteId IN (SELECT usa.siteId FROM user_site_assignments usa WHERE usa.userId = ?)
-      OR s.officerId IN (SELECT usam.userId FROM user_site_assignments usam WHERE usam.userId = ?)
+      OR s.officerId IN (
+        SELECT colleague.userId
+        FROM user_site_assignments colleague
+        WHERE colleague.siteId IN (
+          SELECT usa.siteId FROM user_site_assignments usa WHERE usa.userId = ?
+        )
+      )
     )`)
     params.push(req.user.id, req.user.id)
   }
@@ -154,7 +160,13 @@ router.get('/recent', async (req, res) => {
   if (role === 'supervisor') {
     conditions.push(`(
       c.siteId IN (SELECT usa.siteId FROM user_site_assignments usa WHERE usa.userId = ?)
-      OR s.officerId IN (SELECT usam.userId FROM user_site_assignments usam WHERE usam.userId = ?)
+      OR s.officerId IN (
+        SELECT colleague.userId
+        FROM user_site_assignments colleague
+        WHERE colleague.siteId IN (
+          SELECT usa.siteId FROM user_site_assignments usa WHERE usa.userId = ?
+        )
+      )
     )`)
     params.push(req.user.id, req.user.id)
   }
@@ -189,6 +201,21 @@ router.get('/:id', async (req, res) => {
   if (role === 'guard') {
     query += ' AND s.officerId = ?'
     params.push(req.user.id)
+  } else if (role === 'main_account') {
+    query += ' AND c.clientId = ?'
+    params.push(req.user.clientId)
+  } else if (role === 'supervisor') {
+    query += ` AND (
+      c.siteId IN (SELECT usa.siteId FROM user_site_assignments usa WHERE usa.userId = ?)
+      OR s.officerId IN (
+        SELECT colleague.userId
+        FROM user_site_assignments colleague
+        WHERE colleague.siteId IN (
+          SELECT usa.siteId FROM user_site_assignments usa WHERE usa.userId = ?
+        )
+      )
+    )`
+    params.push(req.user.id, req.user.id)
   }
 
   const scan = await db.get(query, params)
@@ -265,6 +292,19 @@ router.post('/', async (req, res) => {
 
   if (req.app.get('io')) {
     req.app.get('io').emit('scan:new', scanResult)
+    if (gpsLatitude != null && gpsLongitude != null) {
+      req.app.get('io').emit('position:update', {
+        userId: req.user.id,
+        name: req.user.name,
+        latitude: gpsLatitude,
+        longitude: gpsLongitude,
+        accuracy: null,
+        speed: null,
+        heading: null,
+        capturedAt: scan.scannedAt,
+        onDuty: true,
+      })
+    }
   }
 
   res.status(201).json(scanResult)

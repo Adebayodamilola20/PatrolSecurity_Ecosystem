@@ -38,7 +38,19 @@ class _ScannerScreenState extends State<ScannerScreen> {
     if (duty.orders.isEmpty && !duty.loading) {
       await duty.load();
     }
+    await duty.checkPendingAcknowledgements();
     if (!mounted) return;
+
+    if (duty.hasPendingAcknowledgements) {
+      setState(() {
+        _blockedMessage = duty.pendingAcknowledgementCount == 1
+            ? 'You have 1 pass-on log that needs to be acknowledged before scanning.'
+            : 'You have ${duty.pendingAcknowledgementCount} pass-on logs that need to be acknowledged before scanning.';
+        _checkingAccess = false;
+        _ready = false;
+      });
+      return;
+    }
 
     await Future.delayed(const Duration(milliseconds: 800));
     if (!mounted) return;

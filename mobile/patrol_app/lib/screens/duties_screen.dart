@@ -144,6 +144,18 @@ class _DutiesScreenState extends State<DutiesScreen> {
     );
   }
 
+  Future<void> _acknowledgePassOnLog(DutyProvider duty, String logId) async {
+    final ok = await duty.acknowledgePassOnLog(logId);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ok ? 'Pass-on log acknowledged.' : (duty.error ?? 'Failed to acknowledge.')),
+          backgroundColor: ok ? AppTheme.verified : AppTheme.error,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final duty = context.watch<DutyProvider>();
@@ -213,6 +225,93 @@ class _DutiesScreenState extends State<DutiesScreen> {
                       ),
                     ),
                   )),
+              const SizedBox(height: 20),
+            ],
+            if (duty.pendingPassOnLogs.isNotEmpty) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Pass-On Logs', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppTheme.text)),
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppTheme.flagged.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '${duty.pendingAcknowledgementCount} pending',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.flagged),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ...duty.pendingPassOnLogs.map((log) {
+                final title = log['title'] as String? ?? 'Untitled';
+                final instruction = log['instruction'] as String? ?? '';
+                final priority = log['priority'] as String? ?? 'normal';
+                final createdByName = log['createdByName'] as String? ?? '';
+                return Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            if (priority == 'critical')
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                margin: const EdgeInsets.only(right: 8),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.flagged,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text('CRITICAL', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white)),
+                              )
+                            else if (priority == 'urgent')
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                margin: const EdgeInsets.only(right: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text('URGENT', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white)),
+                              ),
+                            Expanded(
+                              child: Text(title,
+                                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                                softWrap: true,
+                                overflow: TextOverflow.ellipsis),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(instruction,
+                          style: const TextStyle(color: AppTheme.textSecondary, height: 1.4),
+                          softWrap: true,
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 5,
+                        ),
+                        if (createdByName.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text('By: $createdByName', style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                        ],
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: duty.submitting ? null : () => _acknowledgePassOnLog(duty, log['id'] as String),
+                            icon: const Icon(Icons.check_circle_outline, size: 18),
+                            label: Text(duty.submitting ? 'Acknowledging...' : 'Acknowledge & Continue'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
               const SizedBox(height: 20),
             ],
             const Text('Post Orders', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppTheme.text)),

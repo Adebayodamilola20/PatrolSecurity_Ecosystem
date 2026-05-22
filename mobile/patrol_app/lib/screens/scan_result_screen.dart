@@ -495,7 +495,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                                   ? 'Location Required'
                                   : _gpsValid
                                       ? 'Within Range'
-                                      : 'Outside 10m Limit',
+                                      : 'Outside ${strictScanRadiusMeters.toStringAsFixed(0)}m Limit',
                               style: TextStyle(
                                 color: widget.scanData?['gpsLatitude'] == null
                                     ? Colors.orange

@@ -187,7 +187,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             size: 14, color: Colors.white.withValues(alpha: 0.4)),
                         const SizedBox(width: 6),
                         Text(
-                          'Company account only',
+                          'Guard account only',
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.white.withValues(alpha: 0.4),

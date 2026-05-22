@@ -19,9 +19,22 @@ import 'providers/auth_provider.dart';
 import 'providers/scan_provider.dart';
 import 'providers/shift_provider.dart';
 import 'providers/duty_provider.dart';
+import 'services/api_service.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  bool loggingOut = false;
+  ApiService.onUnauthorized = () {
+    if (loggingOut) return;
+    loggingOut = true;
+    const storage = FlutterSecureStorage();
+    storage.delete(key: 'patrol_token');
+    storage.delete(key: 'patrol_user');
+    navigatorKey.currentState?.pushNamedAndRemoveUntil(AppRoutes.login, (_) => false);
+  };
   runApp(
     MultiProvider(
       providers: [
@@ -41,6 +54,7 @@ class PatrolApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: 'Patrol Command',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,

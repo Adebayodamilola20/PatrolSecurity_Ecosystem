@@ -100,6 +100,7 @@ const sqliteSchema = `
     phone TEXT DEFAULT '',
     active INTEGER DEFAULT 1,
     clientId TEXT,
+    liveTracking INTEGER DEFAULT 1,
     createdAt TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (clientId) REFERENCES clients(id)
   );
@@ -118,7 +119,7 @@ const sqliteSchema = `
     code TEXT UNIQUE NOT NULL,
     latitude REAL NOT NULL,
     longitude REAL NOT NULL,
-    radiusMeters REAL DEFAULT 50,
+    radiusMeters REAL DEFAULT 10,
     expectedIntervalMinutes INTEGER DEFAULT 30,
     active INTEGER DEFAULT 1,
     clientId TEXT,
@@ -282,7 +283,7 @@ const pgSchema = `
     code TEXT UNIQUE NOT NULL,
     latitude DOUBLE PRECISION NOT NULL,
     longitude DOUBLE PRECISION NOT NULL,
-    radiusMeters DOUBLE PRECISION DEFAULT 50,
+    radiusMeters DOUBLE PRECISION DEFAULT 10,
     expectedIntervalMinutes INTEGER DEFAULT 30,
     active INTEGER DEFAULT 1,
     createdAt TIMESTAMPTZ DEFAULT NOW(),
@@ -465,6 +466,7 @@ async function initDb() {
     try { db.exec("ALTER TABLE checkpoints ADD COLUMN expectedIntervalMinutes INTEGER DEFAULT 30"); } catch {}
     try { db.exec("ALTER TABLE checkpoints ADD COLUMN scheduledTimeIn TEXT DEFAULT ''"); } catch {}
     try { db.exec("ALTER TABLE checkpoints ADD COLUMN scheduledTimeOut TEXT DEFAULT ''"); } catch {}
+    try { db.exec("UPDATE checkpoints SET radiusMeters = 10 WHERE radiusMeters IS NULL"); } catch {}
 
     try { db.exec(`CREATE TABLE IF NOT EXISTS communicationSettings (
       id TEXT PRIMARY KEY,
@@ -565,6 +567,7 @@ async function initDb() {
       UNIQUE(userId, siteId)
     );`); } catch {}
     try { db.exec("ALTER TABLE users ADD COLUMN clientId TEXT REFERENCES clients(id)"); } catch {}
+    try { db.exec("ALTER TABLE users ADD COLUMN liveTracking INTEGER DEFAULT 1"); } catch {}
     try { db.exec("ALTER TABLE checkpoints ADD COLUMN clientId TEXT REFERENCES clients(id)"); } catch {}
     try { db.exec("ALTER TABLE checkpoints ADD COLUMN siteId TEXT REFERENCES sites(id)"); } catch {}
     const usersTable = db.get("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'")
@@ -854,6 +857,15 @@ async function initDb() {
       FOREIGN KEY (passOnLogId) REFERENCES passOnLogs(id),
       FOREIGN KEY (userId) REFERENCES users(id)
     );`); } catch {}
+    try { db.exec(`CREATE TABLE IF NOT EXISTS passwordResetTokens (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      tokenHash TEXT NOT NULL UNIQUE,
+      expiresAt TEXT NOT NULL,
+      usedAt TEXT,
+      createdAt TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );`); } catch {}
   } else {
     await db.exec(pgSchema)
     try { await db.exec("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check"); } catch (e) { console.log('[PG] Drop constraint:', e.message) }
@@ -871,6 +883,7 @@ async function initDb() {
     try { await db.exec("ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS expectedIntervalMinutes INTEGER DEFAULT 30"); } catch {}
     try { await db.exec("ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS scheduledTimeIn TEXT DEFAULT ''"); } catch {}
     try { await db.exec("ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS scheduledTimeOut TEXT DEFAULT ''"); } catch {}
+    try { await db.exec("UPDATE checkpoints SET \"radiusMeters\" = 10 WHERE \"radiusMeters\" IS NULL"); } catch {}
     try { await db.exec(`CREATE TABLE IF NOT EXISTS clients (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -982,7 +995,31 @@ async function initDb() {
       FOREIGN KEY (passOnLogId) REFERENCES passOnLogs(id),
       FOREIGN KEY (userId) REFERENCES users(id)
     );`); } catch {}
+    try { await db.exec(`CREATE TABLE IF NOT EXISTS passwordResetTokens (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      tokenHash TEXT NOT NULL UNIQUE,
+      expiresAt TIMESTAMPTZ NOT NULL,
+      usedAt TIMESTAMPTZ,
+      createdAt TIMESTAMPTZ DEFAULT NOW(),
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );`); } catch {}
   }
+
+  try { await db.exec(`CREATE TABLE IF NOT EXISTS officerPositions (
+    id TEXT PRIMARY KEY,
+    userId TEXT NOT NULL,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    accuracy REAL,
+    speed REAL,
+    heading REAL,
+    capturedAt TEXT NOT NULL,
+    createdAt TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (userId) REFERENCES users(id)
+  );`); } catch {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_officerPositions_userId ON officerPositions(userId)`); } catch {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_officerPositions_capturedAt ON officerPositions(capturedAt)`); } catch {}
 }
 
 try {

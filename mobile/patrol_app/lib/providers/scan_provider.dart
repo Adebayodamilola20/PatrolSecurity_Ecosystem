@@ -44,12 +44,11 @@ class ScanProvider extends ChangeNotifier {
   Future<void> loadScans() async {
     _scansLoading = true;
     _scansError = null;
-    _scans = [];
-    _lastScan = null;
     notifyListeners();
     try {
       final data = await ApiService.getScans();
       _scans = data.map((j) => Scan.fromJson(j)).toList();
+      _scansError = null;
     } catch (e) {
       _scansError = e.toString().replaceFirst('Exception: ', '');
     }

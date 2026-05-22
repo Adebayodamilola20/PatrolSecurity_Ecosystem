@@ -35,6 +35,9 @@ router.post('/clock-in', async (req, res) => {
     siteLabel = assignedOrder?.checkpointName || ''
   }
 
+  const clockInLatitude = req.body?.gpsLatitude ?? req.body?.latitude ?? null
+  const clockInLongitude = req.body?.gpsLongitude ?? req.body?.longitude ?? null
+
   const shift = {
     id: uuidv4(),
     userId: req.user.id,
@@ -42,8 +45,8 @@ router.post('/clock-in', async (req, res) => {
     clockOut: null,
     status: 'active',
     clockInPhoto: '',
-    clockInLatitude: null,
-    clockInLongitude: null,
+    clockInLatitude,
+    clockInLongitude,
     clockOutLatitude: null,
     clockOutLongitude: null,
     scheduledStart,
@@ -59,7 +62,7 @@ router.post('/clock-in', async (req, res) => {
   `, Object.values(shift))
 
   if (req.app.get('io')) {
-    req.app.get('io').emit('shift:update', { userId: req.user.id, status: 'active' })
+    req.app.get('io').emit('shift:update', { userId: req.user.id, status: 'active', name: req.user.name, gpsLatitude: clockInLatitude, gpsLongitude: clockInLongitude })
   }
 
   res.status(201).json(shift)
@@ -75,15 +78,18 @@ router.post('/clock-out', async (req, res) => {
   }
 
   const clockOut = new Date().toISOString()
+  const clockOutLatitude = req.body?.gpsLatitude ?? req.body?.latitude ?? null
+  const clockOutLongitude = req.body?.gpsLongitude ?? req.body?.longitude ?? null
+
   await db.run(
-    "UPDATE shifts SET clockOut = ?, status = 'completed' WHERE id = ?"
-  , [clockOut, activeShift.id])
+    "UPDATE shifts SET clockOut = ?, status = 'completed', clockOutLatitude = ?, clockOutLongitude = ? WHERE id = ?"
+  , [clockOut, clockOutLatitude, clockOutLongitude, activeShift.id])
 
   if (req.app.get('io')) {
-    req.app.get('io').emit('shift:update', { userId: req.user.id, status: 'completed' })
+    req.app.get('io').emit('shift:update', { userId: req.user.id, status: 'completed', name: req.user.name })
   }
 
-  res.json({ ...activeShift, clockOut, status: 'completed' })
+  res.json({ ...activeShift, clockOut, status: 'completed', clockOutLatitude, clockOutLongitude })
 })
 
 router.get('/status', async (req, res) => {
