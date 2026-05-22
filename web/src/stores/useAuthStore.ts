@@ -15,6 +15,7 @@ export interface AuthUser {
   clientName?: string | null
   siteIds?: string[]
   sites?: Site[]
+  liveTracking?: boolean
 }
 
 interface AuthStore {
@@ -130,4 +131,13 @@ export function useCanManageCheckpoints() {
 export function useCanViewAlerts() {
   const role = useAuthStore((s) => s.user?.role?.trim()?.toLowerCase())
   return role !== 'guard' && role !== 'officer'
+}
+
+export function useCanViewLiveTracking() {
+  const user = useAuthStore((s) => s.user)
+  if (!user) return false
+  const role = user.role?.trim()?.toLowerCase()
+  if (role === 'admin' || role === 'main_account' || role === 'supervisor') return true
+  if (!user.liveTracking) return false
+  return false
 }

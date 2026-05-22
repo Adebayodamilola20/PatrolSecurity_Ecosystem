@@ -45,6 +45,7 @@ function useNav() {
   items.push({ to: '/timesheets', label: 'Timesheets', icon: Clock })
   items.push({ to: '/post-orders', label: 'Post Orders', icon: ClipboardList })
   items.push({ to: '/handovers', label: 'Handovers', icon: ClipboardCheck })
+  items.push({ to: '/pass-on-logs', label: 'Pass-On Logs', icon: ClipboardList })
 
   if (role === 'admin' || role === 'main_account') {
     items.push({ to: '/reports', label: 'Reports', icon: FileText })

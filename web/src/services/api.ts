@@ -61,9 +61,19 @@ export const api = {
     login: (email: string, password: string) =>
       request<{ token: string; user: any }>('/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, clientType: 'web' }),
       }),
     me: () => request<{ user: any }>('/auth/me'),
+    forgotPassword: (email: string) =>
+      request<{ message: string }>('/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      }),
+    resetPassword: (token: string, password: string) =>
+      request<{ message: string }>('/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ token, password }),
+      }),
   },
   scans: {
     list: (params?: Record<string, string>) =>
@@ -84,9 +94,11 @@ export const api = {
       request<void>(`/checkpoints/${id}`, { method: 'DELETE' }),
   },
   reports: {
-    list: () => request<any[]>('/reports'),
+    list: () => request<{ reports: any[]; submissions: any[] }>('/reports'),
     generate: (data?: any) =>
       request<any>('/reports/generate', { method: 'POST', body: JSON.stringify(data || {}) }),
+    resend: (id: string) =>
+      request<any>(`/reports/${id}/resend`, { method: 'POST' }),
     pdf: (id: string) => `${API_BASE}/reports/${id}/pdf`,
   },
   users: {
@@ -144,6 +156,11 @@ export const api = {
       request<any[]>(`/sites?${new URLSearchParams(params || {})}`),
     create: (data: any) =>
       request<any>('/sites', { method: 'POST', body: JSON.stringify(data) }),
+  },
+  passOnLogs: {
+    list: () => request<any[]>('/pass-on-logs'),
+    create: (data: any) =>
+      request<any>('/pass-on-logs', { method: 'POST', body: JSON.stringify(data) }),
   },
   emergency: {
     settings: () => request<any[]>('/emergency/settings'),

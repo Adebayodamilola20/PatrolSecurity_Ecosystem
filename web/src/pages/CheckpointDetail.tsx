@@ -33,7 +33,7 @@ export default function CheckpointDetail() {
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'flagged'>('all')
-  const safeRadius = safeNumber(cp?.radiusMeters, 50)
+  const safeRadius = safeNumber(cp?.radiusMeters, 10)
   const safeLatitude = safeNumber(cp?.latitude, 0)
   const safeLongitude = safeNumber(cp?.longitude, 0)
 

@@ -16,8 +16,11 @@ import CheckpointDetail from './pages/CheckpointDetail'
 import Timesheets from './pages/Timesheets'
 import PostOrders from './pages/PostOrders'
 import Handovers from './pages/Handovers'
+import PassOnLogs from './pages/PassOnLogs'
 import Login from './pages/Login'
-import { useAuthStore, type UserRole } from './stores/useAuthStore'
+import ForgotPassword from './pages/ForgotPassword'
+import ResetPassword from './pages/ResetPassword'
+import { useAuthStore, useCanViewLiveTracking, type UserRole } from './stores/useAuthStore'
 
 const roleHomePath: Record<UserRole, string> = {
   admin: '/',
@@ -47,6 +50,13 @@ function RoleRoute({ children, allowedRoles }: { children: React.ReactNode; allo
   return <ProtectedRoute allowedRoles={allowedRoles}>{children}</ProtectedRoute>
 }
 
+function MonitoringGuard({ children }: { children: React.ReactNode }) {
+  const canView = useCanViewLiveTracking()
+  const role = useAuthStore((s) => s.user?.role)
+  if (!canView) return <Navigate to={role ? roleHomePath[role] : '/login'} replace />
+  return <>{children}</>
+}
+
 export default function App() {
   const hydrate = useAuthStore((s) => s.hydrate)
 
@@ -58,6 +68,8 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password/:token" element={<ResetPassword />} />
 
         <Route
           element={
@@ -67,7 +79,7 @@ export default function App() {
           }
         >
           <Route path="/" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Dashboard /></RoleRoute>} />
-          <Route path="/monitoring" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Monitoring /></RoleRoute>} />
+          <Route path="/monitoring" element={<MonitoringGuard><Monitoring /></MonitoringGuard>} />
           <Route path="/scans" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><Scans /></RoleRoute>} />
           <Route path="/scans/:id" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><ScanDetail /></RoleRoute>} />
           <Route path="/checkpoints" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Checkpoints /></RoleRoute>} />
@@ -81,6 +93,7 @@ export default function App() {
           <Route path="/timesheets" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><Timesheets /></RoleRoute>} />
           <Route path="/post-orders" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><PostOrders /></RoleRoute>} />
           <Route path="/handovers" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Handovers /></RoleRoute>} />
+          <Route path="/pass-on-logs" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><PassOnLogs /></RoleRoute>} />
         </Route>
 
         <Route path="*" element={<ProtectedRoute><RoleHomeRedirect /></ProtectedRoute>} />

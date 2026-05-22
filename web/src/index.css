@@ -39,7 +39,8 @@
   --color-info-foreground: var(--info-foreground);
 }
 
-:root {
+:root,
+.dark {
   --radius: 0.75rem;
   --background: oklch(0.16 0.012 250);
   --foreground: oklch(0.97 0.005 250);
@@ -72,6 +73,39 @@
   --sidebar-border: oklch(0.24 0.016 250);
 }
 
+.light {
+  --radius: 0.75rem;
+  --background: oklch(0.99 0 0);
+  --foreground: oklch(0.16 0.012 250);
+  --card: oklch(0.97 0.005 250);
+  --card-foreground: oklch(0.16 0.012 250);
+  --popover: oklch(0.97 0.005 250);
+  --popover-foreground: oklch(0.16 0.012 250);
+  --primary: oklch(0.55 0.22 265);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.92 0.01 250);
+  --secondary-foreground: oklch(0.16 0.012 250);
+  --muted: oklch(0.94 0.008 250);
+  --muted-foreground: oklch(0.50 0.02 250);
+  --accent: oklch(0.90 0.012 250);
+  --accent-foreground: oklch(0.16 0.012 250);
+  --destructive: oklch(0.60 0.22 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.65 0.18 150);
+  --success-foreground: oklch(0.99 0 0);
+  --warning: oklch(0.75 0.18 75);
+  --warning-foreground: oklch(0.20 0.02 75);
+  --info: oklch(0.65 0.16 220);
+  --info-foreground: oklch(0.99 0 0);
+  --border: oklch(0.88 0.012 250);
+  --input: oklch(0.88 0.012 250);
+  --ring: oklch(0.55 0.22 265);
+  --sidebar: oklch(0.94 0.008 250);
+  --sidebar-foreground: oklch(0.16 0.012 250);
+  --sidebar-accent: oklch(0.90 0.012 250);
+  --sidebar-border: oklch(0.88 0.012 250);
+}
+
 @layer base {
   * { border-color: var(--color-border); }
   html, body, #root { height: 100%; }
@@ -88,7 +122,7 @@
     word-break: break-word;
     hyphens: auto;
   }
-  .leaflet-container { background: oklch(0.20 0.014 250); }
+  .leaflet-container { background: var(--color-card); }
   .leaflet-control-attribution { background: rgba(0,0,0,0.5) !important; color: #aaa !important; }
   .leaflet-control-attribution a { color: #ccc !important; }
 }

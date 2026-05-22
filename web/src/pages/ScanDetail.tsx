@@ -119,7 +119,7 @@ export default function ScanDetail() {
       setFixingCheckpoint(true)
       setFixMessage('')
       const updatedRadius = Math.max(
-        Number(checkpoint.radiusMeters) || 50,
+        Number(checkpoint.radiusMeters) || 10,
         75,
       )
 

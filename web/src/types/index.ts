@@ -102,7 +102,7 @@ export interface Report {
   periodStart: string
   periodEnd: string
   format: 'pdf' | 'html'
-  status: 'pending' | 'sent' | 'failed'
+  status: 'pending' | 'generating' | 'sent' | 'failed'
   sentAt?: string
   createdAt: string
 }
@@ -179,6 +179,22 @@ export interface PostOrderCompletion {
   reviewedAt?: string | null
   reviewNote?: string
   createdAt: string
+}
+
+export interface PassOnLog {
+  id: string
+  title: string
+  instruction: string
+  priority: 'normal' | 'urgent' | 'critical'
+  siteLabel: string
+  checkpointId?: string | null
+  checkpointName?: string | null
+  requiresAcknowledgement: boolean
+  active: boolean
+  createdBy: string
+  createdByName?: string | null
+  createdAt: string
+  acknowledged?: boolean
 }
 
 export interface Handover {

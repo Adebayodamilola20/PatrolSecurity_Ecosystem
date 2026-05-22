@@ -64,3 +64,10 @@ export function subscribeToEmergency(callback: (data: any) => void) {
     socket?.off('emergency:new', callback)
   }
 }
+
+export function subscribeToPositionUpdates(callback: (data: any) => void) {
+  socket?.on('position:update', callback)
+  return () => {
+    socket?.off('position:update', callback)
+  }
+}

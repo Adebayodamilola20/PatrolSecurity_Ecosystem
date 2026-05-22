@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { X, MapPin, ScanLine, Download, Edit, MapIcon } from 'lucide-react'
+import { X, MapPin, ScanLine, Download, Edit, MapIcon, Printer } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import QRCode from 'qrcode'
 import L from 'leaflet'
@@ -59,7 +59,7 @@ export default function Checkpoints() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const patrolIntervalOptions = [5, 10, 15, 20, 25, 30, 45, 60]
-  const emptyForm = { name: '', code: '', latitude: '', longitude: '', radiusMeters: '50', expectedIntervalMinutes: '30', scheduledTimeIn: '06:00', scheduledTimeOut: '' }
+  const emptyForm = { name: '', code: '', latitude: '', longitude: '', radiusMeters: '10', expectedIntervalMinutes: '30', scheduledTimeIn: '06:00', scheduledTimeOut: '' }
   const [form, setForm] = useState(emptyForm)
   const [addressQuery, setAddressQuery] = useState('')
   const [addressResults, setAddressResults] = useState<AddressSuggestion[]>([])
@@ -80,7 +80,7 @@ export default function Checkpoints() {
 
     const initialLat = Number(form.latitude) || 6.5244
     const initialLng = Number(form.longitude) || 3.3792
-    const initialRadius = Number(form.radiusMeters) || 50
+    const initialRadius = Number(form.radiusMeters) || 10
 
     const markerIcon = L.divIcon({
       className: '',
@@ -172,7 +172,7 @@ export default function Checkpoints() {
     const radiusCircle = radiusRef.current
     if (!radiusCircle || !showModal) return
 
-    const radius = Number(form.radiusMeters) || 50
+    const radius = Number(form.radiusMeters) || 10
     radiusCircle.setRadius(radius)
   }, [form.radiusMeters, showModal])
 
@@ -298,7 +298,7 @@ export default function Checkpoints() {
       const longitude = String(position.coords.longitude)
       const accuracy = Math.max(25, Math.ceil(position.coords.accuracy || 0))
       const suggestedRadius = Math.max(
-        Number(form.radiusMeters) || 50,
+        Number(form.radiusMeters) || 10,
         Math.ceil((accuracy + 25) / 25) * 25,
       )
 
@@ -479,6 +479,51 @@ export default function Checkpoints() {
                     title="Download QR Code"
                   >
                     <Download className="h-3.5 w-3.5" /> QR
+                  </button>
+                  <button
+                    onClick={() => {
+                      const printWindow = window.open('', '_blank', 'width=480,height=640')
+                      if (!printWindow) {
+                        setActionError('Allow pop-ups to print QR codes.')
+                        return
+                      }
+                      printWindow.document.write(`
+                        <html>
+                          <head>
+                            <title>${cp.code} QR Code</title>
+                            <style>
+                              body { font-family: Arial, sans-serif; display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; background:#ffffff; color:#111827; }
+                              .sheet { text-align:center; padding:24px; }
+                              .sheet img { width:280px; height:280px; display:block; margin:0 auto 16px; }
+                              .code { font-family: monospace; font-size: 14px; margin-top: 8px; }
+                            </style>
+                          </head>
+                          <body>
+                            <div class="sheet">
+                              <img src="" alt="QR code" id="qr-image" />
+                              <h1>${cp.name}</h1>
+                              <div class="code">${cp.code}</div>
+                            </div>
+                          </body>
+                        </html>
+                      `)
+                      void QRCode.toDataURL(qrData, { width: 600, margin: 2, color: { dark: '#111827', light: '#ffffff' } })
+                        .then((url) => {
+                          const image = printWindow.document.getElementById('qr-image') as HTMLImageElement | null
+                          if (image) image.src = url
+                          printWindow.document.close()
+                          printWindow.focus()
+                          printWindow.print()
+                        })
+                        .catch(() => {
+                          printWindow.close()
+                          setActionError('Could not generate printable QR code.')
+                        })
+                    }}
+                    className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-accent"
+                    title="Print QR Code"
+                  >
+                    <Printer className="h-3.5 w-3.5" /> Print
                   </button>
                   <button
                     onClick={() => navigate(`/checkpoints/${cp.id}`)}

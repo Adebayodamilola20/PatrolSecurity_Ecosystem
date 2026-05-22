@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { FileText, Download, Mail, Calendar, Plus, X, FileBarChart } from 'lucide-react'
+import { FileText, Download, Mail, Calendar, Plus, X, FileBarChart, Loader2 } from 'lucide-react'
 import { api, apiFileUrl } from '../services/api'
 import type { ExportFile, Report } from '../types'
 import { TableSkeleton } from '../components/ui/Skeleton'
@@ -7,6 +7,7 @@ import { EmptyState } from '../components/ui/EmptyState'
 
 const statusColor: Record<string, string> = {
   sent: 'bg-success/15 text-success',
+  generating: 'bg-primary/15 text-primary',
   pending: 'bg-warning/15 text-warning',
   failed: 'bg-destructive/15 text-destructive',
 }
@@ -16,17 +17,19 @@ export default function Reports() {
   const [exports, setExports] = useState<ExportFile[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [resending, setResending] = useState<string | null>(null)
   const [requestingExport, setRequestingExport] = useState(false)
   const [exportDate, setExportDate] = useState(new Date().toISOString().slice(0, 10))
   const [form, setForm] = useState({ clientEmail: '', periodStart: '', periodEnd: '' })
   const [exportError, setExportError] = useState<string | null>(null)
 
   const loadData = async () => {
-    const [reportList, exportList] = await Promise.all([
+    const [result, exportList] = await Promise.all([
       api.reports.list(),
       api.scans.listDailyExports(),
     ])
-    setReports(reportList)
+    setReports(result?.reports ?? result ?? [])
     setExports(exportList)
   }
 
@@ -37,6 +40,7 @@ export default function Reports() {
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault()
+    setGenerating(true)
     try {
       await api.reports.generate({
         clientEmail: form.clientEmail,
@@ -47,6 +51,16 @@ export default function Reports() {
       setForm({ clientEmail: '', periodStart: '', periodEnd: '' })
       await loadData()
     } catch {}
+    setGenerating(false)
+  }
+
+  const handleResend = async (id: string) => {
+    setResending(id)
+    try {
+      await api.reports.resend(id)
+      await loadData()
+    } catch {}
+    setResending(null)
   }
 
   const handleRequestExport = async () => {
@@ -122,10 +136,14 @@ export default function Reports() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="text-xs text-muted-foreground">Sent this month</div>
           <div className="mt-2 text-2xl font-semibold">{reports.filter(r => r.status === 'sent').length}</div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4">
+          <div className="text-xs text-muted-foreground">Generating</div>
+          <div className="mt-2 text-2xl font-semibold">{reports.filter(r => r.status === 'generating').length}</div>
         </div>
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="text-xs text-muted-foreground">Pending</div>
@@ -244,8 +262,13 @@ export default function Reports() {
                 >
                   <Download className="h-4 w-4" />
                 </a>
-                <button className="rounded-lg border border-border p-2 hover:bg-accent" title="Resend">
-                  <Mail className="h-4 w-4" />
+                <button
+                  onClick={() => handleResend(r.id)}
+                  disabled={resending === r.id}
+                  className="rounded-lg border border-border p-2 hover:bg-accent disabled:opacity-50"
+                  title={resending === r.id ? 'Resending...' : 'Resend'}
+                >
+                  {resending === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
                 </button>
               </div>
             </div>
@@ -280,8 +303,12 @@ export default function Reports() {
                     className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
                 </div>
               </div>
-              <button type="submit" className="w-full rounded-lg bg-primary py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
-                Generate Report
+              <button
+                type="submit"
+                disabled={generating}
+                className="w-full rounded-lg bg-primary py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
+              >
+                {generating ? 'Generating & Emailing...' : 'Generate & Email Report'}
               </button>
             </form>
           </div>
