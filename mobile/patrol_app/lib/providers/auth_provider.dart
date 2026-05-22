@@ -79,6 +79,10 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> changePassword(String currentPassword, String newPassword) async {
+    await ApiService.changePassword(currentPassword, newPassword);
+  }
+
   void clearError() {
     _error = null;
     notifyListeners();

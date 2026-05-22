@@ -133,6 +133,32 @@ router.post('/forgot-password', async (req, res) => {
   res.status(202).json(genericResponse)
 })
 
+router.post('/change-password', authMiddleware, async (req, res) => {
+  const { currentPassword, newPassword } = req.body
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ message: 'Current password and new password are required' })
+  }
+  if (newPassword.length < 6) {
+    return res.status(400).json({ message: 'New password must be at least 6 characters' })
+  }
+
+  const user = await db.get('SELECT * FROM users WHERE id = ?', [req.user.id])
+  if (!user) {
+    return res.status(404).json({ message: 'User not found' })
+  }
+
+  const valid = await bcrypt.compare(currentPassword, user.password)
+  if (!valid) {
+    return res.status(401).json({ message: 'Current password is incorrect' })
+  }
+
+  const hashed = await bcrypt.hash(newPassword, 10)
+  await db.run('UPDATE users SET password = ? WHERE id = ?', [hashed, req.user.id])
+
+  res.json({ message: 'Password updated successfully' })
+})
+
 router.post('/reset-password', async (req, res) => {
   const token = String(req.body?.token || '').trim()
   const password = String(req.body?.password || '')

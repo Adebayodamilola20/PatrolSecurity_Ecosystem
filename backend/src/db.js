@@ -866,6 +866,22 @@ async function initDb() {
       createdAt TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (userId) REFERENCES users(id)
     );`); } catch {}
+    try {
+      db.exec(`CREATE TABLE IF NOT EXISTS officerPositions (
+        id TEXT PRIMARY KEY,
+        userId TEXT NOT NULL,
+        latitude REAL NOT NULL,
+        longitude REAL NOT NULL,
+        accuracy REAL,
+        speed REAL,
+        heading REAL,
+        capturedAt TEXT NOT NULL,
+        createdAt TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY (userId) REFERENCES users(id)
+      );`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_officerPositions_userId ON officerPositions(userId)`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_officerPositions_capturedAt ON officerPositions(capturedAt)`);
+    } catch {}
   } else {
     await db.exec(pgSchema)
     try { await db.exec("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check"); } catch (e) { console.log('[PG] Drop constraint:', e.message) }
@@ -1004,22 +1020,23 @@ async function initDb() {
       createdAt TIMESTAMPTZ DEFAULT NOW(),
       FOREIGN KEY (userId) REFERENCES users(id)
     );`); } catch {}
+    try {
+      await db.exec(`CREATE TABLE IF NOT EXISTS officerPositions (
+        id TEXT PRIMARY KEY,
+        userId TEXT NOT NULL,
+        latitude DOUBLE PRECISION NOT NULL,
+        longitude DOUBLE PRECISION NOT NULL,
+        accuracy DOUBLE PRECISION,
+        speed DOUBLE PRECISION,
+        heading DOUBLE PRECISION,
+        capturedAt TEXT NOT NULL,
+        createdAt TIMESTAMPTZ DEFAULT NOW(),
+        FOREIGN KEY (userId) REFERENCES users(id)
+      );`);
+      await db.exec(`CREATE INDEX IF NOT EXISTS idx_officerPositions_userId ON officerPositions(userId)`);
+      await db.exec(`CREATE INDEX IF NOT EXISTS idx_officerPositions_capturedAt ON officerPositions(capturedAt)`);
+    } catch {}
   }
-
-  try { await db.exec(`CREATE TABLE IF NOT EXISTS officerPositions (
-    id TEXT PRIMARY KEY,
-    userId TEXT NOT NULL,
-    latitude REAL NOT NULL,
-    longitude REAL NOT NULL,
-    accuracy REAL,
-    speed REAL,
-    heading REAL,
-    capturedAt TEXT NOT NULL,
-    createdAt TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (userId) REFERENCES users(id)
-  );`); } catch {}
-  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_officerPositions_userId ON officerPositions(userId)`); } catch {}
-  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_officerPositions_capturedAt ON officerPositions(capturedAt)`); } catch {}
 }
 
 try {

@@ -98,6 +98,18 @@ class ApiService {
     return jsonDecode(res.body);
   }
 
+  static Future<Map<String, dynamic>> changePassword(String currentPassword, String newPassword) async {
+    final res = await _client.post(
+      Uri.parse('$baseUrl/auth/change-password'),
+      headers: await _headers(),
+      body: jsonEncode({'currentPassword': currentPassword, 'newPassword': newPassword}),
+    ).timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to change password');
+    }
+    return jsonDecode(res.body);
+  }
+
   static Future<void> logout() async {
     await _storage.delete(key: 'patrol_token');
   }
