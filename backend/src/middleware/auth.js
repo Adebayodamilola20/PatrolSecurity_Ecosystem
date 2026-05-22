@@ -4,7 +4,8 @@ import { normalizeRole, isAdmin, isMainAccount } from '../utils/roles.js'
 export function getJwtSecret() {
   const secret = process.env.JWT_SECRET?.trim()
   if (!secret) {
-    throw new Error('JWT_SECRET is required')
+    console.warn('WARNING: JWT_SECRET not set. Using fallback — set JWT_SECRET in production.')
+    return 'patrol-monitoring-fallback-secret-do-not-use-in-production'
   }
   return secret
 }

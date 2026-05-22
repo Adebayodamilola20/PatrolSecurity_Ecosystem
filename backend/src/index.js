@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import rateLimit from 'express-rate-limit'
@@ -28,6 +29,7 @@ import siteRoutes from './routes/sites.js'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const app = express()
+app.set('trust proxy', 1)
 const server = createServer(app)
 
 const allowedOrigins = [
