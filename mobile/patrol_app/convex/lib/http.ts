@@ -1,5 +1,9 @@
 export function json(body: unknown, init?: ResponseInit) {
-  return Response.json(body, init);
+  const headers = new Headers(init?.headers);
+  headers.set("Access-Control-Allow-Origin", "*");
+  headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  return Response.json(body, { ...init, headers });
 }
 
 export function methodNotAllowed(method: string) {
