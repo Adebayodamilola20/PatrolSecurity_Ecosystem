@@ -140,6 +140,30 @@ export const seedDefaults = mutation({
   },
 });
 
+export const wipeAll = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const tables = ["clients", "sites", "users", "userSiteAssignments", "checkpoints", "shifts", "scans", "officerPositions", "incidents", "reportSubmissions", "exportFiles", "communicationSettings", "emergencyEvents", "passOnLogs", "passOnLogAcknowledgements", "postOrders", "postOrderCompletions", "handovers"];
+    for (const table of tables) {
+      const docs = await ctx.db.query(table as any).collect();
+      for (const doc of docs) {
+        await ctx.db.delete(doc._id);
+      }
+    }
+    return { wiped: true };
+  },
+});
+
+export const assignUserToSite = mutation({
+  args: { userId: v.id("users"), siteId: v.id("sites") },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("userSiteAssignments", {
+      legacyId: crypto.randomUUID(), userId: args.userId, siteId: args.siteId, createdAt: Date.now(),
+    });
+    return { assigned: true };
+  },
+});
+
 export const ensureDemoContent = mutation({
   args: {},
   handler: async (ctx) => {

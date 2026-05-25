@@ -1,6 +1,33 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
+export const listAll = query({
+  args: {},
+  handler: async (ctx) => {
+    const handovers = await ctx.db.query("handovers").order("desc").collect();
+    const users = await ctx.db.query("users").collect();
+    const checkpoints = await ctx.db.query("checkpoints").collect();
+    return handovers.map(h => ({
+      id: h.legacyId ?? h._id, summary: h.summary, status: h.status,
+      checkpointName: checkpoints.find(c => c._id === h.checkpointId)?.name ?? null,
+      siteLabel: h.siteLabel,
+      fromUserName: users.find(u => u._id === h.fromUserId)?.name ?? null,
+      toUserName: users.find(u => u._id === h.toUserId)?.name ?? null,
+      openIssues: h.openIssues, equipmentStatus: h.equipmentStatus,
+      photoUrl: h.photoUrl || null, createdAt: new Date(h.createdAt).toISOString(),
+      acceptedAt: h.acceptedAt ? new Date(h.acceptedAt).toISOString() : null,
+    }));
+  },
+});
+
+export const updateStatus = mutation({
+  args: { handoverId: v.id("handovers"), status: v.string() },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.handoverId, { status: args.status as any });
+    return await ctx.db.get(args.handoverId);
+  },
+});
+
 export const listPendingForUser = query({
   args: {
     userId: v.id("users"),

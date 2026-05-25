@@ -9,6 +9,7 @@
  */
 
 import type * as checkpoints from "../checkpoints.js";
+import type * as clients from "../clients.js";
 import type * as dev from "../dev.js";
 import type * as emergency from "../emergency.js";
 import type * as exports from "../exports.js";
@@ -29,6 +30,7 @@ import type * as reports from "../reports.js";
 import type * as scans from "../scans.js";
 import type * as settings from "../settings.js";
 import type * as shifts from "../shifts.js";
+import type * as sites from "../sites.js";
 import type * as users from "../users.js";
 
 import type {
@@ -39,6 +41,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   checkpoints: typeof checkpoints;
+  clients: typeof clients;
   dev: typeof dev;
   emergency: typeof emergency;
   exports: typeof exports;
@@ -59,6 +62,7 @@ declare const fullApi: ApiFromModules<{
   scans: typeof scans;
   settings: typeof settings;
   shifts: typeof shifts;
+  sites: typeof sites;
   users: typeof users;
 }>;
 

@@ -79,6 +79,45 @@ export const listForApi = query({
   },
 });
 
+export const getRecent = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const scans = await ctx.db.query("scans").order("desc").collect();
+    const users = await ctx.db.query("users").collect();
+    const checkpoints = await ctx.db.query("checkpoints").collect();
+    return scans.slice(0, args.limit ?? 50).map(s => ({
+      id: s.legacyId ?? s._id, officerId: s.officerId,
+      officerName: users.find(u => u._id === s.officerId)?.name ?? "",
+      checkpointId: s.checkpointId,
+      checkpointName: checkpoints.find(c => c._id === s.checkpointId)?.name ?? "",
+      scannedAt: new Date(s.scannedAt).toISOString(),
+      gpsLatitude: s.gpsLatitude, gpsLongitude: s.gpsLongitude,
+      gpsValid: s.gpsValid, distanceMeters: s.distanceMeters,
+    }));
+  },
+});
+
+export const getById = query({
+  args: { scanId: v.id("scans") },
+  handler: async (ctx, args) => {
+    const s = await ctx.db.get(args.scanId);
+    if (!s) return null;
+    const users = await ctx.db.query("users").collect();
+    const checkpoints = await ctx.db.query("checkpoints").collect();
+    return {
+      id: s.legacyId ?? s._id, officerId: s.officerId,
+      officerName: users.find(u => u._id === s.officerId)?.name ?? "",
+      checkpointId: s.checkpointId,
+      checkpointName: checkpoints.find(c => c._id === s.checkpointId)?.name ?? "",
+      checkpointCode: checkpoints.find(c => c._id === s.checkpointId)?.code ?? "",
+      scannedAt: new Date(s.scannedAt).toISOString(),
+      receivedAt: new Date(s.receivedAt).toISOString(),
+      gpsLatitude: s.gpsLatitude, gpsLongitude: s.gpsLongitude,
+      gpsValid: s.gpsValid, distanceMeters: s.distanceMeters, notes: s.notes,
+    };
+  },
+});
+
 export const create = mutation({
   args: {
     officerId: v.id("users"),

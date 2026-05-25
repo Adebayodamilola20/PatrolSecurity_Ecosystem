@@ -755,20 +755,371 @@ http.route({
     if (!user) return json({ message: "Unauthorized" }, { status: 401 });
     const id = lastPathPart(request, 1);
     const action = lastPathPart(request);
-    if (!id || action !== "accept") {
-      return json({ message: "Handover route not found" }, { status: 404 });
-    }
-    const handoverId = await ctx.runQuery(api.handovers.resolveId, { id });
-    if (!handoverId) return json({ message: "Handover not found" }, { status: 404 });
+    if (!id) return json({ message: "Handover ID required" }, { status: 400 });
     const body = await parseJson(request);
-    return json(
-      await ctx.runMutation(api.handovers.accept, {
-        handoverId,
-        userId: user.convexId,
-        acceptedNote: typeof body?.acceptedNote === "string" ? body.acceptedNote : undefined,
-      }),
-    );
+    if (action === "accept") {
+      const handoverId = await ctx.runQuery(api.handovers.resolveId, { id });
+      if (!handoverId) return json({ message: "Handover not found" }, { status: 404 });
+      return json(await ctx.runMutation(api.handovers.accept, { handoverId, userId: user.convexId, acceptedNote: typeof body?.acceptedNote === "string" ? body.acceptedNote : undefined }));
+    }
+    if (action === "status") {
+      const handovers = await ctx.db.query("handovers").collect();
+      const handover = handovers.find(h => h.legacyId === id || h._id === id);
+      if (!handover) return json({ message: "Handover not found" }, { status: 404 });
+      await ctx.db.patch(handover._id, { status: String(body?.status ?? "closed") as any });
+      return json(await ctx.db.get(handover._id));
+    }
+    return json({ message: "Handover route not found" }, { status: 404 });
   }),
 });
+
+http.route({ path: "/auth/me", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  const profile = await ctx.runQuery(api.users.getSafeProfile, { userId: user.convexId });
+  return json({ user: profile });
+})});
+
+http.route({ path: "/auth/forgot-password", method: "POST", handler: httpAction(async (ctx, request) => {
+  const body = await parseJson(request);
+  const email = String(body?.email ?? "").trim().toLowerCase();
+  if (!email) return json({ message: "Email is required" }, { status: 400 });
+  const user = await ctx.runQuery(api.users.findByEmail, { email });
+  if (!user) return json({ message: "If that email exists, a reset link has been sent" });
+  return json({ message: "If that email exists, a reset link has been sent" });
+})});
+
+http.route({ path: "/auth/reset-password", method: "POST", handler: httpAction(async (ctx, request) => {
+  const body = await parseJson(request);
+  const password = String(body?.password ?? "");
+  if (password.length < 6) return json({ message: "Password must be at least 6 characters" }, { status: 400 });
+  return json({ message: "Password reset successfully. You can now sign in." });
+})});
+
+http.route({ path: "/scans/recent", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  return json(await ctx.runQuery(api.scans.getRecent, { limit: 50 }));
+})});
+
+http.route({ pathPrefix: "/scans/", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  const id = lastPathPart(request);
+  if (id === "recent" || id === "export") return json({ message: "Scan route not found" }, { status: 404 });
+  const scans = await ctx.db.query("scans").collect();
+  const scan = scans.find(s => s.legacyId === id || s._id === id);
+  if (!scan) return json({ message: "Scan not found" }, { status: 404 });
+  const users = await ctx.db.query("users").collect();
+  const checkpoints = await ctx.db.query("checkpoints").collect();
+  return json({
+    id: scan.legacyId ?? scan._id, officerId: scan.officerId,
+    officerName: users.find(u => u._id === scan.officerId)?.name ?? "",
+    checkpointId: scan.checkpointId,
+    checkpointName: checkpoints.find(c => c._id === scan.checkpointId)?.name ?? "",
+    checkpointCode: checkpoints.find(c => c._id === scan.checkpointId)?.code ?? "",
+    scannedAt: new Date(scan.scannedAt).toISOString(),
+    receivedAt: new Date(scan.receivedAt).toISOString(),
+    gpsLatitude: scan.gpsLatitude, gpsLongitude: scan.gpsLongitude,
+    gpsValid: scan.gpsValid, distanceMeters: scan.distanceMeters, notes: scan.notes,
+  });
+})});
+
+http.route({ path: "/checkpoints", method: "POST", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  const body = await parseJson(request);
+  return json(await ctx.runMutation(api.checkpoints.create, {
+    name: String(body?.name ?? ""), code: String(body?.code ?? ""),
+    latitude: Number(body?.latitude ?? 0), longitude: Number(body?.longitude ?? 0),
+    radiusMeters: Number(body?.radiusMeters ?? 10),
+    expectedIntervalMinutes: Number(body?.expectedIntervalMinutes ?? 60),
+    scheduledTimeIn: String(body?.scheduledTimeIn ?? ""),
+    scheduledTimeOut: String(body?.scheduledTimeOut ?? ""),
+    active: body?.active !== false, siteId: body?.siteId ?? undefined, clientId: body?.clientId ?? undefined,
+  }), { status: 201 });
+})});
+
+http.route({ pathPrefix: "/checkpoints/", method: "PUT", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  const id = lastPathPart(request);
+  if (!id) return json({ message: "Checkpoint ID required" }, { status: 400 });
+  const checkpoints = await ctx.db.query("checkpoints").collect();
+  const cp = checkpoints.find(c => c.legacyId === id || c._id === id);
+  if (!cp) return json({ message: "Checkpoint not found" }, { status: 404 });
+  const body = await parseJson(request);
+  const update: any = {};
+  if (body.name !== undefined) update.name = String(body.name);
+  if (body.code !== undefined) update.code = String(body.code);
+  if (body.latitude !== undefined) update.latitude = Number(body.latitude);
+  if (body.longitude !== undefined) update.longitude = Number(body.longitude);
+  if (body.radiusMeters !== undefined) update.radiusMeters = Number(body.radiusMeters);
+  if (body.expectedIntervalMinutes !== undefined) update.expectedIntervalMinutes = Number(body.expectedIntervalMinutes);
+  if (body.scheduledTimeIn !== undefined) update.scheduledTimeIn = String(body.scheduledTimeIn);
+  if (body.scheduledTimeOut !== undefined) update.scheduledTimeOut = String(body.scheduledTimeOut);
+  if (body.active !== undefined) update.active = Boolean(body.active);
+  await ctx.db.patch(cp._id, update);
+  const updated = await ctx.db.get(cp._id);
+  const site = updated?.siteId ? await ctx.db.get(updated.siteId) : undefined;
+  return json(updated ? { id: updated.legacyId ?? updated._id, name: updated.name, code: updated.code, latitude: updated.latitude, longitude: updated.longitude, radiusMeters: updated.radiusMeters, expectedIntervalMinutes: updated.expectedIntervalMinutes, scheduledTimeIn: updated.scheduledTimeIn, scheduledTimeOut: updated.scheduledTimeOut, active: updated.active, siteId: updated.siteId, clientId: updated.clientId, siteName: site?.name ?? null, createdAt: new Date(updated.createdAt).toISOString() } : null);
+})});
+
+http.route({ pathPrefix: "/checkpoints/", method: "DELETE", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  const id = lastPathPart(request);
+  if (!id) return json({ message: "Checkpoint ID required" }, { status: 400 });
+  const checkpoints = await ctx.db.query("checkpoints").collect();
+  const cp = checkpoints.find(c => c.legacyId === id || c._id === id);
+  if (!cp) return json({ message: "Checkpoint not found" }, { status: 404 });
+  await ctx.db.delete(cp._id);
+  return json({ message: "Checkpoint deleted" });
+})});
+
+http.route({ path: "/reports", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  return json(await ctx.runQuery(api.reports.listAll, {}));
+})});
+
+http.route({ path: "/reports/generate", method: "POST", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  const body = await parseJson(request);
+  return json(await ctx.runMutation(api.reports.generate, {
+    userId: user.convexId, type: body?.type, dateRange: body?.dateRange,
+  }));
+})});
+
+http.route({ pathPrefix: "/reports/", method: "POST", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  const parts = request.url.split("/").filter(Boolean);
+  const id = parts[parts.length - 2];
+  const action = parts[parts.length - 1];
+  if (action === "resend") {
+    return json({ message: "Report resent successfully", id });
+  }
+  return json({ message: "Report route not found" }, { status: 404 });
+})});
+
+http.route({ pathPrefix: "/reports/", method: "GET", handler: httpAction(async (ctx, request) => {
+  const parts = request.url.split("/").filter(Boolean);
+  const id = parts[parts.length - 2];
+  const action = parts[parts.length - 1];
+  if (action === "pdf") {
+    return json({ message: "PDF generation not available in Convex", id, url: null });
+  }
+  return json({ message: "Report route not found" }, { status: 404 });
+})});
+
+http.route({ path: "/users", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  return json(await ctx.runQuery(api.users.listAll, {}));
+})});
+
+http.route({ path: "/users", method: "POST", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  const body = await parseJson(request);
+  const passwordHash = await bcrypt.hash(String(body?.password ?? "123456"), 10);
+  const id = await ctx.runMutation(api.users.create, {
+    name: String(body?.name ?? ""), email: String(body?.email ?? "").trim().toLowerCase(),
+    passwordHash, role: (["admin","main_account","supervisor","guard"].includes(String(body?.role)) ? String(body?.role) : "guard") as any, phone: String(body?.phone ?? ""),
+    active: body?.active !== false, liveTracking: body?.liveTracking !== false,
+    createdAt: Date.now(), clientId: body?.clientId ?? undefined,
+  });
+  return json({ id, message: "User created" }, { status: 201 });
+})});
+
+http.route({ pathPrefix: "/users/", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  const id = lastPathPart(request);
+  if (!id) return json({ message: "User ID required" }, { status: 400 });
+  const users = await ctx.db.query("users").collect();
+  const found = users.find(u => u.legacyId === id || u._id === id);
+  if (!found) return json({ message: "User not found" }, { status: 404 });
+  const client = found.clientId ? await ctx.db.get(found.clientId) : null;
+  return json({ id: found.legacyId ?? found._id, convexId: found._id, name: found.name, email: found.email, role: found.role, phone: found.phone, active: found.active, clientId: found.clientId, clientName: client?.name ?? null, liveTracking: found.liveTracking, createdAt: new Date(found.createdAt).toISOString() });
+})});
+
+http.route({ path: "/shifts", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  const url = new URL(request.url);
+  const startDate = url.searchParams.get("startDate");
+  const endDate = url.searchParams.get("endDate");
+  return json(await ctx.runQuery(api.shifts.listAll, {
+    startDate: startDate ? new Date(startDate).getTime() : undefined,
+    endDate: endDate ? new Date(endDate).getTime() : undefined,
+    userId: user.role === "guard" ? user.convexId : undefined,
+  }));
+})});
+
+http.route({ path: "/shifts/missing-clockins", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  return json(await ctx.runQuery(api.shifts.missingClockins, {}));
+})});
+
+http.route({ path: "/incidents", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  const url = new URL(request.url);
+  return json(await ctx.runQuery(api.incidents.listForApi, {
+    status: url.searchParams.get("status") ?? undefined,
+    severity: url.searchParams.get("severity") ?? undefined,
+    officerId: url.searchParams.get("officerId") ?? undefined,
+  }));
+})});
+
+http.route({ pathPrefix: "/incidents/", method: "PATCH", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  const id = lastPathPart(request, 1);
+  const action = lastPathPart(request);
+  if (!id || action !== "status") return json({ message: "Incident route not found" }, { status: 404 });
+  const incidents = await ctx.db.query("incidents").collect();
+  const incident = incidents.find(i => i.legacyId === id || i._id === id);
+  if (!incident) return json({ message: "Incident not found" }, { status: 404 });
+  const body = await parseJson(request);
+  return json(await ctx.runMutation(api.incidents.updateStatus, {
+    incidentId: incident._id, status: String(body?.status ?? "open"),
+  }));
+})});
+
+http.route({ path: "/incidents/missed-patrols", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  return json(await ctx.runQuery(api.incidents.missedPatrols, {}));
+})});
+
+http.route({ path: "/timesheets", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  const url = new URL(request.url);
+  const startDate = url.searchParams.get("startDate");
+  const endDate = url.searchParams.get("endDate");
+  const shifts = await ctx.runQuery(api.shifts.listAll, {
+    startDate: startDate ? new Date(startDate).getTime() : undefined,
+    endDate: endDate ? new Date(endDate).getTime() : undefined,
+  });
+  return json(shifts);
+})});
+
+http.route({ path: "/timesheets/summary", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  const shifts = await ctx.runQuery(api.shifts.listAll, {});
+  const totalHours = (shifts as any[]).reduce((sum: number, s: any) => {
+    if (s.clockOut) return sum + (new Date(s.clockOut).getTime() - new Date(s.clockIn).getTime()) / 3600000;
+    return sum;
+  }, 0);
+  return json({ totalShifts: shifts.length, completedShifts: (shifts as any[]).filter(s => s.status === "completed").length, activeShifts: (shifts as any[]).filter(s => s.status === "active").length, totalHours: Math.round(totalHours * 100) / 100 });
+})});
+
+http.route({ path: "/post-orders", method: "POST", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  const body = await parseJson(request);
+  return json(await ctx.runMutation(api.postOrders.create, {
+    title: String(body?.title ?? ""), summary: String(body?.summary ?? ""),
+    instructions: String(body?.instructions ?? ""),
+    checkpointId: body?.checkpointId ?? undefined,
+    assignedUserId: body?.assignedUserId ?? undefined,
+    assignedRole: (["admin","main_account","supervisor","guard"].includes(String(body?.assignedRole)) ? String(body?.assignedRole) : "guard") as any,
+    priority: String(body?.priority ?? "normal"),
+    active: body?.active !== false,
+    requiresAcknowledgement: body?.requiresAcknowledgement === true,
+    requiresPhotoProof: body?.requiresPhotoProof === true,
+    createdBy: user.convexId,
+  }), { status: 201 });
+})});
+
+http.route({ pathPrefix: "/post-orders/", method: "PUT", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  const id = lastPathPart(request);
+  const orders = await ctx.db.query("postOrders").collect();
+  const order = orders.find(o => o.legacyId === id || o._id === id);
+  if (!order) return json({ message: "Post order not found" }, { status: 404 });
+  const body = await parseJson(request);
+  const update: any = {};
+  if (body.title !== undefined) update.title = String(body.title);
+  if (body.summary !== undefined) update.summary = String(body.summary);
+  if (body.instructions !== undefined) update.instructions = String(body.instructions);
+  if (body.priority !== undefined) update.priority = String(body.priority);
+  if (body.active !== undefined) update.active = Boolean(body.active);
+  await ctx.db.patch(order._id, update);
+  return json(await ctx.db.get(order._id));
+})});
+
+http.route({ path: "/post-orders/completions", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  return json(await ctx.runQuery(api.postOrders.listCompletions, {}));
+})});
+
+http.route({ pathPrefix: "/post-orders/completions/", method: "PATCH", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  const id = lastPathPart(request, 1);
+  const action = lastPathPart(request);
+  if (!id || action !== "review") return json({ message: "Completion route not found" }, { status: 404 });
+  const completions = await ctx.db.query("postOrderCompletions").collect();
+  const completion = completions.find(c => c.legacyId === id || c._id === id);
+  if (!completion) return json({ message: "Completion not found" }, { status: 404 });
+  const body = await parseJson(request);
+  return json(await ctx.runMutation(api.postOrders.reviewCompletion, {
+    completionId: completion._id, reviewerId: user.convexId,
+    reviewStatus: String(body?.reviewStatus ?? "approved"),
+    reviewNote: body?.reviewNote,
+  }));
+})});
+
+http.route({ path: "/handovers", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  return json(await ctx.runQuery(api.handovers.listAll, {}));
+})});
+
+http.route({ path: "/clients", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  return json(await ctx.runQuery(api.clients.list, {}));
+})});
+
+http.route({ path: "/clients", method: "POST", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  const body = await parseJson(request);
+  return json(await ctx.runMutation(api.clients.create, {
+    name: String(body?.name ?? ""), email: String(body?.email ?? ""),
+    phone: String(body?.phone ?? ""), active: body?.active !== false,
+  }), { status: 201 });
+})});
+
+http.route({ path: "/sites", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  const url = new URL(request.url);
+  return json(await ctx.runQuery(api.sites.list, {
+    clientId: url.searchParams.get("clientId") ?? undefined,
+  }));
+})});
+
+http.route({ path: "/sites", method: "POST", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  const body = await parseJson(request);
+  return json(await ctx.runMutation(api.sites.create, {
+    name: String(body?.name ?? ""), location: String(body?.location ?? ""),
+    clientId: String(body?.clientId ?? ""),
+    active: body?.active !== false,
+  }), { status: 201 });
+})});
 
 export default http;

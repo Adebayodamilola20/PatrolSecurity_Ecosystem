@@ -68,6 +68,39 @@ export const listForExport = query({
   },
 });
 
+export const listAll = query({
+  args: { startDate: v.optional(v.number()), endDate: v.optional(v.number()), userId: v.optional(v.id("users")) },
+  handler: async (ctx, args) => {
+    let shifts = await ctx.db.query("shifts").order("desc").collect();
+    if (args.userId) shifts = shifts.filter(s => s.userId === args.userId);
+    if (args.startDate) shifts = shifts.filter(s => s.clockIn >= args.startDate!);
+    if (args.endDate) shifts = shifts.filter(s => s.clockIn <= args.endDate!);
+    const users = await ctx.db.query("users").collect();
+    return shifts.map(s => ({
+      id: s.legacyId ?? s._id, userId: s.userId,
+      userName: users.find(u => u._id === s.userId)?.name ?? "",
+      clockIn: new Date(s.clockIn).toISOString(),
+      clockOut: s.clockOut ? new Date(s.clockOut).toISOString() : null,
+      status: s.status, siteLabel: s.siteLabel, createdAt: new Date(s.createdAt).toISOString(),
+    }));
+  },
+});
+
+export const missingClockins = query({
+  args: {},
+  handler: async (ctx) => {
+    const users = await ctx.db.query("users").collect();
+    const now = Date.now();
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const shifts = await ctx.db.query("shifts").collect();
+    const todayShifts = shifts.filter(s => s.clockIn >= todayStart.getTime());
+    const activeUsers = users.filter(u => u.active);
+    return activeUsers.filter(u => !todayShifts.some(s => s.userId === u._id)).map(u => ({
+      userId: u.legacyId ?? u._id, name: u.name, email: u.email, role: u.role,
+    }));
+  },
+});
+
 export const clockIn = mutation({
   args: {
     userId: v.id("users"),

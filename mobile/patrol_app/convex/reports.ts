@@ -27,6 +27,33 @@ export const listSubmissions = query({
   },
 });
 
+export const listAll = query({
+  args: {},
+  handler: async (ctx) => {
+    const subs = await ctx.db.query("reportSubmissions").order("desc").collect();
+    const users = await ctx.db.query("users").collect();
+    return { reports: [], submissions: subs.map(s => ({
+      id: s.legacyId ?? s._id, type: s.type, title: s.title, summary: s.summary,
+      status: s.status, siteLabel: s.siteLabel,
+      userName: users.find(u => u._id === s.userId)?.name ?? "",
+      submittedAt: new Date(s.submittedAt).toISOString(),
+      emailedAt: s.emailedAt ? new Date(s.emailedAt).toISOString() : null,
+    })) };
+  },
+});
+
+export const generate = mutation({
+  args: { userId: v.id("users"), type: v.optional(v.string()), dateRange: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const subId = await ctx.db.insert("reportSubmissions", {
+      type: args.type ?? "generated", title: "Generated Report", summary: "Auto-generated",
+      details: {}, userId: args.userId, status: "submitted", submittedAt: Date.now(),
+      deliveryPayload: {}, siteLabel: "",
+    });
+    return { id: subId, message: "Report generation started", status: "submitted" };
+  },
+});
+
 export const submit = mutation({
   args: {
     type: v.string(),

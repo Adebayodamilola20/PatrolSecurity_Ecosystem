@@ -1,6 +1,80 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
+export const listAll = query({
+  args: { clientId: v.optional(v.id("clients")), active: v.optional(v.boolean()) },
+  handler: async (ctx, args) => {
+    let orders = await ctx.db.query("postOrders").order("desc").collect();
+    if (args.active !== undefined) orders = orders.filter(o => o.active === args.active);
+    const checkpoints = await ctx.db.query("checkpoints").collect();
+    const completions = await ctx.db.query("postOrderCompletions").collect();
+    return orders.map(o => ({
+      id: o.legacyId ?? o._id, title: o.title, summary: o.summary,
+      instructions: o.instructions,
+      checkpointId: o.checkpointId,
+      checkpointName: checkpoints.find(c => c._id === o.checkpointId)?.name ?? null,
+      assignedUserId: o.assignedUserId, priority: o.priority, active: o.active,
+      requiresAcknowledgement: o.requiresAcknowledgement,
+      requiresPhotoProof: o.requiresPhotoProof, createdBy: o.createdBy,
+      completions: completions.filter(c => c.postOrderId === o._id),
+      createdAt: new Date(o.createdAt).toISOString(),
+    }));
+  },
+});
+
+export const create = mutation({
+  args: {
+    title: v.string(), summary: v.string(), instructions: v.string(),
+    checkpointId: v.optional(v.id("checkpoints")),
+    assignedUserId: v.optional(v.id("users")), assignedRole: v.string(),
+    priority: v.string(), active: v.boolean(),
+    requiresAcknowledgement: v.boolean(), requiresPhotoProof: v.boolean(),
+    createdBy: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const id = await ctx.db.insert("postOrders", { ...args, createdAt: Date.now() });
+    return { id, ...args, createdAt: new Date().toISOString() };
+  },
+});
+
+export const listCompletions = query({
+  args: {},
+  handler: async (ctx) => {
+    const completions = await ctx.db.query("postOrderCompletions").order("desc").collect();
+    const users = await ctx.db.query("users").collect();
+    const orders = await ctx.db.query("postOrders").collect();
+    return completions.map(c => ({
+      id: c.legacyId ?? c._id, postOrderId: c.postOrderId,
+      orderTitle: orders.find(o => o._id === c.postOrderId)?.title ?? "",
+      userId: c.userId,
+      userName: users.find(u => u._id === c.userId)?.name ?? "",
+      status: c.status, reviewStatus: c.reviewStatus,
+      completedAt: c.completedAt ? new Date(c.completedAt).toISOString() : null,
+      acknowledgedAt: c.acknowledgedAt ? new Date(c.acknowledgedAt).toISOString() : null,
+      proofPhotoUrl: c.proofPhotoUrl || null, proofNote: c.proofNote,
+      createdAt: new Date(c.createdAt).toISOString(),
+    }));
+  },
+});
+
+export const reviewCompletion = mutation({
+  args: {
+    completionId: v.id("postOrderCompletions"),
+    reviewerId: v.id("users"),
+    reviewStatus: v.string(),
+    reviewNote: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.completionId, {
+      reviewStatus: args.reviewStatus,
+      reviewNote: args.reviewNote ?? "",
+      reviewedBy: args.reviewerId,
+      reviewedAt: Date.now(),
+    });
+    return await ctx.db.get(args.completionId);
+  },
+});
+
 export const listForUser = query({
   args: {
     userId: v.id("users"),
