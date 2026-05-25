@@ -154,6 +154,18 @@ export const wipeAll = mutation({
   },
 });
 
+export const deleteUserByEmail = mutation({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.query("users").withIndex("by_email", (q) => q.eq("email", args.email)).unique();
+    if (!user) return { deleted: false, reason: "not found" };
+    const assignments = await ctx.db.query("userSiteAssignments").withIndex("by_userId", (q) => q.eq("userId", user._id)).collect();
+    for (const a of assignments) await ctx.db.delete(a._id);
+    await ctx.db.delete(user._id);
+    return { deleted: true };
+  },
+});
+
 export const assignUserToSite = mutation({
   args: { userId: v.id("users"), siteId: v.id("sites") },
   handler: async (ctx, args) => {
