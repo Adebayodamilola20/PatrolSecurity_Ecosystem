@@ -249,7 +249,8 @@ router.post('/', async (req, res) => {
               Math.sin(dLon / 2) ** 2
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
     distanceMeters = Math.round(R * c)
-    gpsValid = distanceMeters <= checkpoint.radiusMeters
+    const effectiveRadius = Math.min(checkpoint.radiusMeters, 10)
+    gpsValid = distanceMeters <= effectiveRadius
     if (!gpsValid) {
       await createIncident(
         req.user.id,

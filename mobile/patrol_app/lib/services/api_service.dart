@@ -416,19 +416,20 @@ class ApiService {
     double? gpsLatitude,
     double? gpsLongitude,
   }) async {
-    
-    final token = await getToken();
-    final request = http.MultipartRequest(
-      'POST',
+    final bytes = await photo.readAsBytes();
+    final res = await _client.post(
       Uri.parse('$baseUrl/post-orders/$orderId/complete'),
-    );
-    if (token != null) request.headers['Authorization'] = 'Bearer $token';
-    request.fields['proofNote'] = proofNote;
-    if (gpsLatitude != null) request.fields['gpsLatitude'] = gpsLatitude.toString();
-    if (gpsLongitude != null) request.fields['gpsLongitude'] = gpsLongitude.toString();
-    request.files.add(await http.MultipartFile.fromPath('photo', photo.path));
-    final streamed = await request.send().timeout(_timeout);
-    final res = await http.Response.fromStream(streamed);
+      headers: await _headers(),
+      body: jsonEncode({
+        'proofNote': proofNote,
+        'gpsLatitude': gpsLatitude,
+        'gpsLongitude': gpsLongitude,
+        'photoBase64': base64Encode(bytes),
+        'photoName': photo.uri.pathSegments.isNotEmpty
+            ? photo.uri.pathSegments.last
+            : 'proof.jpg',
+      }),
+    ).timeout(_timeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to complete post order');
     }
@@ -455,20 +456,28 @@ class ApiService {
     String? checkpointId,
     File? photo,
   }) async {
-    
-    final token = await getToken();
-    final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/handovers'));
-    if (token != null) request.headers['Authorization'] = 'Bearer $token';
-    request.fields['summary'] = summary;
-    request.fields['openIssues'] = openIssues;
-    request.fields['equipmentStatus'] = equipmentStatus;
-    request.fields['siteLabel'] = siteLabel;
-    if (checkpointId != null) request.fields['checkpointId'] = checkpointId;
+    String? photoBase64;
+    String? photoName;
     if (photo != null) {
-      request.files.add(await http.MultipartFile.fromPath('photo', photo.path));
+      photoBase64 = base64Encode(await photo.readAsBytes());
+      photoName = photo.uri.pathSegments.isNotEmpty
+          ? photo.uri.pathSegments.last
+          : 'handover.jpg';
     }
-    final streamed = await request.send().timeout(_timeout);
-    final res = await http.Response.fromStream(streamed);
+
+    final res = await _client.post(
+      Uri.parse('$baseUrl/handovers'),
+      headers: await _headers(),
+      body: jsonEncode({
+        'summary': summary,
+        'openIssues': openIssues,
+        'equipmentStatus': equipmentStatus,
+        'siteLabel': siteLabel,
+        'checkpointId': checkpointId,
+        'photoBase64': photoBase64,
+        'photoName': photoName,
+      }),
+    ).timeout(_timeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to send handover');
     }
