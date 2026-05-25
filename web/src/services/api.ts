@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || '/api/v1'
+const API_BASE = import.meta.env.VITE_API_URL || 'https://resilient-buffalo-226.convex.site/api/v1'
 
 export function apiFileUrl(path: string) {
   if (!path) return ''
