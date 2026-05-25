@@ -21,6 +21,7 @@ import type * as lib_auth from "../lib/auth.js";
 import type * as lib_http from "../lib/http.js";
 import type * as lib_httpAuth from "../lib/httpAuth.js";
 import type * as lib_jwt from "../lib/jwt.js";
+import type * as notifications from "../notifications.js";
 import type * as passOnLogs from "../passOnLogs.js";
 import type * as positions from "../positions.js";
 import type * as postOrders from "../postOrders.js";
@@ -50,6 +51,7 @@ declare const fullApi: ApiFromModules<{
   "lib/http": typeof lib_http;
   "lib/httpAuth": typeof lib_httpAuth;
   "lib/jwt": typeof lib_jwt;
+  notifications: typeof notifications;
   passOnLogs: typeof passOnLogs;
   positions: typeof positions;
   postOrders: typeof postOrders;

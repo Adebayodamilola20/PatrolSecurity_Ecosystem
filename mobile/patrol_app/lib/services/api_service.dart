@@ -315,7 +315,7 @@ class ApiService {
       headers: await _headers(),
       body: jsonEncode({
         'date': date,
-        'format': 'xlsx',
+        'format': 'csv',
       }),
     ).timeout(_timeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {

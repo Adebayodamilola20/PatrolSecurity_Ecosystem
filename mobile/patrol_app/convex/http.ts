@@ -509,23 +509,55 @@ http.route({
         settingKey: "emergency_phone_recipients",
       })) as string | null,
     );
+    const siteLabel = typeof body?.siteLabel === "string" ? body.siteLabel : "";
+    const note = typeof body?.note === "string" ? body.note : "";
+    const location =
+      typeof body?.location === "string" && body.location.trim()
+        ? body.location
+        : siteLabel || "Unknown location";
+    const event = await ctx.runMutation(api.emergency.trigger, {
+      userId: user.convexId,
+      checkpointId,
+      siteLabel,
+      note,
+      location,
+    });
+    const delivery =
+      emergencyEmails.length || emergencyPhones.length
+        ? await ctx.runAction(api.notifications.sendEmergencyAlert, {
+            eventId: event.id,
+            officerName: user.name,
+            officerEmail: user.email,
+            siteLabel,
+            location,
+            note,
+            triggeredAt: event.triggeredAt,
+            emailRecipients: emergencyEmails,
+            phoneRecipients: emergencyPhones,
+          })
+        : {
+            status: "no_recipients_configured",
+            deliveries: [],
+            summary: {
+              attempted: 0,
+              delivered: 0,
+              failed: 0,
+            },
+          };
+    await ctx.runMutation(api.emergency.recordDelivery, {
+      eventId: event.id,
+      emailRecipients: emergencyEmails,
+      phoneRecipients: emergencyPhones,
+      status: delivery.status,
+      deliveryPayload: delivery,
+    });
     return json(
       {
-        ...(await ctx.runMutation(api.emergency.trigger, {
-          userId: user.convexId,
-          checkpointId,
-          siteLabel: typeof body?.siteLabel === "string" ? body.siteLabel : undefined,
-          note: typeof body?.note === "string" ? body.note : undefined,
-          location: typeof body?.location === "string" ? body.location : undefined,
-        })),
-        delivery: {
-          emailRecipients: emergencyEmails,
-          phoneRecipients: emergencyPhones,
-          status:
-            emergencyEmails.length || emergencyPhones.length
-              ? "configured"
-              : "no_recipients_configured",
-        },
+        ...event,
+        emailRecipients: emergencyEmails,
+        phoneRecipients: emergencyPhones,
+        status: delivery.status,
+        delivery,
       },
       { status: 201 },
     );

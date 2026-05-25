@@ -41,3 +41,22 @@ export const trigger = mutation({
     };
   },
 });
+
+export const recordDelivery = mutation({
+  args: {
+    eventId: v.id("emergencyEvents"),
+    emailRecipients: v.array(v.string()),
+    phoneRecipients: v.array(v.string()),
+    status: v.string(),
+    deliveryPayload: v.any(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.eventId, {
+      emailRecipients: args.emailRecipients,
+      phoneRecipients: args.phoneRecipients,
+      status: args.status,
+      deliveryPayload: args.deliveryPayload,
+    });
+    return await ctx.db.get(args.eventId);
+  },
+});

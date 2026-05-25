@@ -59,7 +59,7 @@ class ExportFile {
         id: json['id'] ?? '',
         type: json['type'] ?? '',
         date: json['date'] ?? '',
-        format: json['format'] ?? 'xlsx',
+        format: json['format'] ?? 'csv',
         status: json['status'] ?? 'ready',
         scopeLabel: json['scopeLabel'] ?? '',
         clientId: json['clientId'],

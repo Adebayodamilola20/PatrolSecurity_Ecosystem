@@ -49,7 +49,7 @@ export const createDailyExportRecord = mutation({
     const id = await ctx.db.insert("exportFiles", {
       type: "daily_tour",
       date: args.date,
-      format: "xlsx",
+      format: "csv",
       status: "ready",
       scopeLabel: args.scopeLabel,
       clientId: user?.clientId,
@@ -65,7 +65,7 @@ export const createDailyExportRecord = mutation({
       id,
       type: "daily_tour",
       date: args.date,
-      format: "xlsx",
+      format: "csv",
       status: "ready",
       scopeLabel: args.scopeLabel,
       clientId: user?.clientId ?? null,

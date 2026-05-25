@@ -194,7 +194,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                           await _loadDailyExports();
                           return result;
                         },
-                        'Excel export requested for $exportLabel.',
+                        'CSV export requested for $exportLabel.',
                       );
                     },
                     exportLabel: exportLabel,
@@ -372,8 +372,8 @@ class _DailyActivityTabState extends State<_DailyActivityTab> {
         if (widget.canExport) ...[
           const SizedBox(height: 24),
           const _SectionTitle(
-            title: 'Excel Export',
-            description: 'Generate and review the day’s tour workbook in spreadsheet format.',
+            title: 'CSV Export',
+            description: 'Generate and review the day’s tour export in spreadsheet format.',
           ),
           OutlinedButton.icon(
             onPressed: widget.busy ? null : widget.onPickExportDate,
@@ -384,7 +384,7 @@ class _DailyActivityTabState extends State<_DailyActivityTab> {
           ElevatedButton.icon(
             onPressed: widget.busy ? null : widget.onRequestExport,
             icon: const Icon(Icons.download_outlined),
-            label: Text(widget.busy ? 'Requesting...' : 'Request Excel Export'),
+            label: Text(widget.busy ? 'Requesting...' : 'Request CSV Export'),
           ),
           const SizedBox(height: 16),
           if (widget.exportsLoading)
@@ -401,7 +401,7 @@ class _DailyActivityTabState extends State<_DailyActivityTab> {
                 border: Border.all(color: AppTheme.border),
               ),
               child: const Text(
-                'No Excel exports have been generated yet.',
+                'No CSV exports have been generated yet.',
                 style: TextStyle(color: AppTheme.textSecondary),
               ),
             )
@@ -410,7 +410,7 @@ class _DailyActivityTabState extends State<_DailyActivityTab> {
         ] else ...[
           const SizedBox(height: 24),
           const _SectionTitle(
-            title: 'Excel Export',
+            title: 'CSV Export',
             description: 'Accessible only to Admin and Client Main Account users.',
           ),
         ],
