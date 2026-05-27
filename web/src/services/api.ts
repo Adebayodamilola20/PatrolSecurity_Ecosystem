@@ -1,4 +1,24 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'https://resilient-buffalo-226.convex.site/api/v1'
+const DEFAULT_API_BASE = 'https://resilient-buffalo-226.convex.site/api/v1'
+
+function normalizeApiBase(rawUrl: string | undefined) {
+  const trimmed = rawUrl?.trim()
+  if (!trimmed) return DEFAULT_API_BASE
+
+  try {
+    const url = new URL(trimmed)
+    if (url.hostname.endsWith('.convex.cloud')) {
+      url.hostname = url.hostname.replace(/\.convex\.cloud$/, '.convex.site')
+      url.pathname = '/api/v1'
+    } else if (url.hostname.endsWith('.convex.site') && !url.pathname.startsWith('/api/v1')) {
+      url.pathname = `${url.pathname.replace(/\/$/, '')}/api/v1`
+    }
+    return url.toString().replace(/\/$/, '')
+  } catch {
+    return trimmed.replace(/\/$/, '')
+  }
+}
+
+const API_BASE = normalizeApiBase(import.meta.env.VITE_API_URL)
 
 export function apiFileUrl(path: string) {
   if (!path) return ''

@@ -17,6 +17,7 @@ export default function Users() {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'guard', phone: '', clientId: '', siteIds: [] as string[] })
   const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState('')
   const canManage = useCanManageUsers()
   const isMainAccount = useIsMainAccount()
 
@@ -38,17 +39,21 @@ export default function Users() {
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
+    setFormError('')
     try {
       const payload: any = { ...form }
       if (currentUser?.clientId) {
         payload.clientId = currentUser.clientId
+      }
+      if (payload.siteIds.length === 0) {
+        delete payload.siteIds
       }
       await api.users.create(payload)
       setShowForm(false)
       setForm({ name: '', email: '', password: '', role: 'guard', phone: '', clientId: '', siteIds: [] })
       load()
     } catch (err: any) {
-      alert(err.message)
+      setFormError(err?.message || 'Could not add personnel. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -63,7 +68,10 @@ export default function Users() {
         </div>
         {(canManage || isMainAccount) && (
           <button
-            onClick={() => setShowForm(true)}
+            onClick={() => {
+              setFormError('')
+              setShowForm(true)
+            }}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
           >
             <Plus className="h-4 w-4" /> Add Personnel
@@ -76,11 +84,19 @@ export default function Users() {
           <div className="rounded-xl border border-border bg-card p-6 w-full max-w-md mx-4 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Add Personnel</h2>
-              <button onClick={() => setShowForm(false)} className="text-muted-foreground hover:text-foreground">
+              <button onClick={() => {
+                setFormError('')
+                setShowForm(false)
+              }} className="text-muted-foreground hover:text-foreground">
                 <X className="h-5 w-5" />
               </button>
             </div>
             <form onSubmit={handleAdd} className="space-y-4">
+              {formError && (
+                <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {formError}
+                </div>
+              )}
               <div>
                 <label className="block text-xs text-muted-foreground mb-1">Full Name</label>
                 <input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
@@ -114,7 +130,10 @@ export default function Users() {
                 </div>
               </div>
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setShowForm(false)}
+                <button type="button" onClick={() => {
+                  setFormError('')
+                  setShowForm(false)
+                }}
                   className="flex-1 rounded-lg border border-border py-2 text-sm hover:bg-accent">
                   Cancel
                 </button>
@@ -139,7 +158,10 @@ export default function Users() {
           description="Add personnel to get started."
           action={
             <button
-              onClick={() => setShowForm(true)}
+              onClick={() => {
+                setFormError('')
+                setShowForm(true)
+              }}
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
             >
               <Plus className="h-4 w-4" /> Add Personnel

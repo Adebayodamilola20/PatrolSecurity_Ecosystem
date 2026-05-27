@@ -9,6 +9,33 @@ import { subscribeToScans, subscribeToShiftUpdates } from '../services/websocket
 
 const API_BASE = ''
 
+function normalizeTimesheet(row: any, index = 0) {
+  const scans = Array.isArray(row?.scans) ? row.scans : []
+  const scanCount = typeof row?.scanCount === 'number' ? row.scanCount : scans.length
+  const verifiedScans = typeof row?.verifiedScans === 'number'
+    ? row.verifiedScans
+    : scans.filter((scan: any) => scan?.gpsValid).length
+
+  return {
+    ...row,
+    shiftId: row?.shiftId ?? row?.id ?? `${row?.userId ?? 'shift'}-${row?.clockIn ?? row?.createdAt ?? index}`,
+    userName: row?.userName ?? row?.username ?? 'Unknown officer',
+    userEmail: row?.userEmail ?? row?.useremail ?? '',
+    userPhone: row?.userPhone ?? row?.userphone ?? '',
+    clockIn: row?.clockIn ?? row?.clockin ?? null,
+    clockOut: row?.clockOut ?? row?.clockout ?? null,
+    clockInPhoto: row?.clockInPhoto ?? row?.clockinphoto ?? '',
+    clockInLatitude: row?.clockInLatitude ?? row?.clockinlatitude ?? null,
+    clockInLongitude: row?.clockInLongitude ?? row?.clockinlongitude ?? null,
+    clockOutLatitude: row?.clockOutLatitude ?? row?.clockoutlatitude ?? null,
+    clockOutLongitude: row?.clockOutLongitude ?? row?.clockoutlongitude ?? null,
+    status: row?.status ?? 'completed',
+    scans,
+    scanCount,
+    verifiedScans,
+  }
+}
+
 export default function Timesheets() {
   const [timesheets, setTimesheets] = useState<any[]>([])
   const [summary, setSummary] = useState<any>(null)
@@ -54,11 +81,11 @@ export default function Timesheets() {
       ])
 
       if (timesheetResult.status === 'fulfilled') {
-        setTimesheets(timesheetResult.value as any[])
+        setTimesheets((Array.isArray(timesheetResult.value) ? timesheetResult.value : []).map(normalizeTimesheet))
       } else {
         try {
           const fallback = await fallbackTimesheetsFromShifts()
-          setTimesheets(fallback)
+          setTimesheets(fallback.map(normalizeTimesheet))
           nextError = 'Detailed timesheet scans could not load, so this page is showing basic shift records.'
         } catch (fallbackError) {
           setTimesheets([])
@@ -113,7 +140,7 @@ export default function Timesheets() {
   }, [])
 
   const filtered = officerFilter
-    ? timesheets.filter(t => t.userName.toLowerCase().includes(officerFilter.toLowerCase()))
+    ? timesheets.filter(t => (t.userName || '').toLowerCase().includes(officerFilter.toLowerCase()))
     : timesheets
 
   return (
@@ -217,6 +244,11 @@ export default function Timesheets() {
           />
         ) : (
           filtered.map((t) => {
+            const scans = Array.isArray(t.scans) ? t.scans : []
+            const scanCount = typeof t.scanCount === 'number' ? t.scanCount : scans.length
+            const verifiedScans = typeof t.verifiedScans === 'number'
+              ? t.verifiedScans
+              : scans.filter((scan: any) => scan?.gpsValid).length
             const photoUrl = t.clockInPhoto ? `${API_BASE}${t.clockInPhoto}` : null
             const displayDuration = t.duration && t.duration !== '—'
               ? t.duration
@@ -242,7 +274,7 @@ export default function Timesheets() {
                     <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
                       <div>
                         <div className="text-muted-foreground">Clock In</div>
-                        <div className="text-sm font-medium">{new Date(t.clockIn).toLocaleString()}</div>
+                        <div className="text-sm font-medium">{t.clockIn ? new Date(t.clockIn).toLocaleString() : '-'}</div>
                         {t.clockInLatitude && (
                           <div className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
                             <MapPin className="h-3 w-3" /> {t.clockInLatitude.toFixed(4)}, {t.clockInLongitude?.toFixed(4)}
@@ -260,10 +292,10 @@ export default function Timesheets() {
                       <div>
                         <div className="text-muted-foreground">Scans</div>
                         <div className="text-sm font-medium flex items-center gap-2">
-                          <span>{t.scanCount} total</span>
-                          <span className="text-success">{t.verifiedScans} verified</span>
-                          <span className={t.scanCount - t.verifiedScans > 0 ? 'text-destructive' : 'text-muted-foreground'}>
-                            {t.scanCount - t.verifiedScans} flagged
+                          <span>{scanCount} total</span>
+                          <span className="text-success">{verifiedScans} verified</span>
+                          <span className={scanCount - verifiedScans > 0 ? 'text-destructive' : 'text-muted-foreground'}>
+                            {scanCount - verifiedScans} flagged
                           </span>
                         </div>
                       </div>
@@ -271,9 +303,9 @@ export default function Timesheets() {
                   </div>
                 </div>
 
-                {t.scans.length > 0 && (
+                {scans.length > 0 && (
                   <div className="border-t border-border divide-y divide-border/50">
-                    {t.scans.map((scan: any) => (
+                    {scans.map((scan: any) => (
                       <div key={scan.id} className="px-4 py-2 flex items-center gap-3 text-xs">
                         {scan.gpsValid
                           ? <CheckCircle className="h-3.5 w-3.5 text-success shrink-0" />
