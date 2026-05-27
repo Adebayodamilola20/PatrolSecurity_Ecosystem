@@ -65,7 +65,7 @@ class ProfileScreen extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 4),
                     decoration: BoxDecoration(
-                      color: AppTheme.primary.withOpacity(0.1),
+                      color: AppTheme.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
@@ -181,7 +181,7 @@ class ProfileScreen extends StatelessWidget {
               icon: const Icon(Icons.logout),
               label: const Text('Sign Out'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.error.withOpacity(0.1),
+                backgroundColor: AppTheme.error.withValues(alpha: 0.1),
                 foregroundColor: AppTheme.error,
                 elevation: 0,
               ),

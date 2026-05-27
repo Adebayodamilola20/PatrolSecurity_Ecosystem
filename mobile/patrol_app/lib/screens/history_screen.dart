@@ -28,7 +28,7 @@ class HistoryScreen extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.history,
-                      size: 48, color: AppTheme.textSecondary.withOpacity(0.5)),
+                      size: 48, color: AppTheme.textSecondary.withValues(alpha: 0.5)),
                   const SizedBox(height: 12),
                   const Text(
                     'No scans recorded yet',

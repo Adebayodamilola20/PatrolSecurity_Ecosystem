@@ -2,6 +2,7 @@ import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { json, methodNotAllowed, parseJson } from "./lib/http";
 import { api } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import bcrypt from "bcryptjs";
 import { signPatrolToken } from "./lib/jwt";
 import { requireAuth } from "./lib/httpAuth";
@@ -221,8 +222,11 @@ http.route({
   path: "/checkpoints",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
-    if (request.method !== "GET") return methodNotAllowed(request.method);
-    return json(await ctx.runQuery(api.checkpoints.listForApi, {}));
+    const user = await requireAuth(ctx, request);
+    if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+    return json(await ctx.runQuery(api.checkpoints.listForApi, {
+      clientId: user.role === "admin" ? undefined : (user.clientId ?? undefined),
+    }));
   }),
 });
 
@@ -235,6 +239,7 @@ http.route({
     return json(
       await ctx.runQuery(api.scans.listForApi, {
         officerId: user.role === "guard" ? user.convexId : undefined,
+        clientId: user.role === "admin" ? undefined : (user.clientId ?? undefined),
         limit: 1000,
       }),
     );
@@ -291,6 +296,7 @@ http.route({
 
     const scans = (await ctx.runQuery(api.scans.listForApi, {
       officerId: undefined,
+      clientId: user.role === "admin" ? undefined : (user.clientId ?? undefined),
       limit: 5000,
     })) as Array<Record<string, unknown>>;
     const shifts = (await ctx.runQuery(api.shifts.listForExport, {})) as Array<Record<string, unknown>>;
@@ -336,6 +342,24 @@ http.route({
       totals,
     });
     return json(record, { status: 201 });
+  }),
+});
+
+http.route({
+  path: "/shifts",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+    const url = new URL(request.url);
+    const startDate = url.searchParams.get("startDate");
+    const endDate = url.searchParams.get("endDate");
+    return json(await ctx.runQuery(api.shifts.listAll, {
+      startDate: startDate ? new Date(startDate).getTime() : undefined,
+      endDate: endDate ? new Date(endDate).getTime() : undefined,
+      userId: user.role === "guard" ? user.convexId : undefined,
+      clientId: user.role === "admin" ? undefined : (user.clientId ?? undefined),
+    }));
   }),
 });
 
@@ -815,7 +839,10 @@ http.route({ path: "/auth/reset-password", method: "POST", handler: httpAction(a
 http.route({ path: "/scans/recent", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return json({ message: "Unauthorized" }, { status: 401 });
-  return json(await ctx.runQuery(api.scans.getRecent, { limit: 50 }));
+  return json(await ctx.runQuery(api.scans.getRecent, {
+    limit: 50,
+    clientId: user.role === "admin" ? undefined : (user.clientId ?? undefined),
+  }));
 })});
 
 http.route({ pathPrefix: "/scans/", method: "GET", handler: httpAction(async (ctx, request) => {
@@ -852,7 +879,8 @@ http.route({ path: "/checkpoints", method: "POST", handler: httpAction(async (ct
     expectedIntervalMinutes: Number(body?.expectedIntervalMinutes ?? 60),
     scheduledTimeIn: String(body?.scheduledTimeIn ?? ""),
     scheduledTimeOut: String(body?.scheduledTimeOut ?? ""),
-    active: body?.active !== false, siteId: body?.siteId ?? undefined, clientId: body?.clientId ?? undefined,
+    active: body?.active !== false, siteId: body?.siteId ?? undefined,
+    clientId: body?.clientId ?? (user.role === "admin" ? undefined : user.clientId),
   }), { status: 201 });
 })});
 
@@ -896,7 +924,9 @@ http.route({ pathPrefix: "/checkpoints/", method: "DELETE", handler: httpAction(
 http.route({ path: "/reports", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return json({ message: "Unauthorized" }, { status: 401 });
-  return json(await ctx.runQuery(api.reports.listAll, {}));
+  return json(await ctx.runQuery(api.reports.listAll, {
+    clientId: user.role === "admin" ? undefined : (user.clientId ?? undefined),
+  }));
 })});
 
 http.route({ path: "/reports/generate", method: "POST", handler: httpAction(async (ctx, request) => {
@@ -933,7 +963,9 @@ http.route({ pathPrefix: "/reports/", method: "GET", handler: httpAction(async (
 http.route({ path: "/users", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return json({ message: "Unauthorized" }, { status: 401 });
-  return json(await ctx.runQuery(api.users.listAll, {}));
+  return json(await ctx.runQuery(api.users.listAll, {
+    clientId: user.role === "admin" ? undefined : (user.clientId ?? undefined),
+  }));
 })});
 
 http.route({ path: "/users", method: "POST", handler: httpAction(async (ctx, request) => {
@@ -941,11 +973,15 @@ http.route({ path: "/users", method: "POST", handler: httpAction(async (ctx, req
   if (!user) return json({ message: "Unauthorized" }, { status: 401 });
   const body = await parseJson(request);
   const passwordHash = await bcrypt.hash(String(body?.password ?? "123456"), 10);
+  const clientId: Id<"clients"> | undefined =
+    typeof body?.clientId === "string" && body.clientId.trim()
+      ? (body.clientId.trim() as Id<"clients">)
+      : undefined;
   const id = await ctx.runMutation(api.users.create, {
     name: String(body?.name ?? ""), email: String(body?.email ?? "").trim().toLowerCase(),
     passwordHash, role: (["admin","main_account","supervisor","guard"].includes(String(body?.role)) ? String(body?.role) : "guard") as any, phone: String(body?.phone ?? ""),
     active: body?.active !== false, liveTracking: body?.liveTracking !== false,
-    createdAt: Date.now(), clientId: body?.clientId ?? undefined,
+    createdAt: Date.now(), clientId,
   });
   return json({ id, message: "User created" }, { status: 201 });
 })});
@@ -962,23 +998,12 @@ http.route({ pathPrefix: "/users/", method: "GET", handler: httpAction(async (ct
   return json({ id: found.legacyId ?? found._id, convexId: found._id, name: found.name, email: found.email, role: found.role, phone: found.phone, active: found.active, clientId: found.clientId, clientName: client?.name ?? null, liveTracking: found.liveTracking, createdAt: new Date(found.createdAt).toISOString() });
 })});
 
-http.route({ path: "/shifts", method: "GET", handler: httpAction(async (ctx, request) => {
-  const user = await requireAuth(ctx, request);
-  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
-  const url = new URL(request.url);
-  const startDate = url.searchParams.get("startDate");
-  const endDate = url.searchParams.get("endDate");
-  return json(await ctx.runQuery(api.shifts.listAll, {
-    startDate: startDate ? new Date(startDate).getTime() : undefined,
-    endDate: endDate ? new Date(endDate).getTime() : undefined,
-    userId: user.role === "guard" ? user.convexId : undefined,
-  }));
-})});
-
 http.route({ path: "/shifts/missing-clockins", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return json({ message: "Unauthorized" }, { status: 401 });
-  return json(await ctx.runQuery(api.shifts.missingClockins, {}));
+  return json(await ctx.runQuery(api.shifts.missingClockins, {
+    clientId: user.role === "admin" ? undefined : (user.clientId ?? undefined),
+  }));
 })});
 
 http.route({ path: "/incidents", method: "GET", handler: httpAction(async (ctx, request) => {
@@ -989,6 +1014,7 @@ http.route({ path: "/incidents", method: "GET", handler: httpAction(async (ctx, 
     status: url.searchParams.get("status") ?? undefined,
     severity: url.searchParams.get("severity") ?? undefined,
     officerId: url.searchParams.get("officerId") ?? undefined,
+    clientId: user.role === "admin" ? undefined : (user.clientId ?? undefined),
   }));
 })});
 
@@ -1010,7 +1036,9 @@ http.route({ pathPrefix: "/incidents/", method: "PATCH", handler: httpAction(asy
 http.route({ path: "/incidents/missed-patrols", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return json({ message: "Unauthorized" }, { status: 401 });
-  return json(await ctx.runQuery(api.incidents.missedPatrols, {}));
+  return json(await ctx.runQuery(api.incidents.missedPatrols, {
+    clientId: user.role === "admin" ? undefined : (user.clientId ?? undefined),
+  }));
 })});
 
 http.route({ path: "/timesheets", method: "GET", handler: httpAction(async (ctx, request) => {
@@ -1022,6 +1050,7 @@ http.route({ path: "/timesheets", method: "GET", handler: httpAction(async (ctx,
   const shifts = await ctx.runQuery(api.shifts.listAll, {
     startDate: startDate ? new Date(startDate).getTime() : undefined,
     endDate: endDate ? new Date(endDate).getTime() : undefined,
+    clientId: user.role === "admin" ? undefined : (user.clientId ?? undefined),
   });
   return json(shifts);
 })});
@@ -1029,12 +1058,22 @@ http.route({ path: "/timesheets", method: "GET", handler: httpAction(async (ctx,
 http.route({ path: "/timesheets/summary", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return json({ message: "Unauthorized" }, { status: 401 });
-  const shifts = await ctx.runQuery(api.shifts.listAll, {});
+  const shifts = await ctx.runQuery(api.shifts.listAll, {
+    clientId: user.role === "admin" ? undefined : (user.clientId ?? undefined),
+  });
   const totalHours = (shifts as any[]).reduce((sum: number, s: any) => {
     if (s.clockOut) return sum + (new Date(s.clockOut).getTime() - new Date(s.clockIn).getTime()) / 3600000;
     return sum;
   }, 0);
   return json({ totalShifts: shifts.length, completedShifts: (shifts as any[]).filter(s => s.status === "completed").length, activeShifts: (shifts as any[]).filter(s => s.status === "active").length, totalHours: Math.round(totalHours * 100) / 100 });
+})});
+
+http.route({ path: "/post-orders/completions", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  return json(await ctx.runQuery(api.postOrders.listCompletions, {
+    clientId: user.role === "admin" ? undefined : (user.clientId ?? undefined),
+  }));
 })});
 
 http.route({ path: "/post-orders", method: "POST", handler: httpAction(async (ctx, request) => {
@@ -1073,12 +1112,6 @@ http.route({ pathPrefix: "/post-orders/", method: "PUT", handler: httpAction(asy
   return json(await ctx.db.get(order._id));
 })});
 
-http.route({ path: "/post-orders/completions", method: "GET", handler: httpAction(async (ctx, request) => {
-  const user = await requireAuth(ctx, request);
-  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
-  return json(await ctx.runQuery(api.postOrders.listCompletions, {}));
-})});
-
 http.route({ pathPrefix: "/post-orders/completions/", method: "PATCH", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return json({ message: "Unauthorized" }, { status: 401 });
@@ -1099,13 +1132,18 @@ http.route({ pathPrefix: "/post-orders/completions/", method: "PATCH", handler: 
 http.route({ path: "/handovers", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return json({ message: "Unauthorized" }, { status: 401 });
-  return json(await ctx.runQuery(api.handovers.listAll, {}));
+  return json(await ctx.runQuery(api.handovers.listAll, {
+    clientId: user.role === "admin" ? undefined : (user.clientId ?? undefined),
+  }));
 })});
 
 http.route({ path: "/clients", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return json({ message: "Unauthorized" }, { status: 401 });
-  return json(await ctx.runQuery(api.clients.list, {}));
+  if (user.role === "admin") {
+    return json(await ctx.runQuery(api.clients.list, {}));
+  }
+  return json(user.clientId ? [await ctx.db.get(user.clientId)].filter(Boolean) : []);
 })});
 
 http.route({ path: "/clients", method: "POST", handler: httpAction(async (ctx, request) => {
@@ -1122,8 +1160,10 @@ http.route({ path: "/sites", method: "GET", handler: httpAction(async (ctx, requ
   const user = await requireAuth(ctx, request);
   if (!user) return json({ message: "Unauthorized" }, { status: 401 });
   const url = new URL(request.url);
+  const queryClientId = url.searchParams.get("clientId");
+  const effectiveClientId = queryClientId || (user.role === "admin" ? undefined : (user.clientId ?? undefined));
   return json(await ctx.runQuery(api.sites.list, {
-    clientId: url.searchParams.get("clientId") ?? undefined,
+    clientId: effectiveClientId ?? undefined,
   }));
 })});
 

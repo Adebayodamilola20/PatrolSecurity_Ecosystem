@@ -25,7 +25,7 @@ class NetworkErrorState extends StatelessWidget {
               width: 72,
               height: 72,
               decoration: BoxDecoration(
-                color: AppTheme.error.withOpacity(0.08),
+                color: AppTheme.error.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(24),
               ),
               child: const Icon(

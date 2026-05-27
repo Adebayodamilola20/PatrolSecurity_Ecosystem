@@ -43,12 +43,19 @@ export const listForApi = query({
   args: {
     officerId: v.optional(v.id("users")),
     limit: v.optional(v.number()),
+    clientId: v.optional(v.id("clients")),
   },
   handler: async (ctx, args) => {
     let scans = await ctx.db.query("scans").order("desc").collect();
 
     if (args.officerId) {
       scans = scans.filter((scan) => scan.officerId === args.officerId);
+    }
+
+    if (args.clientId) {
+      const clientCheckpoints = await ctx.db.query("checkpoints").collect();
+      const cpIds = new Set(clientCheckpoints.filter(cp => cp.clientId === args.clientId).map(cp => cp._id));
+      scans = scans.filter(scan => cpIds.has(scan.checkpointId));
     }
 
     const users = await ctx.db.query("users").collect();
@@ -80,9 +87,14 @@ export const listForApi = query({
 });
 
 export const getRecent = query({
-  args: { limit: v.optional(v.number()) },
+  args: { limit: v.optional(v.number()), clientId: v.optional(v.id("clients")) },
   handler: async (ctx, args) => {
-    const scans = await ctx.db.query("scans").order("desc").collect();
+    let scans = await ctx.db.query("scans").order("desc").collect();
+    if (args.clientId) {
+      const cps = await ctx.db.query("checkpoints").collect();
+      const cpIds = new Set(cps.filter(cp => cp.clientId === args.clientId).map(cp => cp._id));
+      scans = scans.filter(s => cpIds.has(s.checkpointId));
+    }
     const users = await ctx.db.query("users").collect();
     const checkpoints = await ctx.db.query("checkpoints").collect();
     return scans.slice(0, args.limit ?? 50).map(s => ({

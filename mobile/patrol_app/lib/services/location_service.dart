@@ -40,8 +40,8 @@ class LocationService {
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
           distanceFilter: 5,
+          timeLimit: Duration(seconds: 12),
         ),
-        timeLimit: const Duration(seconds: 12),
       );
       return LocationResult(position: position);
     } on TimeoutException {

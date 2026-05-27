@@ -28,10 +28,14 @@ export const listSubmissions = query({
 });
 
 export const listAll = query({
-  args: {},
-  handler: async (ctx) => {
-    const subs = await ctx.db.query("reportSubmissions").order("desc").collect();
+  args: { clientId: v.optional(v.id("clients")) },
+  handler: async (ctx, args) => {
+    let subs = await ctx.db.query("reportSubmissions").order("desc").collect();
     const users = await ctx.db.query("users").collect();
+    if (args.clientId) {
+      const clientUserIds = new Set(users.filter(u => u.clientId === args.clientId).map(u => u._id));
+      subs = subs.filter(s => clientUserIds.has(s.userId));
+    }
     return { reports: [], submissions: subs.map(s => ({
       id: s.legacyId ?? s._id, type: s.type, title: s.title, summary: s.summary,
       status: s.status, siteLabel: s.siteLabel,

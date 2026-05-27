@@ -6,6 +6,11 @@ export const listAll = query({
   handler: async (ctx, args) => {
     let orders = await ctx.db.query("postOrders").order("desc").collect();
     if (args.active !== undefined) orders = orders.filter(o => o.active === args.active);
+    if (args.clientId) {
+      const cps = await ctx.db.query("checkpoints").collect();
+      const clientCpIds = new Set(cps.filter(cp => cp.clientId === args.clientId).map(cp => cp._id));
+      orders = orders.filter(o => o.checkpointId && clientCpIds.has(o.checkpointId));
+    }
     const checkpoints = await ctx.db.query("checkpoints").collect();
     const completions = await ctx.db.query("postOrderCompletions").collect();
     return orders.map(o => ({
@@ -38,9 +43,16 @@ export const create = mutation({
 });
 
 export const listCompletions = query({
-  args: {},
-  handler: async (ctx) => {
-    const completions = await ctx.db.query("postOrderCompletions").order("desc").collect();
+  args: { clientId: v.optional(v.id("clients")) },
+  handler: async (ctx, args) => {
+    let completions = await ctx.db.query("postOrderCompletions").order("desc").collect();
+    if (args.clientId) {
+      const cps = await ctx.db.query("checkpoints").collect();
+      const clientCpIds = new Set(cps.filter(cp => cp.clientId === args.clientId).map(cp => cp._id));
+      const orders = await ctx.db.query("postOrders").collect();
+      const orderIds = new Set(orders.filter(o => clientCpIds.has(o.checkpointId)).map(o => o._id));
+      completions = completions.filter(c => orderIds.has(c.postOrderId));
+    }
     const users = await ctx.db.query("users").collect();
     const orders = await ctx.db.query("postOrders").collect();
     return completions.map(c => ({

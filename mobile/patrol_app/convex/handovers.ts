@@ -2,9 +2,14 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
 export const listAll = query({
-  args: {},
-  handler: async (ctx) => {
-    const handovers = await ctx.db.query("handovers").order("desc").collect();
+  args: { clientId: v.optional(v.id("clients")) },
+  handler: async (ctx, args) => {
+    let handovers = await ctx.db.query("handovers").order("desc").collect();
+    if (args.clientId) {
+      const clientUsers = await ctx.db.query("users").collect();
+      const clientUserIds = new Set(clientUsers.filter(u => u.clientId === args.clientId).map(u => u._id));
+      handovers = handovers.filter(h => clientUserIds.has(h.fromUserId) || (h.toUserId && clientUserIds.has(h.toUserId)));
+    }
     const users = await ctx.db.query("users").collect();
     const checkpoints = await ctx.db.query("checkpoints").collect();
     return handovers.map(h => ({

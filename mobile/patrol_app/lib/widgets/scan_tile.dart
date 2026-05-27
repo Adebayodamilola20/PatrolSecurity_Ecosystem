@@ -24,8 +24,8 @@ class ScanTile extends StatelessWidget {
                 height: 40,
                 decoration: BoxDecoration(
                   color: scan.gpsValid
-                      ? const Color(0xFF10B981).withOpacity(0.1)
-                      : const Color(0xFFF43F5E).withOpacity(0.1),
+                      ? const Color(0xFF10B981).withValues(alpha: 0.1)
+                      : const Color(0xFFF43F5E).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(

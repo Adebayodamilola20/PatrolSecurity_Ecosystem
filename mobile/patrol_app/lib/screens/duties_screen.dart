@@ -146,14 +146,13 @@ class _DutiesScreenState extends State<DutiesScreen> {
 
   Future<void> _acknowledgePassOnLog(DutyProvider duty, String logId) async {
     final ok = await duty.acknowledgePassOnLog(logId);
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(ok ? 'Pass-on log acknowledged.' : (duty.error ?? 'Failed to acknowledge.')),
-          backgroundColor: ok ? AppTheme.verified : AppTheme.error,
-        ),
-      );
-    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok ? 'Pass-on log acknowledged.' : (duty.error ?? 'Failed to acknowledge.')),
+        backgroundColor: ok ? AppTheme.verified : AppTheme.error,
+      ),
+    );
   }
 
   @override
@@ -235,7 +234,7 @@ class _DutiesScreenState extends State<DutiesScreen> {
                   Container(
                     padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: AppTheme.flagged.withOpacity(0.15),
+                      color: AppTheme.flagged.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
@@ -355,8 +354,8 @@ class _DutiesScreenState extends State<DutiesScreen> {
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                                 decoration: BoxDecoration(
                                   color: completion?.reviewStatus == 'verified'
-                                      ? AppTheme.verified.withOpacity(0.12)
-                                      : AppTheme.flagged.withOpacity(0.12),
+                                      ? AppTheme.verified.withValues(alpha: 0.12)
+                                      : AppTheme.flagged.withValues(alpha: 0.12),
                                   borderRadius: BorderRadius.circular(999),
                                 ),
                                 child: Text(statusText,

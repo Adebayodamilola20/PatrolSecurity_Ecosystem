@@ -69,12 +69,17 @@ export const listForExport = query({
 });
 
 export const listAll = query({
-  args: { startDate: v.optional(v.number()), endDate: v.optional(v.number()), userId: v.optional(v.id("users")) },
+  args: { startDate: v.optional(v.number()), endDate: v.optional(v.number()), userId: v.optional(v.id("users")), clientId: v.optional(v.id("clients")) },
   handler: async (ctx, args) => {
     let shifts = await ctx.db.query("shifts").order("desc").collect();
     if (args.userId) shifts = shifts.filter(s => s.userId === args.userId);
     if (args.startDate) shifts = shifts.filter(s => s.clockIn >= args.startDate!);
     if (args.endDate) shifts = shifts.filter(s => s.clockIn <= args.endDate!);
+    if (args.clientId) {
+      const clientUsers = await ctx.db.query("users").collect();
+      const clientUserIds = new Set(clientUsers.filter(u => u.clientId === args.clientId).map(u => u._id));
+      shifts = shifts.filter(s => clientUserIds.has(s.userId));
+    }
     const users = await ctx.db.query("users").collect();
     return shifts.map(s => ({
       id: s.legacyId ?? s._id, userId: s.userId,
@@ -87,14 +92,14 @@ export const listAll = query({
 });
 
 export const missingClockins = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { clientId: v.optional(v.id("clients")) },
+  handler: async (ctx, args) => {
     const users = await ctx.db.query("users").collect();
     const now = Date.now();
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const shifts = await ctx.db.query("shifts").collect();
     const todayShifts = shifts.filter(s => s.clockIn >= todayStart.getTime());
-    const activeUsers = users.filter(u => u.active);
+    const activeUsers = users.filter(u => u.active && (!args.clientId || u.clientId === args.clientId));
     return activeUsers.filter(u => !todayShifts.some(s => s.userId === u._id)).map(u => ({
       userId: u.legacyId ?? u._id, name: u.name, email: u.email, role: u.role,
     }));
@@ -109,6 +114,15 @@ export const clockIn = mutation({
     siteLabel: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("shifts")
+      .withIndex("by_userId_status", (q) =>
+        q.eq("userId", args.userId).eq("status", "active"),
+      )
+      .first();
+    if (existing) {
+      throw new Error("Already clocked in — end current shift first");
+    }
     const now = Date.now();
     const shiftId = await ctx.db.insert("shifts", {
       userId: args.userId,

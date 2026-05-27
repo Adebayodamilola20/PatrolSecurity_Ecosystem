@@ -45,6 +45,9 @@ export default function Users() {
       if (currentUser?.clientId) {
         payload.clientId = currentUser.clientId
       }
+      if (!payload.clientId) {
+        delete payload.clientId
+      }
       if (payload.siteIds.length === 0) {
         delete payload.siteIds
       }

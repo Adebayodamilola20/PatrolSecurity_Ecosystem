@@ -47,9 +47,10 @@ export const getSafeProfile = query({
 });
 
 export const listAll = query({
-  args: {},
-  handler: async (ctx) => {
-    const users = await ctx.db.query("users").collect();
+  args: { clientId: v.optional(v.id("clients")) },
+  handler: async (ctx, args) => {
+    let users = await ctx.db.query("users").collect();
+    if (args.clientId) users = users.filter(u => u.clientId === args.clientId);
     return Promise.all(users.map(async (u) => {
       const client = u.clientId ? await ctx.db.get(u.clientId) : null;
       return { id: u.legacyId ?? u._id, convexId: u._id, name: u.name, email: u.email, role: u.role, phone: u.phone, active: u.active, clientId: u.clientId, clientName: client?.name ?? null, liveTracking: u.liveTracking, createdAt: new Date(u.createdAt).toISOString() };

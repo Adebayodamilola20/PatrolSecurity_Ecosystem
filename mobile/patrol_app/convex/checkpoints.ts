@@ -39,9 +39,14 @@ export const list = query({
 });
 
 export const listForApi = query({
-  args: {},
-  handler: async (ctx) => {
-    const checkpoints = await ctx.db.query("checkpoints").collect();
+  args: { clientId: v.optional(v.id("clients")) },
+  handler: async (ctx, args) => {
+    let checkpoints = await ctx.db.query("checkpoints").collect();
+
+    if (args.clientId) {
+      checkpoints = checkpoints.filter((cp) => cp.clientId === args.clientId);
+    }
+
     const scans = await ctx.db.query("scans").collect();
 
     return checkpoints

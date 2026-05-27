@@ -2,9 +2,10 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
-    const clients = await ctx.db.query("clients").collect();
+  args: { clientId: v.optional(v.id("clients")) },
+  handler: async (ctx, args) => {
+    let clients = await ctx.db.query("clients").collect();
+    if (args.clientId) clients = clients.filter(c => c._id === args.clientId);
     return clients.map(c => ({
       id: c.legacyId ?? c._id, convexId: c._id, name: c.name,
       email: c.email, phone: c.phone, active: c.active,

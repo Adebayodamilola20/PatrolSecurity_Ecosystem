@@ -28,7 +28,7 @@ class CheckpointsScreen extends StatelessWidget {
                 children: [
                   Icon(Icons.location_off,
                       size: 48,
-                      color: AppTheme.textSecondary.withOpacity(0.5)),
+                      color: AppTheme.textSecondary.withValues(alpha: 0.5)),
                   const SizedBox(height: 12),
                   const Text(
                     'No checkpoints loaded',
@@ -62,7 +62,7 @@ class CheckpointsScreen extends StatelessWidget {
                                   height: 44,
                                   decoration: BoxDecoration(
                                     color: const Color(0xFF3B82F6)
-                                        .withOpacity(0.1),
+                                        .withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: const Icon(
@@ -105,9 +105,9 @@ class CheckpointsScreen extends StatelessWidget {
                                   decoration: BoxDecoration(
                                     color: cp.active
                                         ? const Color(0xFF10B981)
-                                            .withOpacity(0.1)
+                                            .withValues(alpha: 0.1)
                                         : AppTheme.textSecondary
-                                            .withOpacity(0.1),
+                                            .withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Text(

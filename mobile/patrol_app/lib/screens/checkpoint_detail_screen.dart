@@ -46,7 +46,7 @@ class CheckpointDetailScreen extends StatelessWidget {
                     width: 56,
                     height: 56,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF3B82F6).withOpacity(0.1),
+                      color: const Color(0xFF3B82F6).withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: const Icon(
@@ -84,8 +84,8 @@ class CheckpointDetailScreen extends StatelessWidget {
                         horizontal: 14, vertical: 6),
                     decoration: BoxDecoration(
                       color: cp.active
-                          ? const Color(0xFF10B981).withOpacity(0.1)
-                          : AppTheme.textSecondary.withOpacity(0.1),
+                          ? const Color(0xFF10B981).withValues(alpha: 0.1)
+                          : AppTheme.textSecondary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(

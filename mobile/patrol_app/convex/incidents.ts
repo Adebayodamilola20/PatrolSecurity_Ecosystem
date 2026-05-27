@@ -30,12 +30,17 @@ export const list = query({
 });
 
 export const listForApi = query({
-  args: { status: v.optional(v.string()), officerId: v.optional(v.id("users")), severity: v.optional(v.string()) },
+  args: { status: v.optional(v.string()), officerId: v.optional(v.id("users")), severity: v.optional(v.string()), clientId: v.optional(v.id("clients")) },
   handler: async (ctx, args) => {
     let incidents = await ctx.db.query("incidents").order("desc").collect();
     if (args.status) incidents = incidents.filter(i => i.status === args.status);
     if (args.officerId) incidents = incidents.filter(i => i.officerId === args.officerId);
     if (args.severity) incidents = incidents.filter(i => i.severity === args.severity);
+    if (args.clientId) {
+      const cp = await ctx.db.query("checkpoints").collect();
+      const cpIds = new Set(cp.filter(c => c.clientId === args.clientId).map(c => c._id));
+      incidents = incidents.filter(i => cpIds.has(i.checkpointId));
+    }
     const users = await ctx.db.query("users").collect();
     return incidents.map(i => ({
       id: i.legacyId ?? i._id, title: i.title, description: i.description,
@@ -59,9 +64,10 @@ export const updateStatus = mutation({
 });
 
 export const missedPatrols = query({
-  args: {},
-  handler: async (ctx) => {
-    const checkpoints = await ctx.db.query("checkpoints").collect();
+  args: { clientId: v.optional(v.id("clients")) },
+  handler: async (ctx, args) => {
+    let checkpoints = await ctx.db.query("checkpoints").collect();
+    if (args.clientId) checkpoints = checkpoints.filter(c => c.clientId === args.clientId);
     const now = Date.now();
     const sixHours = 6 * 60 * 60 * 1000;
     const scans = await ctx.db.query("scans").order("desc").collect();
