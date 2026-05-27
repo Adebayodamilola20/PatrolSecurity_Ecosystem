@@ -24,7 +24,7 @@ function normalizeApiBase(rawUrl: string | undefined) {
 }
 
 const API_BASE = import.meta.env.PROD
-  ? DEFAULT_API_BASE
+  ? '/api/v1'
   : normalizeApiBase(import.meta.env.VITE_API_URL)
 
 export function apiFileUrl(path: string) {
@@ -62,8 +62,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       headers: { ...headers, ...options?.headers as Record<string, string> },
       ...options,
     })
-  } catch {
-    const error = new Error('You have a poor network connection or the server is unreachable. Please try again.')
+  } catch (cause) {
+    const details = cause instanceof Error ? ` (${cause.message})` : ''
+    const error = new Error(`The request could not reach the API server${details}. Please try again.`)
     emitAppEvent('app:request-error', { message: error.message, kind: 'network' })
     throw error
   }
