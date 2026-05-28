@@ -78,6 +78,50 @@ class _DashboardTab extends StatelessWidget {
     return '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
   }
 
+  String _emergencyResultMessage(
+    Map<String, dynamic> result, {
+    required bool hasGps,
+  }) {
+    final delivery = result['delivery'];
+    if (delivery is! Map<String, dynamic>) {
+      return hasGps
+          ? 'Emergency alert dispatched with GPS location.'
+          : 'Emergency alert dispatched. GPS was unavailable.';
+    }
+
+    final status = delivery['status']?.toString();
+    final deliveries = delivery['deliveries'];
+    final smsFailures = deliveries is List
+        ? deliveries
+            .whereType<Map>()
+            .where(
+              (item) =>
+                  item['provider'] == 'termii' && item['success'] != true,
+            )
+            .toList()
+        : const [];
+
+    if (status == 'no_recipients_configured') {
+      return 'Emergency recorded, but no emergency contacts are configured.';
+    }
+    if (smsFailures.isNotEmpty) {
+      final error = smsFailures.first['error']?.toString();
+      return error == null || error.isEmpty
+          ? 'Emergency recorded, but SMS delivery failed.'
+          : 'Emergency recorded, but SMS delivery failed: $error';
+    }
+    if (status == 'failed') {
+      return 'Emergency recorded, but contact delivery failed. Check notification settings.';
+    }
+    if (status == 'partial_failure') {
+      return 'Emergency recorded, but some contacts were not notified.';
+    }
+
+    return hasGps
+        ? 'Emergency alert dispatched with GPS location.'
+        : 'Emergency alert dispatched. GPS was unavailable.';
+  }
+
   Future<void> _triggerEmergency(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
     final shift = context.read<ShiftProvider>();
@@ -113,22 +157,23 @@ class _DashboardTab extends StatelessWidget {
               : 'Emergency button pressed from mobile patrol app near ${nearestCheckpoint.name}.'
           : 'Emergency button pressed from mobile patrol app. GPS note: ${location.error}';
 
-      await ApiService.triggerEmergency(
+      final result = await ApiService.triggerEmergency(
         checkpointId: nearestCheckpoint?.id,
         siteLabel: shift.siteLabel ?? '',
         note: note,
         location: locationText,
       );
 
+      final message = _emergencyResultMessage(result, hasGps: pos != null);
       messenger.showSnackBar(
         SnackBar(
-          content: Text(
-            pos == null
-                ? 'Emergency alert dispatched. GPS was unavailable, but response contacts were notified.'
-                : 'Emergency alert dispatched with GPS location.',
-          ),
+          content: Text(message),
           duration: const Duration(seconds: 5),
-          backgroundColor: AppTheme.verified,
+          backgroundColor: message.contains('failed') ||
+                  message.contains('not configured') ||
+                  message.contains('not notified')
+              ? AppTheme.flagged
+              : AppTheme.verified,
         ),
       );
     } catch (e) {
