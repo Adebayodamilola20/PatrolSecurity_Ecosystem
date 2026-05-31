@@ -1,4 +1,4 @@
-const DEFAULT_API_BASE = 'https://resilient-buffalo-226.convex.site/api/v1'
+const DEFAULT_API_BASE = 'https://harmless-pigeon-186.convex.site/api/v1'
 
 function normalizeApiBase(rawUrl: string | undefined) {
   const trimmed = rawUrl?.trim()
