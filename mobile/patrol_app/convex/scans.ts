@@ -77,8 +77,10 @@ export const listForApi = query({
       return {
         id: scan.legacyId ?? scan._id,
         officerId: officer?.legacyId ?? officer?._id ?? "",
+        officerConvexId: scan.officerId,
         officerName: officer?.name ?? "",
         checkpointId: checkpoint?.legacyId ?? checkpoint?._id ?? "",
+        checkpointConvexId: scan.checkpointId,
         checkpointName: checkpoint?.name ?? "",
         checkpointCode: checkpoint?.code ?? "",
         scannedAt: new Date(scan.scannedAt).toISOString(),

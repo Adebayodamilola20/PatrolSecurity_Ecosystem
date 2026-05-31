@@ -1090,22 +1090,79 @@ http.route({ path: "/timesheets", method: "GET", handler: httpAction(async (ctx,
   const shifts = await ctx.runQuery(api.shifts.listAll, {
     startDate: startDate ? new Date(startDate).getTime() : undefined,
     endDate: endDate ? new Date(endDate).getTime() : undefined,
+    userId: user.role === "guard" ? user.convexId : undefined,
     clientId: user.role === "admin" ? undefined : (user.clientId ?? undefined),
+  }) as any[];
+  const scans = await ctx.runQuery(api.scans.listForApi, {
+    officerId: user.role === "guard" ? user.convexId : undefined,
+    clientId: user.role === "admin" ? undefined : (user.clientId ?? undefined),
+    limit: 5000,
+  }) as any[];
+
+  const result = shifts.map((shift) => {
+    const clockIn = Date.parse(String(shift.clockIn ?? ""));
+    const clockOut = shift.clockOut ? Date.parse(String(shift.clockOut)) : Date.now();
+    const shiftScans = scans.filter((scan) => {
+      const scannedAt = Date.parse(String(scan.scannedAt ?? ""));
+      if (Number.isNaN(clockIn) || Number.isNaN(scannedAt)) return false;
+      const scanOfficerId = scan.officerConvexId ?? scan.officerId;
+      return scanOfficerId === shift.userId && scannedAt >= clockIn && scannedAt <= clockOut;
+    });
+    const verifiedScans = shiftScans.filter((scan) => scan.gpsValid === true).length;
+    return {
+      ...shift,
+      shiftId: shift.id,
+      scans: shiftScans,
+      scanCount: shiftScans.length,
+      verifiedScans,
+      flaggedScans: shiftScans.length - verifiedScans,
+    };
   });
-  return json(shifts);
+
+  return json(result);
 })});
 
 http.route({ path: "/timesheets/summary", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return json({ message: "Unauthorized" }, { status: 401 });
   const shifts = await ctx.runQuery(api.shifts.listAll, {
+    userId: user.role === "guard" ? user.convexId : undefined,
     clientId: user.role === "admin" ? undefined : (user.clientId ?? undefined),
-  });
+  }) as any[];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayStart = today.getTime();
+  const weekAgo = Date.now() - 7 * 86400000;
+  const recentShifts = shifts.filter((shift) => Date.parse(String(shift.clockIn ?? "")) >= weekAgo);
   const totalHours = (shifts as any[]).reduce((sum: number, s: any) => {
     if (s.clockOut) return sum + (new Date(s.clockOut).getTime() - new Date(s.clockIn).getTime()) / 3600000;
     return sum;
   }, 0);
-  return json({ totalShifts: shifts.length, completedShifts: (shifts as any[]).filter(s => s.status === "completed").length, activeShifts: (shifts as any[]).filter(s => s.status === "active").length, totalHours: Math.round(totalHours * 100) / 100 });
+  const byUser = new Map<string, { userId: string; name: string; shifts: number; hours: number }>();
+  for (const shift of recentShifts) {
+    const current = byUser.get(shift.userId) ?? {
+      userId: shift.userId,
+      name: shift.userName ?? "Unknown officer",
+      shifts: 0,
+      hours: 0,
+    };
+    current.shifts += 1;
+    if (shift.clockOut) {
+      current.hours += (new Date(shift.clockOut).getTime() - new Date(shift.clockIn).getTime()) / 3600000;
+    }
+    byUser.set(shift.userId, current);
+  }
+  return json({
+    totalShifts: recentShifts.length,
+    completedShifts: recentShifts.filter(s => s.status === "completed").length,
+    activeShifts: shifts.filter(s => s.status === "active").length,
+    todayShifts: shifts.filter((s) => Date.parse(String(s.clockIn ?? "")) >= todayStart).length,
+    totalHours: Math.round(totalHours * 100) / 100,
+    byUser: Array.from(byUser.values()).map((item) => ({
+      ...item,
+      hours: Math.round(item.hours * 10) / 10,
+    })),
+  });
 })});
 
 http.route({ path: "/post-orders/completions", method: "GET", handler: httpAction(async (ctx, request) => {

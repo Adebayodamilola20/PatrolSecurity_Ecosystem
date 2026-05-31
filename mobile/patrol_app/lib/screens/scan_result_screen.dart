@@ -33,6 +33,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
   Checkpoint? _checkpoint;
   String? _errorMessage;
   final _notesCtrl = TextEditingController();
+  bool _postOrdersDialogShown = false;
 
   @override
   void dispose() {
@@ -52,6 +53,88 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
       if (!order.active) return false;
       return order.checkpointId == _checkpoint!.id;
     }).toList();
+  }
+
+  Future<void> _showPostOrdersDialog(List<PostOrder> orders) async {
+    if (!mounted || orders.isEmpty || _postOrdersDialogShown) return;
+    _postOrdersDialogShown = true;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: Text('Post Orders: ${_checkpointName ?? 'Checkpoint'}'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: orders.map((order) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              order.title,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: AppTheme.text,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            order.priority.toUpperCase(),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.flagged,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (order.summary.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          order.summary,
+                          style: const TextStyle(
+                            color: AppTheme.textSecondary,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                      if (order.instructions.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          order.instructions,
+                          style: const TextStyle(
+                            color: AppTheme.text,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                      if (order != orders.last)
+                        const Divider(height: 22),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('I Understand'),
+          ),
+        ],
+      ),
+    );
   }
 
   double _haversine(double lat1, double lon1, double lat2, double lon2) {
@@ -127,6 +210,12 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
     }
 
     setState(() => _loading = false);
+    final matchingOrders = _matchingOrders(dutyProvider.orders);
+    if (matchingOrders.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showPostOrdersDialog(matchingOrders);
+      });
+    }
 
     if (gpsLat != null && gpsLng != null && !_autoSubmitAttempted) {
       _autoSubmitAttempted = true;

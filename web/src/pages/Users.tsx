@@ -30,10 +30,14 @@ export default function Users() {
 
   useEffect(() => {
     load()
+    const interval = setInterval(load, 5000)
     const unsub = subscribeToShiftUpdates(() => {
       load()
     })
-    return unsub
+    return () => {
+      clearInterval(interval)
+      unsub()
+    }
   }, [])
 
   const handleAdd = async (e: React.FormEvent) => {

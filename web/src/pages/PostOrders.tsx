@@ -6,7 +6,7 @@ import { EmptyState } from '../components/ui/EmptyState'
 import { Skeleton } from '../components/ui/Skeleton'
 import { formatDate } from '../utils/format'
 
-const API_BASE = import.meta.env.VITE_API_URL || 'https://resilient-buffalo-226.convex.site/api/v1'
+const API_BASE = import.meta.env.VITE_API_URL || 'https://harmless-pigeon-186.convex.site/api/v1'
 
 export default function PostOrders() {
   const [orders, setOrders] = useState<PostOrder[]>([])

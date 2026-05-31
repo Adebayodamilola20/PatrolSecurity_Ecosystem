@@ -317,39 +317,18 @@ export default function Checkpoints() {
         radiusMeters: String(suggestedRadius),
       }))
       setLocationInfo(`Current location captured. GPS accuracy is about ${accuracy}m, so checkpoint radius was adjusted to ${suggestedRadius}m.`)
-
-      try {
-        const response = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`,
-          {
-            headers: {
-              Accept: 'application/json',
-            },
-          },
-        )
-
-        if (response.ok) {
-          const result = await response.json()
-          const displayName = String(result.display_name || '').trim()
-          const suggestedName =
-            String(result.name || result.address?.road || result.address?.suburb || result.address?.neighbourhood || '')
-              .trim()
-
-          setAddressQuery(displayName || `${latitude}, ${longitude}`)
-          setForm((f) => ({
-            ...f,
-            name: f.name || suggestedName,
-          }))
-        } else {
-          setAddressQuery(`${latitude}, ${longitude}`)
-        }
-      } catch {
-        setAddressQuery(`${latitude}, ${longitude}`)
+    } catch (error: any) {
+      let errorMessage = 'Could not get your current location.'
+      if (error?.code === 1) {
+        errorMessage = 'Location permission denied. Click the lock icon in your browser and allow location access.'
+      } else if (error?.code === 2) {
+        errorMessage = 'Location unavailable. Please check your GPS/network connection.'
+      } else if (error?.code === 3) {
+        errorMessage = 'Location request timed out. Please try again.'
+      } else if (error?.message?.includes('secure')) {
+        errorMessage = 'Location requires HTTPS. Use localhost or a secure connection.'
       }
-
-      setAddressResults([])
-    } catch {
-      setAddressError('Could not get your current location. Check browser permission and try again.')
+      setAddressError(errorMessage)
     } finally {
       setResolvingCurrentLocation(false)
     }
