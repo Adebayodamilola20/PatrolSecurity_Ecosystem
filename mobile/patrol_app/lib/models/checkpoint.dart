@@ -6,6 +6,9 @@ class Checkpoint {
   final double latitude;
   final double longitude;
   final double radiusMeters;
+  final int expectedIntervalMinutes;
+  final String scheduledTimeIn;
+  final String scheduledTimeOut;
   final bool active;
   final int totalScans;
   final String? lastScan;
@@ -18,21 +21,27 @@ class Checkpoint {
     required this.latitude,
     required this.longitude,
     this.radiusMeters = 10,
+    this.expectedIntervalMinutes = 60,
+    this.scheduledTimeIn = '',
+    this.scheduledTimeOut = '',
     this.active = true,
     this.totalScans = 0,
     this.lastScan,
   });
 
   factory Checkpoint.fromJson(Map<String, dynamic> json) => Checkpoint(
-        id: json['id'] ?? '',
-        name: json['name'] ?? '',
-        code: json['code'] ?? '',
-        location: json['location'] ?? '',
-        latitude: (json['latitude'] ?? 0).toDouble(),
-        longitude: (json['longitude'] ?? 0).toDouble(),
-        radiusMeters: (json['radiusMeters'] ?? 10).toDouble(),
-        active: json['active'] == true || json['active'] == 1,
-        totalScans: json['totalScans'] ?? 0,
-        lastScan: json['lastScan'],
-      );
+    id: json['id'] ?? '',
+    name: json['name'] ?? '',
+    code: json['code'] ?? '',
+    location: json['location'] ?? '',
+    latitude: (json['latitude'] ?? 0).toDouble(),
+    longitude: (json['longitude'] ?? 0).toDouble(),
+    radiusMeters: (json['radiusMeters'] ?? 10).toDouble(),
+    expectedIntervalMinutes: (json['expectedIntervalMinutes'] ?? 60).toInt(),
+    scheduledTimeIn: json['scheduledTimeIn'] ?? '',
+    scheduledTimeOut: json['scheduledTimeOut'] ?? '',
+    active: json['active'] == true || json['active'] == 1,
+    totalScans: json['totalScans'] ?? 0,
+    lastScan: json['lastScan'],
+  );
 }

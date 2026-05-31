@@ -2,12 +2,13 @@ import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import rateLimit from 'express-rate-limit'
+import helmet from 'helmet'
 import { createServer } from 'http'
 import { Server } from 'socket.io'
 import jwt from 'jsonwebtoken'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { authMiddleware, getJwtSecret } from './middleware/auth.js'
+import { authMiddleware, assertJwtSecretConfigured, getJwtSecret } from './middleware/auth.js'
 import { normalizeRole } from './utils/roles.js'
 
 import authRoutes from './routes/auth.js'
@@ -27,6 +28,8 @@ import clientRoutes from './routes/clients.js'
 import siteRoutes from './routes/sites.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+assertJwtSecretConfigured()
 
 const app = express()
 app.set('trust proxy', 1)
@@ -104,13 +107,28 @@ const authLimiter = rateLimit({
 })
 
 app.set('io', io)
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+    },
+  },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true,
+  },
+}))
 app.use(cors({
   origin: allowedOrigins,
   credentials: true,
 }))
 app.use(express.json({ limit: '10mb' }))
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')))
-app.use('/exports', express.static(path.join(__dirname, '..', 'exports'), {
+app.use('/uploads', authMiddleware, express.static(path.join(__dirname, 'uploads')))
+app.use('/exports', authMiddleware, express.static(path.join(__dirname, '..', 'exports'), {
   setHeaders(res, filePath) {
     if (filePath.endsWith('.xlsx')) {
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')

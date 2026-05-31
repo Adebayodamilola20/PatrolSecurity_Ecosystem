@@ -4,10 +4,16 @@ import { normalizeRole, isAdmin, isMainAccount } from '../utils/roles.js'
 export function getJwtSecret() {
   const secret = process.env.JWT_SECRET?.trim()
   if (!secret) {
-    console.warn('WARNING: JWT_SECRET not set. Using fallback — set JWT_SECRET in production.')
-    return 'patrol-monitoring-fallback-secret-do-not-use-in-production'
+    throw new Error('JWT_SECRET environment variable is required')
+  }
+  if (secret.length < 32) {
+    throw new Error('JWT_SECRET must be at least 32 characters long')
   }
   return secret
+}
+
+export function assertJwtSecretConfigured() {
+  getJwtSecret()
 }
 
 export function generateToken(user) {

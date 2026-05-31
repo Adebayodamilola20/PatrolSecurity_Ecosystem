@@ -9,6 +9,14 @@ import type { Checkpoint } from '../types'
 import { CardSkeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
 
+function escapeHtmlForPrint(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
 const statusColor: Record<string, string> = {
   active: 'bg-success/15 text-success',
   warning: 'bg-warning/15 text-warning',
@@ -487,10 +495,12 @@ export default function Checkpoints() {
                         setActionError('Allow pop-ups to print QR codes.')
                         return
                       }
+                      const safeName = escapeHtmlForPrint(cp.name)
+                      const safeCode = escapeHtmlForPrint(cp.code)
                       printWindow.document.write(`
                         <html>
                           <head>
-                            <title>${cp.code} QR Code</title>
+                            <title>${safeCode} QR Code</title>
                             <style>
                               body { font-family: Arial, sans-serif; display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; background:#ffffff; color:#111827; }
                               .sheet { text-align:center; padding:24px; }
@@ -501,8 +511,8 @@ export default function Checkpoints() {
                           <body>
                             <div class="sheet">
                               <img src="" alt="QR code" id="qr-image" />
-                              <h1>${cp.name}</h1>
-                              <div class="code">${cp.code}</div>
+                              <h1>${safeName}</h1>
+                              <div class="code">${safeCode}</div>
                             </div>
                           </body>
                         </html>

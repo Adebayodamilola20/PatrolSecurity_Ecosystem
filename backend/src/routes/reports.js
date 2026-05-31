@@ -6,6 +6,17 @@ import { buildFiveWsAndH, sendNotificationBundle } from '../services/notificatio
 import { canExport, normalizeRole } from '../utils/roles.js'
 
 const router = Router()
+router.use(authMiddleware)
+
+function escapeHtml(text) {
+  if (typeof text !== 'string') return text
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
 
 async function getSetting(key, fallback = '') {
   const row = await db.get('SELECT settingValue FROM communicationSettings WHERE settingKey = ? ORDER BY createdAt DESC LIMIT 1', [key])
@@ -51,14 +62,14 @@ async function emailReportSubmission({ submission, req, subjectPrefix, details }
     emails: recipients,
     subject: `${subjectPrefix}: ${submission.title}`,
     html: `
-      <h2>${subjectPrefix}</h2>
-      <p><strong>Who:</strong> ${fiveWs.who}</p>
-      <p><strong>What:</strong> ${fiveWs.what}</p>
-      <p><strong>When:</strong> ${fiveWs.when}</p>
-      <p><strong>Where:</strong> ${fiveWs.where}</p>
-      <p><strong>Why:</strong> ${fiveWs.why}</p>
-      <p><strong>How:</strong> ${fiveWs.how}</p>
-      <pre>${JSON.stringify(details, null, 2)}</pre>
+      <h2>${escapeHtml(subjectPrefix)}</h2>
+      <p><strong>Who:</strong> ${escapeHtml(fiveWs.who)}</p>
+      <p><strong>What:</strong> ${escapeHtml(fiveWs.what)}</p>
+      <p><strong>When:</strong> ${escapeHtml(fiveWs.when)}</p>
+      <p><strong>Where:</strong> ${escapeHtml(fiveWs.where)}</p>
+      <p><strong>Why:</strong> ${escapeHtml(fiveWs.why)}</p>
+      <p><strong>How:</strong> ${escapeHtml(fiveWs.how)}</p>
+      <pre>${escapeHtml(JSON.stringify(details, null, 2))}</pre>
     `,
     text: `${subjectPrefix}\nWho: ${fiveWs.who}\nWhat: ${fiveWs.what}\nWhen: ${fiveWs.when}\nWhere: ${fiveWs.where}\nWhy: ${fiveWs.why}\nHow: ${fiveWs.how}`,
   })
@@ -95,7 +106,7 @@ function buildReportHtml({ report, scans, shifts, verified, flagged, totalHours 
 </style></head>
 <body>
   <h1>Patrol Monitoring Report</h1>
-  <div class="sub">${report.clientEmail} &middot; ${new Date(report.periodStart).toLocaleDateString()} - ${new Date(report.periodEnd).toLocaleDateString()}</div>
+  <div class="sub">${escapeHtml(report.clientEmail)} &middot; ${new Date(report.periodStart).toLocaleDateString()} - ${new Date(report.periodEnd).toLocaleDateString()}</div>
   <div class="stats">
     <div class="stat"><div class="val">${scans.length}</div><div class="lbl">Total Scans</div></div>
     <div class="stat"><div class="val">${verified}</div><div class="lbl">Verified</div></div>
@@ -107,8 +118,8 @@ function buildReportHtml({ report, scans, shifts, verified, flagged, totalHours 
     <tr><th>Time</th><th>Officer</th><th>Checkpoint</th><th>Distance</th><th>Status</th></tr>
     ${scans.map(s => `<tr>
       <td>${new Date(s.scannedAt).toLocaleString()}</td>
-      <td>${s.officerName}</td>
-      <td>${s.checkpointName} (${s.checkpointCode})</td>
+      <td>${escapeHtml(s.officerName)}</td>
+      <td>${escapeHtml(s.checkpointName)} (${escapeHtml(s.checkpointCode)})</td>
       <td>${s.distanceMeters ? s.distanceMeters + 'm' : '-'}</td>
       <td><span class="badge ${s.gpsValid ? 'badge-v' : 'badge-f'}">${s.gpsValid ? 'Verified' : 'Flagged'}</span></td>
     </tr>`).join('')}
@@ -154,6 +165,8 @@ async function sendReportEmail(report) {
   const allRecipients = [...new Set([...recipients, ...ccRecipients])]
   if (allRecipients.length === 0) return { skipped: true, reason: 'No recipients' }
 
+  const text = `Patrol Report\nPeriod: ${new Date(report.periodStart).toLocaleDateString()} to ${new Date(report.periodEnd).toLocaleDateString()}`
+
   const result = await sendNotificationBundle({
     emails: allRecipients,
     subject: `Patrol Report — ${new Date(report.periodStart).toLocaleDateString()} to ${new Date(report.periodEnd).toLocaleDateString()}`,
@@ -168,7 +181,25 @@ router.get('/', async (req, res) => {
   const role = normalizeRole(req.user?.role)
 
   const [reports, submissions] = await Promise.all([
-    db.all('SELECT * FROM reports ORDER BY createdAt DESC'),
+    (() => {
+      let query = 'SELECT * FROM reports'
+      const conditions = []
+      const params = []
+
+      if (role === 'main_account') {
+        conditions.push('reports.id IN (SELECT rs.id FROM reportSubmissions rs JOIN users u ON rs.userId = u.id WHERE u.clientId = ?)')
+        params.push(req.user.clientId)
+      } else if (role === 'supervisor' || role === 'guard') {
+        conditions.push('reports.clientEmail IN (SELECT email FROM users WHERE id = ?)')
+        params.push(req.user.id)
+      }
+
+      if (conditions.length > 0) {
+        query += ' WHERE ' + conditions.join(' AND ')
+      }
+      query += ' ORDER BY createdAt DESC'
+      return db.all(query, params)
+    })(),
     (() => {
       let query = `
         SELECT rs.*, u.name as userName
@@ -308,7 +339,8 @@ router.post('/:id/resend', async (req, res) => {
     res.json({ ...report, status: skipped ? 'failed' : 'sent', delivery: result })
   } catch (err) {
     await db.run(`UPDATE reports SET status = ? WHERE id = ?`, ['failed', report.id])
-    res.status(500).json({ message: err.message })
+    console.error('[reports:resend]', err.message)
+    res.status(500).json({ message: 'Failed to resend report' })
   }
 })
 
@@ -360,7 +392,5 @@ router.get('/:id/pdf', async (req, res) => {
   res.setHeader('Content-Disposition', `inline; filename="${fileName}.html"`)
   res.send(html)
 })
-
-router.use(authMiddleware)
 
 export default router

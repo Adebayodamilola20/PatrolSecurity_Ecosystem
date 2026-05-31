@@ -63,15 +63,26 @@ export interface Incident {
 }
 
 export interface MissedPatrol {
+  id?: string
   checkpointId: string
   checkpointName: string
-  checkpointCode: string
-  type: 'never_scanned' | 'overdue'
-  message: string
-  expectedInterval: string
-  lastScan: string | null
+  checkpointCode?: string
+  siteId?: string | null
+  siteName?: string
+  clientId?: string | null
+  type?: 'never_scanned' | 'overdue'
+  message?: string
+  expectedInterval?: string
+  expectedIntervalMinutes?: number
+  gracePeriodMinutes?: number
+  lastScan?: string | null
+  lastScanAt?: string | null
+  dueAt?: string
+  detectedAt?: string
+  status?: 'open' | 'resolved'
+  notificationStatus?: string
   lastOfficer?: string
-  timeOverdue: string | null
+  timeOverdue?: string | null
 }
 
 export interface Scan {

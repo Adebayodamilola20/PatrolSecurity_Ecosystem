@@ -2,26 +2,42 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
 export const listAll = query({
-  args: { clientId: v.optional(v.id("clients")), active: v.optional(v.boolean()) },
+  args: {
+    clientId: v.optional(v.id("clients")),
+    active: v.optional(v.boolean()),
+  },
   handler: async (ctx, args) => {
     let orders = await ctx.db.query("postOrders").order("desc").collect();
-    if (args.active !== undefined) orders = orders.filter(o => o.active === args.active);
+    if (args.active !== undefined)
+      orders = orders.filter((o) => o.active === args.active);
     if (args.clientId) {
       const cps = await ctx.db.query("checkpoints").collect();
-      const clientCpIds = new Set(cps.filter(cp => cp.clientId === args.clientId).map(cp => cp._id));
-      orders = orders.filter(o => o.checkpointId && clientCpIds.has(o.checkpointId));
+      const clientCpIds = new Set(
+        cps.filter((cp) => cp.clientId === args.clientId).map((cp) => cp._id),
+      );
+      orders = orders.filter(
+        (o) =>
+          o.clientId === args.clientId ||
+          (o.checkpointId && clientCpIds.has(o.checkpointId)),
+      );
     }
     const checkpoints = await ctx.db.query("checkpoints").collect();
     const completions = await ctx.db.query("postOrderCompletions").collect();
-    return orders.map(o => ({
-      id: o.legacyId ?? o._id, title: o.title, summary: o.summary,
+    return orders.map((o) => ({
+      id: o.legacyId ?? o._id,
+      title: o.title,
+      summary: o.summary,
       instructions: o.instructions,
       checkpointId: o.checkpointId,
-      checkpointName: checkpoints.find(c => c._id === o.checkpointId)?.name ?? null,
-      assignedUserId: o.assignedUserId, priority: o.priority, active: o.active,
+      checkpointName:
+        checkpoints.find((c) => c._id === o.checkpointId)?.name ?? null,
+      assignedUserId: o.assignedUserId,
+      priority: o.priority,
+      active: o.active,
       requiresAcknowledgement: o.requiresAcknowledgement,
-      requiresPhotoProof: o.requiresPhotoProof, createdBy: o.createdBy,
-      completions: completions.filter(c => c.postOrderId === o._id),
+      requiresPhotoProof: o.requiresPhotoProof,
+      createdBy: o.createdBy,
+      completions: completions.filter((c) => c.postOrderId === o._id),
       createdAt: new Date(o.createdAt).toISOString(),
     }));
   },
@@ -29,15 +45,29 @@ export const listAll = query({
 
 export const create = mutation({
   args: {
-    title: v.string(), summary: v.string(), instructions: v.string(),
+    title: v.string(),
+    summary: v.string(),
+    instructions: v.string(),
     checkpointId: v.optional(v.id("checkpoints")),
-    assignedUserId: v.optional(v.id("users")), assignedRole: v.string(),
-    priority: v.string(), active: v.boolean(),
-    requiresAcknowledgement: v.boolean(), requiresPhotoProof: v.boolean(),
+    assignedUserId: v.optional(v.id("users")),
+    assignedRole: v.string(),
+    priority: v.string(),
+    active: v.boolean(),
+    requiresAcknowledgement: v.boolean(),
+    requiresPhotoProof: v.boolean(),
     createdBy: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const id = await ctx.db.insert("postOrders", { ...args, createdAt: Date.now() });
+    const creator = await ctx.db.get(args.createdBy);
+    const checkpoint = args.checkpointId
+      ? await ctx.db.get(args.checkpointId)
+      : null;
+    const id = await ctx.db.insert("postOrders", {
+      ...args,
+      clientId: checkpoint?.clientId ?? creator?.clientId,
+      siteId: checkpoint?.siteId,
+      createdAt: Date.now(),
+    });
     return { id, ...args, createdAt: new Date().toISOString() };
   },
 });
@@ -45,25 +75,44 @@ export const create = mutation({
 export const listCompletions = query({
   args: { clientId: v.optional(v.id("clients")) },
   handler: async (ctx, args) => {
-    let completions = await ctx.db.query("postOrderCompletions").order("desc").collect();
+    let completions = await ctx.db
+      .query("postOrderCompletions")
+      .order("desc")
+      .collect();
     if (args.clientId) {
       const cps = await ctx.db.query("checkpoints").collect();
-      const clientCpIds = new Set(cps.filter(cp => cp.clientId === args.clientId).map(cp => cp._id));
+      const clientCpIds = new Set(
+        cps.filter((cp) => cp.clientId === args.clientId).map((cp) => cp._id),
+      );
       const orders = await ctx.db.query("postOrders").collect();
-      const orderIds = new Set(orders.filter(o => clientCpIds.has(o.checkpointId)).map(o => o._id));
-      completions = completions.filter(c => orderIds.has(c.postOrderId));
+      const orderIds = new Set(
+        orders
+          .filter(
+            (o) =>
+              o.clientId === args.clientId || clientCpIds.has(o.checkpointId),
+          )
+          .map((o) => o._id),
+      );
+      completions = completions.filter(
+        (c) => c.clientId === args.clientId || orderIds.has(c.postOrderId),
+      );
     }
     const users = await ctx.db.query("users").collect();
     const orders = await ctx.db.query("postOrders").collect();
-    return completions.map(c => ({
-      id: c.legacyId ?? c._id, postOrderId: c.postOrderId,
-      orderTitle: orders.find(o => o._id === c.postOrderId)?.title ?? "",
+    return completions.map((c) => ({
+      id: c.legacyId ?? c._id,
+      postOrderId: c.postOrderId,
+      orderTitle: orders.find((o) => o._id === c.postOrderId)?.title ?? "",
       userId: c.userId,
-      userName: users.find(u => u._id === c.userId)?.name ?? "",
-      status: c.status, reviewStatus: c.reviewStatus,
+      userName: users.find((u) => u._id === c.userId)?.name ?? "",
+      status: c.status,
+      reviewStatus: c.reviewStatus,
       completedAt: c.completedAt ? new Date(c.completedAt).toISOString() : null,
-      acknowledgedAt: c.acknowledgedAt ? new Date(c.acknowledgedAt).toISOString() : null,
-      proofPhotoUrl: c.proofPhotoUrl || null, proofNote: c.proofNote,
+      acknowledgedAt: c.acknowledgedAt
+        ? new Date(c.acknowledgedAt).toISOString()
+        : null,
+      proofPhotoUrl: c.proofPhotoUrl || null,
+      proofNote: c.proofNote,
       createdAt: new Date(c.createdAt).toISOString(),
     }));
   },
@@ -104,7 +153,9 @@ export const listForUser = query({
     const siteIds = new Set(assignments.map((assignment) => assignment.siteId));
     const visibleCheckpointIds = new Set(
       checkpoints
-        .filter((checkpoint) => checkpoint.siteId && siteIds.has(checkpoint.siteId))
+        .filter(
+          (checkpoint) => checkpoint.siteId && siteIds.has(checkpoint.siteId),
+        )
         .map((checkpoint) => checkpoint._id),
     );
 
@@ -112,7 +163,9 @@ export const listForUser = query({
       .filter((order) => {
         if (user.role === "admin") return true;
         if (user.role === "main_account") {
-          const checkpoint = checkpoints.find((item) => item._id === order.checkpointId);
+          const checkpoint = checkpoints.find(
+            (item) => item._id === order.checkpointId,
+          );
           return checkpoint?.clientId === user.clientId;
         }
         return (
@@ -124,16 +177,21 @@ export const listForUser = query({
         const latestCompletion = completions
           .filter(
             (completion) =>
-              completion.postOrderId === order._id && completion.userId === args.userId,
+              completion.postOrderId === order._id &&
+              completion.userId === args.userId,
           )
           .sort((a, b) => b.createdAt - a.createdAt)[0];
-        const checkpoint = checkpoints.find((item) => item._id === order.checkpointId);
+        const checkpoint = checkpoints.find(
+          (item) => item._id === order.checkpointId,
+        );
         return {
           id: order.legacyId ?? order._id,
           title: order.title,
           summary: order.summary,
           instructions: order.instructions,
-          checkpointId: checkpoint ? checkpoint.legacyId ?? checkpoint._id : null,
+          checkpointId: checkpoint
+            ? (checkpoint.legacyId ?? checkpoint._id)
+            : null,
           checkpointName: checkpoint?.name ?? null,
           priority: order.priority,
           active: order.active,
@@ -175,6 +233,8 @@ export const acknowledge = mutation({
     const order = await ctx.db.get(args.orderId);
     if (!order) throw new Error("Post order not found");
     const id = await ctx.db.insert("postOrderCompletions", {
+      clientId: order.clientId,
+      siteId: order.siteId,
       postOrderId: args.orderId,
       userId: args.userId,
       shiftId: activeShift?._id,
@@ -219,6 +279,8 @@ export const complete = mutation({
     const order = await ctx.db.get(args.orderId);
     if (!order) throw new Error("Post order not found");
     const id = await ctx.db.insert("postOrderCompletions", {
+      clientId: order.clientId,
+      siteId: order.siteId,
       postOrderId: args.orderId,
       userId: args.userId,
       shiftId: activeShift?._id,
@@ -250,8 +312,8 @@ export const resolveId = query({
   handler: async (ctx, args) => {
     const all = await ctx.db.query("postOrders").collect();
     return (
-      all.find((item) => item.legacyId === args.id || item._id === args.id)?._id ??
-      null
+      all.find((item) => item.legacyId === args.id || item._id === args.id)
+        ?._id ?? null
     );
   },
 });

@@ -1,0 +1,6 @@
+# Android signing config - DO NOT commit the actual file with passwords
+# Copy this to key.properties and fill in your values
+storePassword=CHANGE_ME
+keyPassword=CHANGE_ME
+keyAlias=upload
+storeFile=../upload.jks

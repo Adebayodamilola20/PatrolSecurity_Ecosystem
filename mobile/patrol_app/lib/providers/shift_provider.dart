@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
+import '../utils/constants.dart';
 
 class ShiftProvider extends ChangeNotifier {
   bool _onDuty = false;
@@ -12,6 +13,7 @@ class ShiftProvider extends ChangeNotifier {
   String? _siteLabel;
   Timer? _positionTimer;
   bool _positionTracking = false;
+  bool _sendingPosition = false;
 
   bool get onDuty => _onDuty;
   bool get loading => _loading;
@@ -36,13 +38,14 @@ class ShiftProvider extends ChangeNotifier {
     final shift = data['shift'] is Map<String, dynamic>
         ? data['shift'] as Map<String, dynamic>
         : data['data'] is Map<String, dynamic> &&
-                (data['data'] as Map<String, dynamic>)['shift']
-                    is Map<String, dynamic>
-            ? (data['data'] as Map<String, dynamic>)['shift']
-                as Map<String, dynamic>
-            : null;
+              (data['data'] as Map<String, dynamic>)['shift']
+                  is Map<String, dynamic>
+        ? (data['data'] as Map<String, dynamic>)['shift']
+              as Map<String, dynamic>
+        : null;
 
-    final active = data['active'] ??
+    final active =
+        data['active'] ??
         data['onDuty'] ??
         data['isClockedIn'] ??
         shift?['active'] ??
@@ -52,14 +55,16 @@ class ShiftProvider extends ChangeNotifier {
 
     _onDuty = active == true || active == 1 || active == 'true';
 
-    final clockIn = data['clockIn'] ??
+    final clockIn =
+        data['clockIn'] ??
         shift?['clockIn'] ??
         shift?['clockInTime'] ??
         shift?['createdAt'];
     _clockInTime = clockIn is String ? DateTime.tryParse(clockIn) : null;
     final scheduledEnd = data['scheduledEnd'] ?? shift?['scheduledEnd'];
-    _scheduledEnd =
-        scheduledEnd is String ? DateTime.tryParse(scheduledEnd) : null;
+    _scheduledEnd = scheduledEnd is String
+        ? DateTime.tryParse(scheduledEnd)
+        : null;
     _siteLabel = (data['siteLabel'] ?? shift?['siteLabel'])?.toString();
   }
 
@@ -83,9 +88,12 @@ class ShiftProvider extends ChangeNotifier {
   void _startPositionTracking() {
     _positionTracking = true;
     _positionTimer?.cancel();
-    _positionTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      _sendPositionUpdate();
-    });
+    _positionTimer = Timer.periodic(
+      const Duration(seconds: continuousGpsUpdateSeconds),
+      (_) {
+        _sendPositionUpdate();
+      },
+    );
     _sendPositionUpdate();
   }
 
@@ -97,15 +105,21 @@ class ShiftProvider extends ChangeNotifier {
 
   Future<void> _sendPositionUpdate() async {
     if (!_onDuty) return;
+    if (_sendingPosition) return;
+    _sendingPosition = true;
     final location = await LocationService.getCurrentLocation();
-    if (location.position == null) return;
-    await ApiService.updatePosition(
-      latitude: location.position!.latitude,
-      longitude: location.position!.longitude,
-      accuracy: location.position!.accuracy,
-      speed: location.position!.speed,
-      heading: location.position!.heading,
-    );
+    try {
+      if (location.position == null) return;
+      await ApiService.updatePosition(
+        latitude: location.position!.latitude,
+        longitude: location.position!.longitude,
+        accuracy: location.position!.accuracy,
+        speed: location.position!.speed,
+        heading: location.position!.heading,
+      );
+    } finally {
+      _sendingPosition = false;
+    }
   }
 
   Future<bool> clockIn() async {

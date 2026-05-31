@@ -80,17 +80,22 @@ http.route({
 http.route({
   path: "/dev/seed",
   method: "POST",
-  handler: httpAction(async (ctx) => {
-    const hasUsers = await ctx.runQuery(api.dev.hasUsers, {});
-    if (hasUsers) {
-      return json({ seeded: false, reason: "users already exist" });
+  handler: httpAction(async (ctx, request) => {
+    // SECURITY: Only allow in development - check for auth header
+    const authHeader = request.headers.get("authorization")
+    if (!authHeader) {
+      return json({ message: "Unauthorized - dev endpoints require authentication" }, { status: 401 })
     }
-    const passwordHash = await bcrypt.hash("123456", 10);
+    const hasUsers = await ctx.runQuery(api.dev.hasUsers, {})
+    if (hasUsers) {
+      return json({ seeded: false, reason: "users already exist" })
+    }
+    const passwordHash = await bcrypt.hash("123456", 10)
     const result = await ctx.runMutation(api.dev.seedDefaults, {
       adminPasswordHash: passwordHash,
       clientPasswordHash: passwordHash,
       guardPasswordHash: passwordHash,
-    });
+    })
     return json({
       ...result,
       credentials: {
@@ -98,17 +103,22 @@ http.route({
         client: "client@securecorp.com / 123456",
         guard: "guard@securecorp.com / 123456",
       },
-    });
+    })
   }),
-});
+})
 
 http.route({
   path: "/dev/demo-content",
   method: "POST",
-  handler: httpAction(async (ctx) => {
-    return json(await ctx.runMutation(api.dev.ensureDemoContent, {}));
+  handler: httpAction(async (ctx, request) => {
+    // SECURITY: Only allow in development - check for auth header
+    const authHeader = request.headers.get("authorization")
+    if (!authHeader) {
+      return json({ message: "Unauthorized - dev endpoints require authentication" }, { status: 401 })
+    }
+    return json(await ctx.runMutation(api.dev.ensureDemoContent, {}))
   }),
-});
+})
 
 http.route({
   path: "/auth/login",
@@ -163,8 +173,17 @@ http.route({
         { status: 400 },
       );
     }
-    if (newPassword.length < 6) {
-      return json({ message: "New password must be at least 6 characters" }, { status: 400 });
+    if (newPassword.length < 8) {
+      return json({ message: "New password must be at least 8 characters" }, { status: 400 });
+    }
+    if (!/(?=.*[a-z])/.test(newPassword)) {
+      return json({ message: "Password must contain at least one lowercase letter" }, { status: 400 });
+    }
+    if (!/(?=.*[A-Z])/.test(newPassword)) {
+      return json({ message: "Password must contain at least one uppercase letter" }, { status: 400 });
+    }
+    if (!/(?=.*\d)/.test(newPassword)) {
+      return json({ message: "Password must contain at least one digit" }, { status: 400 });
     }
     const stored = await ctx.runQuery(api.users.findByEmail, { email: user.email });
     if (!stored) return json({ message: "User not found" }, { status: 404 });
@@ -241,6 +260,40 @@ http.route({
         officerId: user.role === "guard" ? user.convexId : undefined,
         clientId: user.role === "admin" ? undefined : (user.clientId ?? undefined),
         limit: 1000,
+      }),
+    );
+  }),
+});
+
+http.route({
+  path: "/missed-patrols/check",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+    if (user.role === "guard") {
+      return json({ message: "Supervisor access required" }, { status: 403 });
+    }
+    return json(await ctx.runAction(api.missedPatrolScheduler.checkAndNotify, {}));
+  }),
+});
+
+http.route({
+  path: "/missed-patrols",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+    if (user.role === "guard") {
+      return json({ message: "Supervisor access required" }, { status: 403 });
+    }
+    const url = new URL(request.url);
+    const status = url.searchParams.get("status");
+    return json(
+      await ctx.runQuery(api.missedPatrols.list, {
+        status: status === "resolved" || status === "open" ? status : undefined,
+        clientId: user.role === "admin" ? undefined : (user.clientId ?? undefined),
+        limit: Number(url.searchParams.get("limit") ?? 100),
       }),
     );
   }),
@@ -1175,7 +1228,43 @@ http.route({ path: "/sites", method: "POST", handler: httpAction(async (ctx, req
     name: String(body?.name ?? ""), location: String(body?.location ?? ""),
     clientId: String(body?.clientId ?? ""),
     active: body?.active !== false,
+    patrolIntervalMinutes: body?.patrolIntervalMinutes === undefined ? undefined : Number(body.patrolIntervalMinutes),
+    patrolGracePeriodMinutes: body?.patrolGracePeriodMinutes === undefined ? undefined : Number(body.patrolGracePeriodMinutes),
   }), { status: 201 });
+})});
+
+http.route({ pathPrefix: "/sites/", method: "PUT", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  if (user.role === "guard") return json({ message: "Supervisor access required" }, { status: 403 });
+  const id = lastPathPart(request);
+  if (!id) return json({ message: "Site ID required" }, { status: 400 });
+  const sites = await ctx.db.query("sites").collect();
+  const site = sites.find(s => s.legacyId === id || s._id === id);
+  if (!site) return json({ message: "Site not found" }, { status: 404 });
+  if (user.role !== "admin" && site.clientId !== user.clientId) {
+    return json({ message: "Site access denied" }, { status: 403 });
+  }
+  const body = await parseJson(request);
+  const patch: Record<string, unknown> = {};
+  if (body.name !== undefined) patch.name = String(body.name);
+  if (body.location !== undefined) patch.location = String(body.location);
+  if (body.active !== undefined) patch.active = Boolean(body.active);
+  if (body.patrolIntervalMinutes !== undefined) patch.patrolIntervalMinutes = Number(body.patrolIntervalMinutes);
+  if (body.patrolGracePeriodMinutes !== undefined) patch.patrolGracePeriodMinutes = Number(body.patrolGracePeriodMinutes);
+  await ctx.db.patch(site._id, patch);
+  const updated = await ctx.db.get(site._id);
+  return json(updated ? {
+    id: updated.legacyId ?? updated._id,
+    convexId: updated._id,
+    name: updated.name,
+    location: updated.location,
+    clientId: updated.clientId,
+    patrolIntervalMinutes: updated.patrolIntervalMinutes ?? null,
+    patrolGracePeriodMinutes: updated.patrolGracePeriodMinutes ?? null,
+    active: updated.active,
+    createdAt: new Date(updated.createdAt).toISOString(),
+  } : null);
 })});
 
 export default http;

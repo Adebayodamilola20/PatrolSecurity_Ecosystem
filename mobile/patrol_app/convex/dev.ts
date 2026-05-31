@@ -84,6 +84,7 @@ export const seedDefaults = mutation({
     });
     await ctx.db.insert("userSiteAssignments", {
       legacyId: crypto.randomUUID(),
+      clientId,
       userId: guardId,
       siteId: site1Id,
       createdAt: now,
@@ -136,23 +137,12 @@ export const seedDefaults = mutation({
         createdAt: now,
       });
     }
-    return { seeded: true };
+    return { seeded: true }
   },
-});
+})
 
-export const wipeAll = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const tables = ["clients", "sites", "users", "userSiteAssignments", "checkpoints", "shifts", "scans", "officerPositions", "incidents", "reportSubmissions", "exportFiles", "communicationSettings", "emergencyEvents", "passOnLogs", "passOnLogAcknowledgements", "postOrders", "postOrderCompletions", "handovers"];
-    for (const table of tables) {
-      const docs = await ctx.db.query(table as any).collect();
-      for (const doc of docs) {
-        await ctx.db.delete(doc._id);
-      }
-    }
-    return { wiped: true };
-  },
-});
+// SECURITY: wipeAll mutation has been removed from production deployment
+// DO NOT expose destructive operations
 
 export const deleteUserByEmail = mutation({
   args: { email: v.string() },

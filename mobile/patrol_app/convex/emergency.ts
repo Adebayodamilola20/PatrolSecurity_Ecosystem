@@ -11,10 +11,15 @@ export const trigger = mutation({
   },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
+    const checkpoint = args.checkpointId
+      ? await ctx.db.get(args.checkpointId)
+      : null;
     const when = new Date().toISOString();
     const where = args.location || args.siteLabel || "Unknown location";
     const message = `Emergency alert from ${user?.name ?? "officer"} at ${where}. Immediate response required.`;
     const id = await ctx.db.insert("emergencyEvents", {
+      clientId: checkpoint?.clientId ?? user?.clientId,
+      siteId: checkpoint?.siteId,
       userId: args.userId,
       checkpointId: args.checkpointId,
       siteLabel: args.siteLabel ?? "",

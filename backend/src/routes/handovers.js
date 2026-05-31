@@ -12,15 +12,29 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const uploadDir = path.join(__dirname, '..', 'uploads', 'handover-proofs')
 fs.mkdirSync(uploadDir, { recursive: true })
 
+const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
+const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
+
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadDir),
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname || '') || '.jpg'
-    cb(null, `${Date.now()}-${uuidv4()}${ext}`)
+    const ext = path.extname(file.originalname || '').toLowerCase()
+    const safeExt = ALLOWED_EXTENSIONS.includes(ext) ? ext : '.jpg'
+    cb(null, `${Date.now()}-${uuidv4()}${safeExt}`)
   },
 })
 
-const upload = multer({ storage })
+const upload = multer({
+  storage,
+  limits: { fileSize: MAX_FILE_SIZE },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase()
+    if (!ALLOWED_EXTENSIONS.includes(ext)) {
+      return cb(new Error('Invalid file type. Only images allowed.'), false)
+    }
+    cb(null, true)
+  },
+})
 const router = Router()
 
 router.use(authMiddleware)

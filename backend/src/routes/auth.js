@@ -139,8 +139,17 @@ router.post('/change-password', authMiddleware, async (req, res) => {
   if (!currentPassword || !newPassword) {
     return res.status(400).json({ message: 'Current password and new password are required' })
   }
-  if (newPassword.length < 6) {
-    return res.status(400).json({ message: 'New password must be at least 6 characters' })
+  if (newPassword.length < 8) {
+    return res.status(400).json({ message: 'New password must be at least 8 characters' })
+  }
+  if (!/(?=.*[a-z])/.test(newPassword)) {
+    return res.status(400).json({ message: 'Password must contain at least one lowercase letter' })
+  }
+  if (!/(?=.*[A-Z])/.test(newPassword)) {
+    return res.status(400).json({ message: 'Password must contain at least one uppercase letter' })
+  }
+  if (!/(?=.*\d)/.test(newPassword)) {
+    return res.status(400).json({ message: 'Password must contain at least one digit' })
   }
 
   const user = await db.get('SELECT * FROM users WHERE id = ?', [req.user.id])

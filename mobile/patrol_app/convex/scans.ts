@@ -54,8 +54,15 @@ export const listForApi = query({
 
     if (args.clientId) {
       const clientCheckpoints = await ctx.db.query("checkpoints").collect();
-      const cpIds = new Set(clientCheckpoints.filter(cp => cp.clientId === args.clientId).map(cp => cp._id));
-      scans = scans.filter(scan => cpIds.has(scan.checkpointId));
+      const cpIds = new Set(
+        clientCheckpoints
+          .filter((cp) => cp.clientId === args.clientId)
+          .map((cp) => cp._id),
+      );
+      scans = scans.filter(
+        (scan) =>
+          scan.clientId === args.clientId || cpIds.has(scan.checkpointId),
+      );
     }
 
     const users = await ctx.db.query("users").collect();
@@ -87,24 +94,33 @@ export const listForApi = query({
 });
 
 export const getRecent = query({
-  args: { limit: v.optional(v.number()), clientId: v.optional(v.id("clients")) },
+  args: {
+    limit: v.optional(v.number()),
+    clientId: v.optional(v.id("clients")),
+  },
   handler: async (ctx, args) => {
     let scans = await ctx.db.query("scans").order("desc").collect();
     if (args.clientId) {
       const cps = await ctx.db.query("checkpoints").collect();
-      const cpIds = new Set(cps.filter(cp => cp.clientId === args.clientId).map(cp => cp._id));
-      scans = scans.filter(s => cpIds.has(s.checkpointId));
+      const cpIds = new Set(
+        cps.filter((cp) => cp.clientId === args.clientId).map((cp) => cp._id),
+      );
+      scans = scans.filter((s) => cpIds.has(s.checkpointId));
     }
     const users = await ctx.db.query("users").collect();
     const checkpoints = await ctx.db.query("checkpoints").collect();
-    return scans.slice(0, args.limit ?? 50).map(s => ({
-      id: s.legacyId ?? s._id, officerId: s.officerId,
-      officerName: users.find(u => u._id === s.officerId)?.name ?? "",
+    return scans.slice(0, args.limit ?? 50).map((s) => ({
+      id: s.legacyId ?? s._id,
+      officerId: s.officerId,
+      officerName: users.find((u) => u._id === s.officerId)?.name ?? "",
       checkpointId: s.checkpointId,
-      checkpointName: checkpoints.find(c => c._id === s.checkpointId)?.name ?? "",
+      checkpointName:
+        checkpoints.find((c) => c._id === s.checkpointId)?.name ?? "",
       scannedAt: new Date(s.scannedAt).toISOString(),
-      gpsLatitude: s.gpsLatitude, gpsLongitude: s.gpsLongitude,
-      gpsValid: s.gpsValid, distanceMeters: s.distanceMeters,
+      gpsLatitude: s.gpsLatitude,
+      gpsLongitude: s.gpsLongitude,
+      gpsValid: s.gpsValid,
+      distanceMeters: s.distanceMeters,
     }));
   },
 });
@@ -117,15 +133,21 @@ export const getById = query({
     const users = await ctx.db.query("users").collect();
     const checkpoints = await ctx.db.query("checkpoints").collect();
     return {
-      id: s.legacyId ?? s._id, officerId: s.officerId,
-      officerName: users.find(u => u._id === s.officerId)?.name ?? "",
+      id: s.legacyId ?? s._id,
+      officerId: s.officerId,
+      officerName: users.find((u) => u._id === s.officerId)?.name ?? "",
       checkpointId: s.checkpointId,
-      checkpointName: checkpoints.find(c => c._id === s.checkpointId)?.name ?? "",
-      checkpointCode: checkpoints.find(c => c._id === s.checkpointId)?.code ?? "",
+      checkpointName:
+        checkpoints.find((c) => c._id === s.checkpointId)?.name ?? "",
+      checkpointCode:
+        checkpoints.find((c) => c._id === s.checkpointId)?.code ?? "",
       scannedAt: new Date(s.scannedAt).toISOString(),
       receivedAt: new Date(s.receivedAt).toISOString(),
-      gpsLatitude: s.gpsLatitude, gpsLongitude: s.gpsLongitude,
-      gpsValid: s.gpsValid, distanceMeters: s.distanceMeters, notes: s.notes,
+      gpsLatitude: s.gpsLatitude,
+      gpsLongitude: s.gpsLongitude,
+      gpsValid: s.gpsValid,
+      distanceMeters: s.distanceMeters,
+      notes: s.notes,
     };
   },
 });
@@ -143,6 +165,9 @@ export const create = mutation({
     if (!checkpoint) {
       throw new Error("Checkpoint not found");
     }
+    const officer = await ctx.db.get(args.officerId);
+    const clientId = checkpoint.clientId ?? officer?.clientId;
+    const siteId = checkpoint.siteId;
 
     const scannedAt = Date.now();
     let computedDistance: number | undefined;
@@ -159,6 +184,8 @@ export const create = mutation({
     }
 
     const scanId = await ctx.db.insert("scans", {
+      clientId,
+      siteId,
       officerId: args.officerId,
       checkpointId: args.checkpointId,
       scannedAt,
@@ -170,7 +197,30 @@ export const create = mutation({
       notes: args.notes ?? "",
     });
 
-    const officer = await ctx.db.get(args.officerId);
+    if (args.gpsLatitude != null && args.gpsLongitude != null) {
+      await ctx.db.insert("officerPositions", {
+        clientId,
+        siteId,
+        userId: args.officerId,
+        latitude: args.gpsLatitude,
+        longitude: args.gpsLongitude,
+        capturedAt: scannedAt,
+      });
+    }
+
+    const openAlert = await ctx.db
+      .query("missedPatrolAlerts")
+      .withIndex("by_checkpointId_status", (q) =>
+        q.eq("checkpointId", args.checkpointId).eq("status", "open"),
+      )
+      .first();
+    if (openAlert) {
+      await ctx.db.patch(openAlert._id, {
+        status: "resolved",
+        notificationStatus: openAlert.notificationStatus || "resolved_by_scan",
+      });
+    }
+
     return {
       id: scanId,
       officerId: officer?.legacyId ?? officer?._id ?? "",

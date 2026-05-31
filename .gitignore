@@ -11,3 +11,9 @@ uploads/*
 backend/exports/
 
 .env.local
+
+# Android signing
+android/*/upload.jks
+android/key.properties
+key.properties
+*.jks

@@ -49,7 +49,19 @@ router.get('/', async (req, res) => {
 })
 
 router.get('/:id', async (req, res) => {
-  const row = await db.get('SELECT * FROM sites WHERE id = ?', [req.params.id])
+  const role = normalizeRole(req.user?.role)
+  let query = 'SELECT * FROM sites WHERE id = ?'
+  const params = [req.params.id]
+
+  if (role === 'main_account') {
+    query += ' AND clientId = ?'
+    params.push(req.user.clientId)
+  } else if (role === 'supervisor' || role === 'guard') {
+    query += ' AND id IN (SELECT siteId FROM user_site_assignments WHERE userId = ?)'
+    params.push(req.user.id)
+  }
+
+  const row = await db.get(query, params)
   if (!row) return res.status(404).json({ message: 'Site not found' })
   res.json(normalizeSite(row))
 })

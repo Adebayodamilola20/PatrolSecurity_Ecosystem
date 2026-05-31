@@ -10,6 +10,8 @@ export const list = query({
     return sites.map(s => ({
       id: s.legacyId ?? s._id, convexId: s._id, name: s.name,
       location: s.location, clientId: s.clientId,
+      patrolIntervalMinutes: s.patrolIntervalMinutes ?? null,
+      patrolGracePeriodMinutes: s.patrolGracePeriodMinutes ?? null,
       clientName: clients.find(c => c._id === s.clientId)?.name ?? "",
       active: s.active, createdAt: new Date(s.createdAt).toISOString(),
     }));
@@ -17,9 +19,48 @@ export const list = query({
 });
 
 export const create = mutation({
-  args: { name: v.string(), location: v.string(), clientId: v.id("clients"), active: v.boolean() },
+  args: {
+    name: v.string(),
+    location: v.string(),
+    clientId: v.id("clients"),
+    active: v.boolean(),
+    patrolIntervalMinutes: v.optional(v.number()),
+    patrolGracePeriodMinutes: v.optional(v.number()),
+  },
   handler: async (ctx, args) => {
     const id = await ctx.db.insert("sites", { ...args, createdAt: Date.now() });
     return { id, ...args, convexId: id, createdAt: new Date().toISOString() };
+  },
+});
+
+export const updatePatrolSettings = mutation({
+  args: {
+    siteId: v.id("sites"),
+    patrolIntervalMinutes: v.optional(v.number()),
+    patrolGracePeriodMinutes: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const site = await ctx.db.get(args.siteId);
+    if (!site) throw new Error("Site not found");
+
+    await ctx.db.patch(args.siteId, {
+      patrolIntervalMinutes: args.patrolIntervalMinutes,
+      patrolGracePeriodMinutes: args.patrolGracePeriodMinutes,
+    });
+
+    const updated = await ctx.db.get(args.siteId);
+    return updated
+      ? {
+          id: updated.legacyId ?? updated._id,
+          convexId: updated._id,
+          name: updated.name,
+          location: updated.location,
+          clientId: updated.clientId,
+          patrolIntervalMinutes: updated.patrolIntervalMinutes ?? null,
+          patrolGracePeriodMinutes: updated.patrolGracePeriodMinutes ?? null,
+          active: updated.active,
+          createdAt: new Date(updated.createdAt).toISOString(),
+        }
+      : null;
   },
 });

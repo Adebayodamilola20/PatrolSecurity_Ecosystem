@@ -33,28 +33,55 @@ export const listAll = query({
     let subs = await ctx.db.query("reportSubmissions").order("desc").collect();
     const users = await ctx.db.query("users").collect();
     if (args.clientId) {
-      const clientUserIds = new Set(users.filter(u => u.clientId === args.clientId).map(u => u._id));
-      subs = subs.filter(s => clientUserIds.has(s.userId));
+      const clientUserIds = new Set(
+        users.filter((u) => u.clientId === args.clientId).map((u) => u._id),
+      );
+      subs = subs.filter(
+        (s) => s.clientId === args.clientId || clientUserIds.has(s.userId),
+      );
     }
-    return { reports: [], submissions: subs.map(s => ({
-      id: s.legacyId ?? s._id, type: s.type, title: s.title, summary: s.summary,
-      status: s.status, siteLabel: s.siteLabel,
-      userName: users.find(u => u._id === s.userId)?.name ?? "",
-      submittedAt: new Date(s.submittedAt).toISOString(),
-      emailedAt: s.emailedAt ? new Date(s.emailedAt).toISOString() : null,
-    })) };
+    return {
+      reports: [],
+      submissions: subs.map((s) => ({
+        id: s.legacyId ?? s._id,
+        type: s.type,
+        title: s.title,
+        summary: s.summary,
+        status: s.status,
+        siteLabel: s.siteLabel,
+        userName: users.find((u) => u._id === s.userId)?.name ?? "",
+        submittedAt: new Date(s.submittedAt).toISOString(),
+        emailedAt: s.emailedAt ? new Date(s.emailedAt).toISOString() : null,
+      })),
+    };
   },
 });
 
 export const generate = mutation({
-  args: { userId: v.id("users"), type: v.optional(v.string()), dateRange: v.optional(v.string()) },
+  args: {
+    userId: v.id("users"),
+    type: v.optional(v.string()),
+    dateRange: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
     const subId = await ctx.db.insert("reportSubmissions", {
-      type: args.type ?? "generated", title: "Generated Report", summary: "Auto-generated",
-      details: {}, userId: args.userId, status: "submitted", submittedAt: Date.now(),
-      deliveryPayload: {}, siteLabel: "",
+      clientId: user?.clientId,
+      type: args.type ?? "generated",
+      title: "Generated Report",
+      summary: "Auto-generated",
+      details: {},
+      userId: args.userId,
+      status: "submitted",
+      submittedAt: Date.now(),
+      deliveryPayload: {},
+      siteLabel: "",
     });
-    return { id: subId, message: "Report generation started", status: "submitted" };
+    return {
+      id: subId,
+      message: "Report generation started",
+      status: "submitted",
+    };
   },
 });
 
@@ -69,7 +96,13 @@ export const submit = mutation({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    const checkpoint = args.checkpointId
+      ? await ctx.db.get(args.checkpointId)
+      : null;
     return await ctx.db.insert("reportSubmissions", {
+      clientId: checkpoint?.clientId ?? user?.clientId,
+      siteId: checkpoint?.siteId,
       type: args.type,
       title: args.title,
       summary: args.summary,

@@ -64,9 +64,14 @@ export const listForApi = query({
           name: checkpoint.name,
           code: checkpoint.code,
           location: "",
+          siteId: checkpoint.siteId,
+          clientId: checkpoint.clientId,
           latitude: checkpoint.latitude,
           longitude: checkpoint.longitude,
           radiusMeters: checkpoint.radiusMeters,
+          expectedIntervalMinutes: checkpoint.expectedIntervalMinutes,
+          scheduledTimeIn: checkpoint.scheduledTimeIn,
+          scheduledTimeOut: checkpoint.scheduledTimeOut,
           active: checkpoint.active,
           totalScans: checkpointScans.length,
           lastScan: latestScan
@@ -79,34 +84,59 @@ export const listForApi = query({
 
 const cpShape = (cp: any, site?: any) => ({
   id: cp.legacyId ?? cp._id,
-  name: cp.name, code: cp.code, latitude: cp.latitude, longitude: cp.longitude,
-  radiusMeters: cp.radiusMeters, expectedIntervalMinutes: cp.expectedIntervalMinutes,
-  scheduledTimeIn: cp.scheduledTimeIn, scheduledTimeOut: cp.scheduledTimeOut,
-  active: cp.active, siteId: cp.siteId, clientId: cp.clientId,
-  siteName: site?.name ?? null, createdAt: new Date(cp.createdAt).toISOString(),
+  name: cp.name,
+  code: cp.code,
+  latitude: cp.latitude,
+  longitude: cp.longitude,
+  radiusMeters: cp.radiusMeters,
+  expectedIntervalMinutes: cp.expectedIntervalMinutes,
+  scheduledTimeIn: cp.scheduledTimeIn,
+  scheduledTimeOut: cp.scheduledTimeOut,
+  active: cp.active,
+  siteId: cp.siteId,
+  clientId: cp.clientId,
+  siteName: site?.name ?? null,
+  createdAt: new Date(cp.createdAt).toISOString(),
 });
 
 export const create = mutation({
   args: {
-    name: v.string(), code: v.string(), latitude: v.number(), longitude: v.number(),
-    radiusMeters: v.number(), expectedIntervalMinutes: v.number(),
-    scheduledTimeIn: v.string(), scheduledTimeOut: v.string(),
-    active: v.boolean(), siteId: v.optional(v.id("sites")),
+    name: v.string(),
+    code: v.string(),
+    latitude: v.number(),
+    longitude: v.number(),
+    radiusMeters: v.number(),
+    expectedIntervalMinutes: v.number(),
+    scheduledTimeIn: v.string(),
+    scheduledTimeOut: v.string(),
+    active: v.boolean(),
+    siteId: v.optional(v.id("sites")),
     clientId: v.optional(v.id("clients")),
   },
   handler: async (ctx, args) => {
-    const id = await ctx.db.insert("checkpoints", { ...args, createdAt: Date.now() });
-    return cpShape({ ...args, _id: id, createdAt: Date.now() });
+    const site = args.siteId ? await ctx.db.get(args.siteId) : null;
+    const createdAt = Date.now();
+    const value = {
+      ...args,
+      clientId: args.clientId ?? site?.clientId,
+      createdAt,
+    };
+    const id = await ctx.db.insert("checkpoints", value);
+    return cpShape({ ...value, _id: id });
   },
 });
 
 export const update = mutation({
   args: {
-    checkpointId: v.id("checkpoints"), name: v.optional(v.string()),
-    code: v.optional(v.string()), latitude: v.optional(v.number()),
-    longitude: v.optional(v.number()), radiusMeters: v.optional(v.number()),
+    checkpointId: v.id("checkpoints"),
+    name: v.optional(v.string()),
+    code: v.optional(v.string()),
+    latitude: v.optional(v.number()),
+    longitude: v.optional(v.number()),
+    radiusMeters: v.optional(v.number()),
     expectedIntervalMinutes: v.optional(v.number()),
-    scheduledTimeIn: v.optional(v.string()), scheduledTimeOut: v.optional(v.string()),
+    scheduledTimeIn: v.optional(v.string()),
+    scheduledTimeOut: v.optional(v.string()),
     active: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
@@ -139,6 +169,8 @@ export const resolveId = query({
     }
 
     const checkpoints = await ctx.db.query("checkpoints").collect();
-    return checkpoints.find((checkpoint) => checkpoint._id === args.id)?._id ?? null;
+    return (
+      checkpoints.find((checkpoint) => checkpoint._id === args.id)?._id ?? null
+    );
   },
 });

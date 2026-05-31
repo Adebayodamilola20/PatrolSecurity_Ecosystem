@@ -22,7 +22,9 @@ export const list = query({
     }
 
     if (args.status) {
-      incidents = incidents.filter((incident) => incident.status === args.status);
+      incidents = incidents.filter(
+        (incident) => incident.status === args.status,
+      );
     }
 
     return incidents;
@@ -30,24 +32,42 @@ export const list = query({
 });
 
 export const listForApi = query({
-  args: { status: v.optional(v.string()), officerId: v.optional(v.id("users")), severity: v.optional(v.string()), clientId: v.optional(v.id("clients")) },
+  args: {
+    status: v.optional(v.string()),
+    officerId: v.optional(v.id("users")),
+    severity: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
+  },
   handler: async (ctx, args) => {
     let incidents = await ctx.db.query("incidents").order("desc").collect();
-    if (args.status) incidents = incidents.filter(i => i.status === args.status);
-    if (args.officerId) incidents = incidents.filter(i => i.officerId === args.officerId);
-    if (args.severity) incidents = incidents.filter(i => i.severity === args.severity);
+    if (args.status)
+      incidents = incidents.filter((i) => i.status === args.status);
+    if (args.officerId)
+      incidents = incidents.filter((i) => i.officerId === args.officerId);
+    if (args.severity)
+      incidents = incidents.filter((i) => i.severity === args.severity);
     if (args.clientId) {
       const cp = await ctx.db.query("checkpoints").collect();
-      const cpIds = new Set(cp.filter(c => c.clientId === args.clientId).map(c => c._id));
-      incidents = incidents.filter(i => cpIds.has(i.checkpointId));
+      const cpIds = new Set(
+        cp.filter((c) => c.clientId === args.clientId).map((c) => c._id),
+      );
+      incidents = incidents.filter(
+        (i) =>
+          i.clientId === args.clientId ||
+          (i.checkpointId && cpIds.has(i.checkpointId)),
+      );
     }
     const users = await ctx.db.query("users").collect();
-    return incidents.map(i => ({
-      id: i.legacyId ?? i._id, title: i.title, description: i.description,
-      severity: i.severity, status: i.status,
+    return incidents.map((i) => ({
+      id: i.legacyId ?? i._id,
+      title: i.title,
+      description: i.description,
+      severity: i.severity,
+      status: i.status,
       officerId: i.officerId,
-      officerName: users.find(u => u._id === i.officerId)?.name ?? "",
-      checkpointId: i.checkpointId, reportedAt: new Date(i.reportedAt).toISOString(),
+      officerName: users.find((u) => u._id === i.officerId)?.name ?? "",
+      checkpointId: i.checkpointId,
+      reportedAt: new Date(i.reportedAt).toISOString(),
       resolvedAt: i.resolvedAt ? new Date(i.resolvedAt).toISOString() : null,
     }));
   },
@@ -67,15 +87,29 @@ export const missedPatrols = query({
   args: { clientId: v.optional(v.id("clients")) },
   handler: async (ctx, args) => {
     let checkpoints = await ctx.db.query("checkpoints").collect();
-    if (args.clientId) checkpoints = checkpoints.filter(c => c.clientId === args.clientId);
+    if (args.clientId)
+      checkpoints = checkpoints.filter((c) => c.clientId === args.clientId);
     const now = Date.now();
     const sixHours = 6 * 60 * 60 * 1000;
     const scans = await ctx.db.query("scans").order("desc").collect();
-    return checkpoints.filter(c => c.active).map(c => {
-      const lastScan = scans.find(s => s.checkpointId === c._id);
-      const elapsed = lastScan ? now - lastScan.scannedAt : Infinity;
-      return { checkpointId: c.legacyId ?? c._id, checkpointName: c.name, lastScan: lastScan ? new Date(lastScan.scannedAt).toISOString() : null, missed: elapsed > c.expectedIntervalMinutes * 60 * 1000, minutesOverdue: Math.round((elapsed - c.expectedIntervalMinutes * 60 * 1000) / 60000) };
-    }).filter(c => c.missed);
+    return checkpoints
+      .filter((c) => c.active)
+      .map((c) => {
+        const lastScan = scans.find((s) => s.checkpointId === c._id);
+        const elapsed = lastScan ? now - lastScan.scannedAt : Infinity;
+        return {
+          checkpointId: c.legacyId ?? c._id,
+          checkpointName: c.name,
+          lastScan: lastScan
+            ? new Date(lastScan.scannedAt).toISOString()
+            : null,
+          missed: elapsed > c.expectedIntervalMinutes * 60 * 1000,
+          minutesOverdue: Math.round(
+            (elapsed - c.expectedIntervalMinutes * 60 * 1000) / 60000,
+          ),
+        };
+      })
+      .filter((c) => c.missed);
   },
 });
 
@@ -95,7 +129,13 @@ export const create = mutation({
     ),
   },
   handler: async (ctx, args) => {
+    const officer = await ctx.db.get(args.officerId);
+    const checkpoint = args.checkpointId
+      ? await ctx.db.get(args.checkpointId)
+      : null;
     return await ctx.db.insert("incidents", {
+      clientId: checkpoint?.clientId ?? officer?.clientId,
+      siteId: checkpoint?.siteId,
       officerId: args.officerId,
       checkpointId: args.checkpointId,
       title: args.title,

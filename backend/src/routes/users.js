@@ -120,22 +120,23 @@ router.get('/:id', async (req, res) => {
     return res.status(403).json({ message: 'Access denied' })
   }
 
-  const shifts = await db.all(`
-    SELECT id, clockIn, clockOut, status, createdAt, scheduledStart, scheduledEnd
-    FROM shifts
-    WHERE userId = ?
-    ORDER BY createdAt DESC
-    LIMIT 20
-  `, [req.params.id])
-
-  const scans = await db.all(`
-    SELECT s.*, c.name as checkpointName, c.code as checkpointCode, c.active as checkpointActive
-    FROM scans s
-    JOIN checkpoints c ON s.checkpointId = c.id
-    WHERE s.officerId = ?
-    ORDER BY s.receivedAt DESC
-    LIMIT 20
-  `, [req.params.id])
+  const [shifts, scans] = await Promise.all([
+    db.all(`
+      SELECT id, clockIn, clockOut, status, createdAt, scheduledStart, scheduledEnd
+      FROM shifts
+      WHERE userId = ?
+      ORDER BY createdAt DESC
+      LIMIT 20
+    `, [req.params.id]),
+    db.all(`
+      SELECT s.*, c.name as checkpointName, c.code as checkpointCode, c.active as checkpointActive
+      FROM scans s
+      JOIN checkpoints c ON s.checkpointId = c.id
+      WHERE s.officerId = ?
+      ORDER BY s.receivedAt DESC
+      LIMIT 20
+    `, [req.params.id]),
+  ])
 
   res.json({
     ...normalizeUser(user),

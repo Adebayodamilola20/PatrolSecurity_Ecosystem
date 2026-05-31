@@ -6,6 +6,18 @@ import { fileURLToPath } from 'url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DATABASE_URL = process.env.DATABASE_URL
 
+function isLocalConnection(connectionString) {
+  return connectionString.includes('localhost') || connectionString.includes('127.0.0.1')
+}
+
+function getPgSslConfig(connectionString) {
+  if (isLocalConnection(connectionString)) {
+    return false
+  }
+
+  return { rejectUnauthorized: true }
+}
+
 function convertParams(sql, params) {
   let idx = 0
   const converted = sql.replace(/\?/g, () => `$${++idx}`)
@@ -38,7 +50,7 @@ function createSqliteDb() {
 function createPgDb(connectionString) {
   const pool = new pg.Pool({
     connectionString,
-    ssl: connectionString.includes('localhost') || connectionString.includes('127.0.0.1') ? false : { rejectUnauthorized: false }
+    ssl: getPgSslConfig(connectionString),
   })
   pool.on('error', (err) => console.error('[PG] Pool error:', err.message))
   return {
@@ -455,6 +467,8 @@ const pgSchema = `
 async function initDb() {
   if (db.type === 'sqlite') {
     db.exec(sqliteSchema)
+    try { db.exec("CREATE INDEX IF NOT EXISTS idx_scans_officerId ON scans(officerId)"); } catch {}
+    try { db.exec("CREATE INDEX IF NOT EXISTS idx_scans_receivedAt ON scans(receivedAt)"); } catch {}
     try { db.exec("ALTER TABLE shifts ADD COLUMN clockInPhoto TEXT DEFAULT ''"); } catch {}
     try { db.exec("ALTER TABLE shifts ADD COLUMN clockInLatitude REAL"); } catch {}
     try { db.exec("ALTER TABLE shifts ADD COLUMN clockInLongitude REAL"); } catch {}
@@ -884,6 +898,8 @@ async function initDb() {
     } catch {}
   } else {
     await db.exec(pgSchema)
+    try { await db.exec("CREATE INDEX IF NOT EXISTS idx_scans_officerId ON scans(officerId)"); } catch (e) { console.log('[PG] Create idx_scans_officerId:', e.message) }
+    try { await db.exec("CREATE INDEX IF NOT EXISTS idx_scans_receivedAt ON scans(receivedAt)"); } catch (e) { console.log('[PG] Create idx_scans_receivedAt:', e.message) }
     try { await db.exec("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check"); } catch (e) { console.log('[PG] Drop constraint:', e.message) }
     try { await db.exec("UPDATE users SET role = 'guard' WHERE role = 'officer'"); } catch (e) { console.log('[PG] Update officer->guard:', e.message) }
     try { await db.exec("UPDATE users SET role = 'main_account' WHERE role IN ('client_main_account', 'client-main-account', 'main-account')"); } catch (e) { console.log('[PG] Update legacy roles:', e.message) }

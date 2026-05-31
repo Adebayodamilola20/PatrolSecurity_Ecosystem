@@ -42,6 +42,8 @@ function emitAppEvent(name: string, detail?: Record<string, unknown>) {
   window.dispatchEvent(new CustomEvent(name, { detail }))
 }
 
+const REQUEST_TIMEOUT = 30_000
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     const error = new Error('You have a poor network connection or you are offline. Please try again.')
@@ -56,18 +58,26 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     headers['Content-Type'] = 'application/json'
   }
 
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
+
   let res: Response
   try {
     res = await fetch(`${API_BASE}${path}`, {
       headers: { ...headers, ...options?.headers as Record<string, string> },
+      signal: controller.signal,
       ...options,
     })
   } catch (cause) {
-    const details = cause instanceof Error ? ` (${cause.message})` : ''
+    clearTimeout(timeout)
+    const isTimeout = cause instanceof DOMException && cause.name === 'AbortError'
+    const details = isTimeout ? ' (request timed out)' : cause instanceof Error ? ` (${cause.message})` : ''
     const error = new Error(`The request could not reach the API server${details}. Please try again.`)
     emitAppEvent('app:request-error', { message: error.message, kind: 'network' })
     throw error
   }
+
+  clearTimeout(timeout)
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }))
@@ -152,6 +162,11 @@ export const api = {
     updateStatus: (id: string, status: string) =>
       request<any>(`/incidents/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
     missedPatrols: () => request<any[]>('/incidents/missed-patrols'),
+  },
+  missedPatrols: {
+    list: (params?: Record<string, string>) =>
+      request<any[]>(`/missed-patrols?${new URLSearchParams(params || {})}`),
+    checkNow: () => request<any>('/missed-patrols/check', { method: 'POST' }),
   },
   timesheets: {
     list: (params?: Record<string, string>) =>

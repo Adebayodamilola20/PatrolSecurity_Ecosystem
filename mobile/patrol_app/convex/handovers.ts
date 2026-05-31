@@ -7,19 +7,33 @@ export const listAll = query({
     let handovers = await ctx.db.query("handovers").order("desc").collect();
     if (args.clientId) {
       const clientUsers = await ctx.db.query("users").collect();
-      const clientUserIds = new Set(clientUsers.filter(u => u.clientId === args.clientId).map(u => u._id));
-      handovers = handovers.filter(h => clientUserIds.has(h.fromUserId) || (h.toUserId && clientUserIds.has(h.toUserId)));
+      const clientUserIds = new Set(
+        clientUsers
+          .filter((u) => u.clientId === args.clientId)
+          .map((u) => u._id),
+      );
+      handovers = handovers.filter(
+        (h) =>
+          h.clientId === args.clientId ||
+          clientUserIds.has(h.fromUserId) ||
+          (h.toUserId && clientUserIds.has(h.toUserId)),
+      );
     }
     const users = await ctx.db.query("users").collect();
     const checkpoints = await ctx.db.query("checkpoints").collect();
-    return handovers.map(h => ({
-      id: h.legacyId ?? h._id, summary: h.summary, status: h.status,
-      checkpointName: checkpoints.find(c => c._id === h.checkpointId)?.name ?? null,
+    return handovers.map((h) => ({
+      id: h.legacyId ?? h._id,
+      summary: h.summary,
+      status: h.status,
+      checkpointName:
+        checkpoints.find((c) => c._id === h.checkpointId)?.name ?? null,
       siteLabel: h.siteLabel,
-      fromUserName: users.find(u => u._id === h.fromUserId)?.name ?? null,
-      toUserName: users.find(u => u._id === h.toUserId)?.name ?? null,
-      openIssues: h.openIssues, equipmentStatus: h.equipmentStatus,
-      photoUrl: h.photoUrl || null, createdAt: new Date(h.createdAt).toISOString(),
+      fromUserName: users.find((u) => u._id === h.fromUserId)?.name ?? null,
+      toUserName: users.find((u) => u._id === h.toUserId)?.name ?? null,
+      openIssues: h.openIssues,
+      equipmentStatus: h.equipmentStatus,
+      photoUrl: h.photoUrl || null,
+      createdAt: new Date(h.createdAt).toISOString(),
       acceptedAt: h.acceptedAt ? new Date(h.acceptedAt).toISOString() : null,
     }));
   },
@@ -53,8 +67,9 @@ export const listPendingForUser = query({
         summary: handover.summary,
         status: handover.status,
         checkpointName:
-          checkpoints.find((checkpoint) => checkpoint._id === handover.checkpointId)
-            ?.name ?? null,
+          checkpoints.find(
+            (checkpoint) => checkpoint._id === handover.checkpointId,
+          )?.name ?? null,
         siteLabel: handover.siteLabel,
         fromUserName:
           users.find((user) => user._id === handover.fromUserId)?.name ?? null,
@@ -85,8 +100,14 @@ export const create = mutation({
         q.eq("userId", args.userId).eq("status", "active"),
       )
       .first();
+    const user = await ctx.db.get(args.userId);
+    const checkpoint = args.checkpointId
+      ? await ctx.db.get(args.checkpointId)
+      : null;
     const now = Date.now();
     const id = await ctx.db.insert("handovers", {
+      clientId: checkpoint?.clientId ?? activeShift?.clientId ?? user?.clientId,
+      siteId: checkpoint?.siteId ?? activeShift?.siteId,
       shiftId: activeShift?._id,
       checkpointId: args.checkpointId,
       siteLabel: args.siteLabel ?? activeShift?.siteLabel ?? "",
@@ -99,8 +120,6 @@ export const create = mutation({
       acceptedNote: "",
       createdAt: now,
     });
-    const user = await ctx.db.get(args.userId);
-    const checkpoint = args.checkpointId ? await ctx.db.get(args.checkpointId) : null;
     return {
       id,
       summary: args.summary,
@@ -144,7 +163,8 @@ export const accept = mutation({
           checkpointName: checkpoint?.name ?? null,
           siteLabel: handover.siteLabel,
           fromUserName:
-            users.find((user) => user._id === handover.fromUserId)?.name ?? null,
+            users.find((user) => user._id === handover.fromUserId)?.name ??
+            null,
           toUserName:
             users.find((user) => user._id === args.userId)?.name ?? null,
           openIssues: handover.openIssues,
@@ -161,8 +181,8 @@ export const resolveId = query({
   handler: async (ctx, args) => {
     const all = await ctx.db.query("handovers").collect();
     return (
-      all.find((item) => item.legacyId === args.id || item._id === args.id)?._id ??
-      null
+      all.find((item) => item.legacyId === args.id || item._id === args.id)
+        ?._id ?? null
     );
   },
 });

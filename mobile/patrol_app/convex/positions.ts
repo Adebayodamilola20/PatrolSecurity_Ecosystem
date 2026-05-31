@@ -12,7 +12,14 @@ export const record = mutation({
     capturedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    const assignment = await ctx.db
+      .query("userSiteAssignments")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .first();
     await ctx.db.insert("officerPositions", {
+      clientId: user?.clientId,
+      siteId: assignment?.siteId,
       userId: args.userId,
       latitude: args.latitude,
       longitude: args.longitude,

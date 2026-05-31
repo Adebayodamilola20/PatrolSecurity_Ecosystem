@@ -185,3 +185,91 @@ export const sendEmergencyAlert = action({
     };
   },
 });
+
+export const sendMissedPatrolAlert = action({
+  args: {
+    alertId: v.id("missedPatrolAlerts"),
+    checkpointName: v.string(),
+    siteName: v.string(),
+    lastScanAt: v.union(v.string(), v.null()),
+    dueAt: v.string(),
+    detectedAt: v.string(),
+    expectedIntervalMinutes: v.number(),
+    gracePeriodMinutes: v.number(),
+    emailRecipients: v.array(v.string()),
+    phoneRecipients: v.array(v.string()),
+  },
+  handler: async (_ctx, args) => {
+    const subject = `Missed patrol alert: ${args.checkpointName}`;
+    const textLines = [
+      "Missed patrol alert.",
+      `Checkpoint: ${args.checkpointName}`,
+      `Site: ${args.siteName || "Unknown site"}`,
+      `Last scan: ${args.lastScanAt || "No previous scan"}`,
+      `Due at: ${args.dueAt}`,
+      `Detected at: ${args.detectedAt}`,
+      `Expected interval: ${args.expectedIntervalMinutes} minutes`,
+      `Grace period: ${args.gracePeriodMinutes} minutes`,
+      `Alert ID: ${args.alertId}`,
+    ];
+    const text = textLines.join("\n");
+    const html = `
+      <div>
+        <h2>Missed patrol alert</h2>
+        <p><strong>Checkpoint:</strong> ${args.checkpointName}</p>
+        <p><strong>Site:</strong> ${args.siteName || "Unknown site"}</p>
+        <p><strong>Last scan:</strong> ${args.lastScanAt || "No previous scan"}</p>
+        <p><strong>Due at:</strong> ${args.dueAt}</p>
+        <p><strong>Detected at:</strong> ${args.detectedAt}</p>
+        <p><strong>Expected interval:</strong> ${args.expectedIntervalMinutes} minutes</p>
+        <p><strong>Grace period:</strong> ${args.gracePeriodMinutes} minutes</p>
+        <p><strong>Alert ID:</strong> ${args.alertId}</p>
+      </div>
+    `;
+
+    const emailTasks = args.emailRecipients.map((recipient) =>
+      sendEmail({ recipient, subject, html, text }),
+    );
+    const smsTasks = args.phoneRecipients.map((recipient) =>
+      sendSms({ recipient, message: text }),
+    );
+
+    const deliveries = await Promise.all(
+      [...emailTasks, ...smsTasks].map((task, index) =>
+        task.catch((error) => {
+          const emailCount = args.emailRecipients.length;
+          const recipient =
+            index < emailCount
+              ? args.emailRecipients[index]
+              : args.phoneRecipients[index - emailCount];
+          return {
+            provider: index < emailCount ? "resend" : "termii",
+            recipient,
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          } satisfies DeliveryResult;
+        }),
+      ),
+    );
+
+    const succeeded = deliveries.filter((item) => item.success);
+    const failed = deliveries.filter((item) => !item.success);
+
+    return {
+      status:
+        deliveries.length === 0
+          ? "no_recipients_configured"
+          : failed.length === 0
+            ? "delivered"
+            : succeeded.length === 0
+              ? "failed"
+              : "partial_failure",
+      deliveries,
+      summary: {
+        attempted: deliveries.length,
+        delivered: succeeded.length,
+        failed: failed.length,
+      },
+    };
+  },
+});

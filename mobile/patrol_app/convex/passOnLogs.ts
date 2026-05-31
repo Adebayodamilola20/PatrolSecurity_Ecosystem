@@ -17,7 +17,9 @@ export const listForUser = query({
     const checkpoints = await ctx.db.query("checkpoints").collect();
     const userCheckpointIds = new Set(
       checkpoints
-        .filter((checkpoint) => checkpoint.siteId && siteIds.has(checkpoint.siteId))
+        .filter(
+          (checkpoint) => checkpoint.siteId && siteIds.has(checkpoint.siteId),
+        )
         .map((checkpoint) => checkpoint._id),
     );
     const logs = await ctx.db.query("passOnLogs").order("desc").collect();
@@ -28,7 +30,9 @@ export const listForUser = query({
         if (user.role === "admin") return true;
         if (user.role === "main_account") {
           if (!user.clientId) return false;
-          const checkpoint = checkpoints.find((item) => item._id === log.checkpointId);
+          const checkpoint = checkpoints.find(
+            (item) => item._id === log.checkpointId,
+          );
           return checkpoint?.clientId === user.clientId;
         }
         return (
@@ -46,7 +50,8 @@ export const listForUser = query({
         checkpointId: log.checkpointId ?? null,
         requiresAcknowledgement: log.requiresAcknowledgement,
         createdBy: log.createdBy,
-        createdByName: users.find((item) => item._id === log.createdBy)?.name ?? "",
+        createdByName:
+          users.find((item) => item._id === log.createdBy)?.name ?? "",
         active: log.active,
         createdAt: new Date(log.createdAt).toISOString(),
       }));
@@ -75,7 +80,9 @@ export const listPendingForUser = query({
     const siteIds = new Set(assignments.map((assignment) => assignment.siteId));
     const userCheckpointIds = new Set(
       checkpoints
-        .filter((checkpoint) => checkpoint.siteId && siteIds.has(checkpoint.siteId))
+        .filter(
+          (checkpoint) => checkpoint.siteId && siteIds.has(checkpoint.siteId),
+        )
         .map((checkpoint) => checkpoint._id),
     );
     return available
@@ -97,7 +104,8 @@ export const listPendingForUser = query({
         checkpointId: log.checkpointId ?? null,
         requiresAcknowledgement: log.requiresAcknowledgement,
         createdBy: log.createdBy,
-        createdByName: users.find((item) => item._id === log.createdBy)?.name ?? "",
+        createdByName:
+          users.find((item) => item._id === log.createdBy)?.name ?? "",
         acknowledged: false,
         active: log.active,
         createdAt: new Date(log.createdAt).toISOString(),
@@ -116,7 +124,13 @@ export const create = mutation({
     createdBy: v.id("users"),
   },
   handler: async (ctx, args) => {
+    const creator = await ctx.db.get(args.createdBy);
+    const checkpoint = args.checkpointId
+      ? await ctx.db.get(args.checkpointId)
+      : null;
     const id = await ctx.db.insert("passOnLogs", {
+      clientId: checkpoint?.clientId ?? creator?.clientId,
+      siteId: checkpoint?.siteId,
       title: args.title,
       instruction: args.instruction,
       priority: args.priority ?? "normal",
@@ -127,7 +141,6 @@ export const create = mutation({
       active: true,
       createdAt: Date.now(),
     });
-    const creator = await ctx.db.get(args.createdBy);
     return {
       id,
       title: args.title,
@@ -167,7 +180,10 @@ export const acknowledge = mutation({
       };
     }
     const now = Date.now();
+    const log = await ctx.db.get(args.passOnLogId);
     const id = await ctx.db.insert("passOnLogAcknowledgements", {
+      clientId: log?.clientId,
+      siteId: log?.siteId,
       passOnLogId: args.passOnLogId,
       userId: args.userId,
       acknowledgedAt: now,
@@ -188,8 +204,8 @@ export const resolveId = query({
   handler: async (ctx, args) => {
     const all = await ctx.db.query("passOnLogs").collect();
     return (
-      all.find((item) => item.legacyId === args.id || item._id === args.id)?._id ??
-      null
+      all.find((item) => item.legacyId === args.id || item._id === args.id)
+        ?._id ?? null
     );
   },
 });

@@ -8,10 +8,7 @@ const userRole = v.union(
   v.literal("guard"),
 );
 
-const shiftStatus = v.union(
-  v.literal("active"),
-  v.literal("completed"),
-);
+const shiftStatus = v.union(v.literal("active"), v.literal("completed"));
 
 const incidentSeverity = v.union(
   v.literal("low"),
@@ -47,6 +44,8 @@ export default defineSchema({
     clientId: v.id("clients"),
     name: v.string(),
     location: v.string(),
+    patrolIntervalMinutes: v.optional(v.number()),
+    patrolGracePeriodMinutes: v.optional(v.number()),
     active: v.boolean(),
     createdAt: v.number(),
   })
@@ -72,11 +71,13 @@ export default defineSchema({
 
   userSiteAssignments: defineTable({
     legacyId: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
     userId: v.id("users"),
     siteId: v.id("sites"),
     createdAt: v.number(),
   })
     .index("by_legacyId", ["legacyId"])
+    .index("by_clientId", ["clientId"])
     .index("by_userId", ["userId"])
     .index("by_siteId", ["siteId"])
     .index("by_userId_siteId", ["userId", "siteId"]),
@@ -103,6 +104,8 @@ export default defineSchema({
 
   shifts: defineTable({
     legacyId: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
+    siteId: v.optional(v.id("sites")),
     userId: v.id("users"),
     status: shiftStatus,
     clockIn: v.number(),
@@ -118,12 +121,16 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_legacyId", ["legacyId"])
+    .index("by_clientId", ["clientId"])
+    .index("by_siteId", ["siteId"])
     .index("by_userId", ["userId"])
     .index("by_status", ["status"])
     .index("by_userId_status", ["userId", "status"]),
 
   scans: defineTable({
     legacyId: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
+    siteId: v.optional(v.id("sites")),
     officerId: v.id("users"),
     checkpointId: v.id("checkpoints"),
     scannedAt: v.number(),
@@ -135,13 +142,37 @@ export default defineSchema({
     notes: v.string(),
   })
     .index("by_legacyId", ["legacyId"])
+    .index("by_clientId", ["clientId"])
+    .index("by_siteId", ["siteId"])
     .index("by_officerId", ["officerId"])
     .index("by_checkpointId", ["checkpointId"])
     .index("by_scannedAt", ["scannedAt"])
     .index("by_officerId_scannedAt", ["officerId", "scannedAt"]),
 
+  missedPatrolAlerts: defineTable({
+    checkpointId: v.id("checkpoints"),
+    siteId: v.optional(v.id("sites")),
+    clientId: v.optional(v.id("clients")),
+    checkpointName: v.string(),
+    siteName: v.string(),
+    lastScanAt: v.optional(v.number()),
+    dueAt: v.number(),
+    detectedAt: v.number(),
+    expectedIntervalMinutes: v.number(),
+    gracePeriodMinutes: v.number(),
+    status: v.union(v.literal("open"), v.literal("resolved")),
+    notificationStatus: v.string(),
+    deliveryPayload: v.any(),
+  })
+    .index("by_checkpointId", ["checkpointId"])
+    .index("by_status", ["status"])
+    .index("by_detectedAt", ["detectedAt"])
+    .index("by_checkpointId_status", ["checkpointId", "status"]),
+
   officerPositions: defineTable({
     legacyId: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
+    siteId: v.optional(v.id("sites")),
     userId: v.id("users"),
     latitude: v.number(),
     longitude: v.number(),
@@ -151,11 +182,15 @@ export default defineSchema({
     capturedAt: v.number(),
   })
     .index("by_legacyId", ["legacyId"])
+    .index("by_clientId", ["clientId"])
+    .index("by_siteId", ["siteId"])
     .index("by_userId", ["userId"])
     .index("by_capturedAt", ["capturedAt"]),
 
   incidents: defineTable({
     legacyId: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
+    siteId: v.optional(v.id("sites")),
     officerId: v.id("users"),
     checkpointId: v.optional(v.id("checkpoints")),
     title: v.string(),
@@ -166,12 +201,16 @@ export default defineSchema({
     resolvedAt: v.optional(v.number()),
   })
     .index("by_legacyId", ["legacyId"])
+    .index("by_clientId", ["clientId"])
+    .index("by_siteId", ["siteId"])
     .index("by_officerId", ["officerId"])
     .index("by_checkpointId", ["checkpointId"])
     .index("by_status", ["status"]),
 
   reportSubmissions: defineTable({
     legacyId: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
+    siteId: v.optional(v.id("sites")),
     type: v.string(),
     title: v.string(),
     summary: v.string(),
@@ -185,6 +224,8 @@ export default defineSchema({
     deliveryPayload: v.any(),
   })
     .index("by_legacyId", ["legacyId"])
+    .index("by_clientId", ["clientId"])
+    .index("by_siteId", ["siteId"])
     .index("by_userId", ["userId"])
     .index("by_type", ["type"])
     .index("by_status", ["status"])
@@ -213,6 +254,8 @@ export default defineSchema({
 
   communicationSettings: defineTable({
     legacyId: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
+    siteId: v.optional(v.id("sites")),
     scopeType: v.string(),
     scopeId: v.string(),
     settingKey: v.string(),
@@ -221,11 +264,15 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_legacyId", ["legacyId"])
+    .index("by_clientId", ["clientId"])
+    .index("by_siteId", ["siteId"])
     .index("by_settingKey", ["settingKey"])
     .index("by_scope", ["scopeType", "scopeId"]),
 
   emergencyEvents: defineTable({
     legacyId: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
+    siteId: v.optional(v.id("sites")),
     userId: v.id("users"),
     checkpointId: v.optional(v.id("checkpoints")),
     siteLabel: v.string(),
@@ -238,12 +285,16 @@ export default defineSchema({
     deliveryPayload: v.any(),
   })
     .index("by_legacyId", ["legacyId"])
+    .index("by_clientId", ["clientId"])
+    .index("by_siteId", ["siteId"])
     .index("by_userId", ["userId"])
     .index("by_triggeredAt", ["triggeredAt"])
     .index("by_status", ["status"]),
 
   passOnLogs: defineTable({
     legacyId: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
+    siteId: v.optional(v.id("sites")),
     title: v.string(),
     instruction: v.string(),
     priority: v.string(),
@@ -255,24 +306,32 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_legacyId", ["legacyId"])
+    .index("by_clientId", ["clientId"])
+    .index("by_siteId", ["siteId"])
     .index("by_createdBy", ["createdBy"])
     .index("by_checkpointId", ["checkpointId"])
     .index("by_active", ["active"]),
 
   passOnLogAcknowledgements: defineTable({
     legacyId: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
+    siteId: v.optional(v.id("sites")),
     passOnLogId: v.id("passOnLogs"),
     userId: v.id("users"),
     acknowledgedAt: v.number(),
     note: v.string(),
   })
     .index("by_legacyId", ["legacyId"])
+    .index("by_clientId", ["clientId"])
+    .index("by_siteId", ["siteId"])
     .index("by_passOnLogId", ["passOnLogId"])
     .index("by_userId", ["userId"])
     .index("by_passOnLogId_userId", ["passOnLogId", "userId"]),
 
   postOrders: defineTable({
     legacyId: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
+    siteId: v.optional(v.id("sites")),
     title: v.string(),
     summary: v.string(),
     instructions: v.string(),
@@ -287,12 +346,16 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_legacyId", ["legacyId"])
+    .index("by_clientId", ["clientId"])
+    .index("by_siteId", ["siteId"])
     .index("by_checkpointId", ["checkpointId"])
     .index("by_assignedUserId", ["assignedUserId"])
     .index("by_active", ["active"]),
 
   postOrderCompletions: defineTable({
     legacyId: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
+    siteId: v.optional(v.id("sites")),
     postOrderId: v.id("postOrders"),
     userId: v.id("users"),
     shiftId: v.optional(v.id("shifts")),
@@ -311,6 +374,8 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_legacyId", ["legacyId"])
+    .index("by_clientId", ["clientId"])
+    .index("by_siteId", ["siteId"])
     .index("by_postOrderId", ["postOrderId"])
     .index("by_userId", ["userId"])
     .index("by_shiftId", ["shiftId"])
@@ -318,6 +383,8 @@ export default defineSchema({
 
   handovers: defineTable({
     legacyId: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
+    siteId: v.optional(v.id("sites")),
     shiftId: v.optional(v.id("shifts")),
     checkpointId: v.optional(v.id("checkpoints")),
     siteLabel: v.string(),
@@ -333,6 +400,8 @@ export default defineSchema({
     acceptedAt: v.optional(v.number()),
   })
     .index("by_legacyId", ["legacyId"])
+    .index("by_clientId", ["clientId"])
+    .index("by_siteId", ["siteId"])
     .index("by_fromUserId", ["fromUserId"])
     .index("by_toUserId", ["toUserId"])
     .index("by_status", ["status"])

@@ -35,7 +35,18 @@ router.get('/', async (req, res) => {
 })
 
 router.get('/:id', async (req, res) => {
-  const row = await db.get('SELECT * FROM clients WHERE id = ?', [req.params.id])
+  const role = normalizeRole(req.user?.role)
+  let query = 'SELECT * FROM clients WHERE id = ?'
+  const params = [req.params.id]
+
+  if (role === 'main_account') {
+    query += ' AND id = ?'
+    params.push(req.user.clientId)
+  } else if (role === 'supervisor' || role === 'guard') {
+    return res.status(403).json({ message: 'Access denied' })
+  }
+
+  const row = await db.get(query, params)
   if (!row) return res.status(404).json({ message: 'Client not found' })
   res.json(normalizeClient(row))
 })
