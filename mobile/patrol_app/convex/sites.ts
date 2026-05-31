@@ -1,7 +1,7 @@
-import { mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 
-export const list = query({
+export const list = internalQuery({
   args: { clientId: v.optional(v.id("clients")) },
   handler: async (ctx, args) => {
     let sites = await ctx.db.query("sites").collect();
@@ -18,7 +18,7 @@ export const list = query({
   },
 });
 
-export const getById = query({
+export const getById = internalQuery({
   args: { siteId: v.id("sites") },
   handler: async (ctx, args) => {
     const s = await ctx.db.get(args.siteId);
@@ -33,7 +33,7 @@ export const getById = query({
   },
 });
 
-export const resolveId = query({
+export const resolveId = internalQuery({
   args: { id: v.string() },
   handler: async (ctx, args) => {
     const byLegacyId = await ctx.db
@@ -46,7 +46,7 @@ export const resolveId = query({
   },
 });
 
-export const create = mutation({
+export const create = internalMutation({
   args: {
     name: v.string(),
     location: v.string(),
@@ -61,7 +61,7 @@ export const create = mutation({
   },
 });
 
-export const update = mutation({
+export const update = internalMutation({
   args: {
     siteId: v.id("sites"),
     name: v.optional(v.string()),
@@ -93,7 +93,7 @@ export const update = mutation({
   },
 });
 
-export const updatePatrolSettings = mutation({
+export const updatePatrolSettings = internalMutation({
   args: {
     siteId: v.id("sites"),
     patrolIntervalMinutes: v.optional(v.number()),

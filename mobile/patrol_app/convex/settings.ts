@@ -1,7 +1,7 @@
-import { mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 
-export const list = query({
+export const list = internalQuery({
   args: {},
   handler: async (ctx) => {
     const settings = await ctx.db.query("communicationSettings").order("desc").collect();
@@ -17,7 +17,7 @@ export const list = query({
   },
 });
 
-export const getLatest = query({
+export const getLatest = internalQuery({
   args: {
     settingKey: v.string(),
   },
@@ -31,7 +31,7 @@ export const getLatest = query({
   },
 });
 
-export const create = mutation({
+export const create = internalMutation({
   args: {
     settingKey: v.string(),
     settingValue: v.string(),

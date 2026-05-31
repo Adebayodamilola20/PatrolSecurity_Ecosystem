@@ -1,4 +1,4 @@
-import { mutation } from "./_generated/server";
+import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 
 async function byLegacyId(ctx: any, table: string, legacyId?: string | null) {
@@ -28,7 +28,7 @@ async function upsert(
   return await ctx.db.insert(table, { legacyId, ...value });
 }
 
-export const upsertClient = mutation({
+export const upsertClient = internalMutation({
   args: { record: v.any() },
   handler: async (ctx, { record }) => {
     const existing =
@@ -52,7 +52,7 @@ export const upsertClient = mutation({
   },
 });
 
-export const upsertSite = mutation({
+export const upsertSite = internalMutation({
   args: { record: v.any() },
   handler: async (ctx, { record }) => {
     const existing = await byLegacyId(ctx, "sites", record.id);
@@ -66,7 +66,7 @@ export const upsertSite = mutation({
   },
 });
 
-export const upsertUser = mutation({
+export const upsertUser = internalMutation({
   args: { record: v.any() },
   handler: async (ctx, { record }) => {
     const existing =
@@ -98,14 +98,14 @@ export const upsertUser = mutation({
   },
 });
 
-export const upsertUserSiteAssignment = mutation({
+export const upsertUserSiteAssignment = internalMutation({
   args: { record: v.any() },
   handler: async (ctx, { record }) => {
     const userId = await resolveId(ctx, "users", record.userId);
     const siteId = await resolveId(ctx, "sites", record.siteId);
-    const site = await ctx.db.get(siteId);
+    const site = siteId ? await ctx.db.get(siteId) : null;
     return await upsert(ctx, "userSiteAssignments", record.id, {
-      clientId: site?.clientId,
+      clientId: (site as { clientId?: unknown } | null)?.clientId ?? undefined,
       userId,
       siteId,
       createdAt: record.createdAt ? Date.parse(record.createdAt) : Date.now(),
@@ -113,7 +113,7 @@ export const upsertUserSiteAssignment = mutation({
   },
 });
 
-export const upsertCheckpoint = mutation({
+export const upsertCheckpoint = internalMutation({
   args: { record: v.any() },
   handler: async (ctx, { record }) => {
     const existing =
@@ -149,7 +149,7 @@ export const upsertCheckpoint = mutation({
   },
 });
 
-export const upsertShift = mutation({
+export const upsertShift = internalMutation({
   args: { record: v.any() },
   handler: async (ctx, { record }) =>
     await upsert(ctx, "shifts", record.id, {
@@ -173,7 +173,7 @@ export const upsertShift = mutation({
     }),
 });
 
-export const upsertScan = mutation({
+export const upsertScan = internalMutation({
   args: { record: v.any() },
   handler: async (ctx, { record }) =>
     await upsert(ctx, "scans", record.id, {
@@ -191,7 +191,7 @@ export const upsertScan = mutation({
     }),
 });
 
-export const upsertIncident = mutation({
+export const upsertIncident = internalMutation({
   args: { record: v.any() },
   handler: async (ctx, { record }) =>
     await upsert(ctx, "incidents", record.id, {
@@ -208,7 +208,7 @@ export const upsertIncident = mutation({
     }),
 });
 
-export const upsertReportSubmission = mutation({
+export const upsertReportSubmission = internalMutation({
   args: { record: v.any() },
   handler: async (ctx, { record }) => {
     let details = {};
@@ -237,7 +237,7 @@ export const upsertReportSubmission = mutation({
   },
 });
 
-export const upsertExportFile = mutation({
+export const upsertExportFile = internalMutation({
   args: { record: v.any() },
   handler: async (ctx, { record }) => {
     let totals = {};
@@ -266,7 +266,7 @@ export const upsertExportFile = mutation({
   },
 });
 
-export const upsertCommunicationSetting = mutation({
+export const upsertCommunicationSetting = internalMutation({
   args: { record: v.any() },
   handler: async (ctx, { record }) =>
     await upsert(ctx, "communicationSettings", record.id, {
@@ -281,7 +281,7 @@ export const upsertCommunicationSetting = mutation({
     }),
 });
 
-export const upsertEmergencyEvent = mutation({
+export const upsertEmergencyEvent = internalMutation({
   args: { record: v.any() },
   handler: async (ctx, { record }) => {
     let emailRecipients = [];
@@ -315,7 +315,7 @@ export const upsertEmergencyEvent = mutation({
   },
 });
 
-export const upsertPassOnLog = mutation({
+export const upsertPassOnLog = internalMutation({
   args: { record: v.any() },
   handler: async (ctx, { record }) =>
     await upsert(ctx, "passOnLogs", record.id, {
@@ -333,7 +333,7 @@ export const upsertPassOnLog = mutation({
     }),
 });
 
-export const upsertPassOnLogAcknowledgement = mutation({
+export const upsertPassOnLogAcknowledgement = internalMutation({
   args: { record: v.any() },
   handler: async (ctx, { record }) =>
     await upsert(ctx, "passOnLogAcknowledgements", record.id, {
@@ -346,7 +346,7 @@ export const upsertPassOnLogAcknowledgement = mutation({
     }),
 });
 
-export const upsertPostOrder = mutation({
+export const upsertPostOrder = internalMutation({
   args: { record: v.any() },
   handler: async (ctx, { record }) =>
     await upsert(ctx, "postOrders", record.id, {
@@ -372,7 +372,7 @@ export const upsertPostOrder = mutation({
     }),
 });
 
-export const upsertPostOrderCompletion = mutation({
+export const upsertPostOrderCompletion = internalMutation({
   args: { record: v.any() },
   handler: async (ctx, { record }) =>
     await upsert(ctx, "postOrderCompletions", record.id, {
@@ -405,7 +405,7 @@ export const upsertPostOrderCompletion = mutation({
     }),
 });
 
-export const upsertHandover = mutation({
+export const upsertHandover = internalMutation({
   args: { record: v.any() },
   handler: async (ctx, { record }) =>
     await upsert(ctx, "handovers", record.id, {
@@ -431,7 +431,7 @@ export const upsertHandover = mutation({
     }),
 });
 
-export const upsertOfficerPosition = mutation({
+export const upsertOfficerPosition = internalMutation({
   args: { record: v.any() },
   handler: async (ctx, { record }) =>
     await upsert(ctx, "officerPositions", record.id, {

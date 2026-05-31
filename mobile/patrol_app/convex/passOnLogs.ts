@@ -1,7 +1,7 @@
-import { mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 
-export const listForUser = query({
+export const listForUser = internalQuery({
   args: {
     userId: v.id("users"),
   },
@@ -58,7 +58,7 @@ export const listForUser = query({
   },
 });
 
-export const listPendingForUser = query({
+export const listPendingForUser = internalQuery({
   args: {
     userId: v.id("users"),
   },
@@ -113,7 +113,7 @@ export const listPendingForUser = query({
   },
 });
 
-export const create = mutation({
+export const create = internalMutation({
   args: {
     title: v.string(),
     instruction: v.string(),
@@ -157,7 +157,7 @@ export const create = mutation({
   },
 });
 
-export const acknowledge = mutation({
+export const acknowledge = internalMutation({
   args: {
     passOnLogId: v.id("passOnLogs"),
     userId: v.id("users"),
@@ -199,7 +199,7 @@ export const acknowledge = mutation({
   },
 });
 
-export const resolveId = query({
+export const resolveId = internalQuery({
   args: { id: v.string() },
   handler: async (ctx, args) => {
     const all = await ctx.db.query("passOnLogs").collect();

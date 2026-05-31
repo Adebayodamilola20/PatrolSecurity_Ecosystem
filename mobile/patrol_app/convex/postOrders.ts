@@ -1,7 +1,7 @@
-import { mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 
-export const listAll = query({
+export const listAll = internalQuery({
   args: {
     clientId: v.optional(v.id("clients")),
     active: v.optional(v.boolean()),
@@ -43,14 +43,14 @@ export const listAll = query({
   },
 });
 
-export const create = mutation({
+export const create = internalMutation({
   args: {
     title: v.string(),
     summary: v.string(),
     instructions: v.string(),
     checkpointId: v.optional(v.id("checkpoints")),
     assignedUserId: v.optional(v.id("users")),
-    assignedRole: v.string(),
+    assignedRole: v.union(v.literal("admin"), v.literal("main_account"), v.literal("supervisor"), v.literal("guard")),
     priority: v.string(),
     active: v.boolean(),
     requiresAcknowledgement: v.boolean(),
@@ -72,7 +72,7 @@ export const create = mutation({
   },
 });
 
-export const update = mutation({
+export const update = internalMutation({
   args: {
     orderId: v.id("postOrders"),
     title: v.optional(v.string()),
@@ -91,7 +91,7 @@ export const update = mutation({
   },
 });
 
-export const resolveCompletionId = query({
+export const resolveCompletionId = internalQuery({
   args: { id: v.string() },
   handler: async (ctx, args) => {
     const byLegacyId = await ctx.db
@@ -104,7 +104,7 @@ export const resolveCompletionId = query({
   },
 });
 
-export const listCompletions = query({
+export const listCompletions = internalQuery({
   args: { clientId: v.optional(v.id("clients")) },
   handler: async (ctx, args) => {
     let completions = await ctx.db
@@ -121,7 +121,7 @@ export const listCompletions = query({
         orders
           .filter(
             (o) =>
-              o.clientId === args.clientId || clientCpIds.has(o.checkpointId),
+              o.clientId === args.clientId || (o.checkpointId && clientCpIds.has(o.checkpointId)),
           )
           .map((o) => o._id),
       );
@@ -150,7 +150,7 @@ export const listCompletions = query({
   },
 });
 
-export const reviewCompletion = mutation({
+export const reviewCompletion = internalMutation({
   args: {
     completionId: v.id("postOrderCompletions"),
     reviewerId: v.id("users"),
@@ -168,7 +168,7 @@ export const reviewCompletion = mutation({
   },
 });
 
-export const listForUser = query({
+export const listForUser = internalQuery({
   args: {
     userId: v.id("users"),
   },
@@ -249,7 +249,7 @@ export const listForUser = query({
   },
 });
 
-export const acknowledge = mutation({
+export const acknowledge = internalMutation({
   args: {
     orderId: v.id("postOrders"),
     userId: v.id("users"),
@@ -291,7 +291,7 @@ export const acknowledge = mutation({
   },
 });
 
-export const complete = mutation({
+export const complete = internalMutation({
   args: {
     orderId: v.id("postOrders"),
     userId: v.id("users"),
@@ -339,7 +339,7 @@ export const complete = mutation({
   },
 });
 
-export const resolveId = query({
+export const resolveId = internalQuery({
   args: { id: v.string() },
   handler: async (ctx, args) => {
     const all = await ctx.db.query("postOrders").collect();

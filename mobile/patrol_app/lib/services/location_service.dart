@@ -1,20 +1,49 @@
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 
-class LocationResult {
-  final Position? position;
+class SafeLocationResult {
+  final double latitude;
+  final double longitude;
+  final double accuracyMeters;
+  final DateTime capturedAt;
   final String? error;
+  final double? speed;
+  final double? heading;
 
-  const LocationResult({this.position, this.error});
+  const SafeLocationResult({
+    required this.latitude,
+    required this.longitude,
+    required this.accuracyMeters,
+    required this.capturedAt,
+    this.error,
+    this.speed,
+    this.heading,
+  });
 
-  bool get isSuccess => position != null;
+  bool get isSuccess => error == null;
+  bool get isAccurate => accuracyMeters <= 100.0;
+
+  Map<String, dynamic> toPayload() => {
+    'latitude': latitude,
+    'longitude': longitude,
+    'accuracy': accuracyMeters,
+    'capturedAt': capturedAt.toIso8601String(),
+    if (speed != null) 'speed': speed,
+    if (heading != null) 'heading': heading,
+  };
 }
 
 class LocationService {
-  static Future<LocationResult> getCurrentLocation() async {
+  static const double _maxAccuracyMeters = 100.0;
+
+  static Future<SafeLocationResult> getCurrentLocation() async {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      return const LocationResult(
+      return SafeLocationResult(
+        latitude: 0,
+        longitude: 0,
+        accuracyMeters: double.infinity,
+        capturedAt: DateTime.now(),
         error: 'Phone location is turned off. Enable device location and try again.',
       );
     }
@@ -23,14 +52,22 @@ class LocationService {
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
-        return const LocationResult(
+        return SafeLocationResult(
+          latitude: 0,
+          longitude: 0,
+          accuracyMeters: double.infinity,
+          capturedAt: DateTime.now(),
           error: 'Location permission was denied for this app.',
         );
       }
     }
 
     if (permission == LocationPermission.deniedForever) {
-      return const LocationResult(
+      return SafeLocationResult(
+        latitude: 0,
+        longitude: 0,
+        accuracyMeters: double.infinity,
+        capturedAt: DateTime.now(),
         error: 'Location permission is blocked for this app. Allow location in Android app settings.',
       );
     }
@@ -43,25 +80,76 @@ class LocationService {
           timeLimit: Duration(seconds: 12),
         ),
       );
-      return LocationResult(position: position);
+
+      final accuracy = position.accuracy ?? double.infinity;
+      if (accuracy > _maxAccuracyMeters) {
+        return SafeLocationResult(
+          latitude: 0,
+          longitude: 0,
+          accuracyMeters: accuracy,
+          capturedAt: DateTime.now(),
+          error: 'GPS accuracy is too low (${accuracy.toStringAsFixed(0)}m). Move to an open area and try again.',
+        );
+      }
+
+      return SafeLocationResult(
+        latitude: position.latitude,
+        longitude: position.longitude,
+        accuracyMeters: accuracy,
+        capturedAt: position.timestamp ?? DateTime.now(),
+        speed: position.speed,
+        heading: position.heading,
+      );
     } on TimeoutException {
       final lastKnown = await Geolocator.getLastKnownPosition();
       if (lastKnown != null) {
-        return LocationResult(position: lastKnown);
+        final accuracy = lastKnown.accuracy ?? double.infinity;
+        if (accuracy <= _maxAccuracyMeters) {
+          return SafeLocationResult(
+            latitude: lastKnown.latitude,
+            longitude: lastKnown.longitude,
+            accuracyMeters: accuracy,
+            capturedAt: lastKnown.timestamp ?? DateTime.now(),
+            speed: lastKnown.speed,
+            heading: lastKnown.heading,
+          );
+        }
       }
-      return const LocationResult(
-        error: 'Could not get GPS in time. Move to an open area and try again.',
+      return SafeLocationResult(
+        latitude: 0,
+        longitude: 0,
+        accuracyMeters: double.infinity,
+        capturedAt: DateTime.now(),
+        error: 'Could not get accurate GPS in time. Move to an open area and try again.',
       );
     } on LocationServiceDisabledException {
-      return const LocationResult(
+      return SafeLocationResult(
+        latitude: 0,
+        longitude: 0,
+        accuracyMeters: double.infinity,
+        capturedAt: DateTime.now(),
         error: 'Phone location is turned off. Enable device location and try again.',
       );
     } catch (_) {
       final lastKnown = await Geolocator.getLastKnownPosition();
       if (lastKnown != null) {
-        return LocationResult(position: lastKnown);
+        final accuracy = lastKnown.accuracy ?? double.infinity;
+        if (accuracy <= _maxAccuracyMeters) {
+          return SafeLocationResult(
+            latitude: lastKnown.latitude,
+            longitude: lastKnown.longitude,
+            accuracyMeters: accuracy,
+            capturedAt: lastKnown.timestamp ?? DateTime.now(),
+            speed: lastKnown.speed,
+            heading: lastKnown.heading,
+          );
+        }
       }
-      return const LocationResult(
+      return SafeLocationResult(
+        latitude: 0,
+        longitude: 0,
+        accuracyMeters: double.infinity,
+        capturedAt: DateTime.now(),
         error: 'GPS is unavailable right now. Check app location permission and try again.',
       );
     }

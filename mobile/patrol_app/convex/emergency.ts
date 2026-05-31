@@ -1,7 +1,7 @@
-import { mutation } from "./_generated/server";
+import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 
-export const trigger = mutation({
+export const trigger = internalMutation({
   args: {
     userId: v.id("users"),
     checkpointId: v.optional(v.id("checkpoints")),
@@ -49,7 +49,7 @@ export const trigger = mutation({
   },
 });
 
-export const recordDelivery = mutation({
+export const recordDelivery = internalMutation({
   args: {
     eventId: v.id("emergencyEvents"),
     emailRecipients: v.array(v.string()),

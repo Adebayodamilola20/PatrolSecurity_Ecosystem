@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'utils/theme.dart';
 import 'utils/routes.dart';
+import 'utils/constants.dart';
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
@@ -26,6 +27,14 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (!baseUrl.startsWith('https://')) {
+    throw Exception(
+      'SECURITY: HTTPS is required. Base URL must use https://. '
+      'Current value: $baseUrl',
+    );
+  }
+
   bool loggingOut = false;
   ApiService.onUnauthorized = () {
     if (loggingOut) return;

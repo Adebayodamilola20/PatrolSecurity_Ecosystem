@@ -6,6 +6,7 @@ import '../services/api_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   static const _userStorageKey = 'patrol_user';
+  static const _tokenStorageKey = 'patrol_token';
   static const _storage = FlutterSecureStorage();
 
   User? _user;
@@ -51,14 +52,29 @@ class AuthProvider extends ChangeNotifier {
   Future<void> logout() async {
     await ApiService.logout();
     await _storage.delete(key: _userStorageKey);
+    await _storage.delete(key: _tokenStorageKey);
     _user = null;
     notifyListeners();
   }
 
+  Future<bool> checkTokenExpiry() async {
+    final expired = await ApiService.isTokenExpired();
+    if (expired && _user != null) {
+      await logout();
+      return true;
+    }
+    return false;
+  }
+
   Future<bool> restoreSession() async {
-    final token = await ApiService.getToken();
+    final expired = await ApiService.isTokenExpired();
+    if (expired) {
+      await logout();
+      return false;
+    }
+
     final rawUser = await _storage.read(key: _userStorageKey);
-    if (token == null || rawUser == null || rawUser.isEmpty) {
+    if (rawUser == null || rawUser.isEmpty) {
       _user = null;
       notifyListeners();
       return false;

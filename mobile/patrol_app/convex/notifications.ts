@@ -1,6 +1,6 @@
 "use node";
 
-import { action } from "./_generated/server";
+import { internalAction } from "./_generated/server";
 import { v } from "convex/values";
 
 type DeliveryResult = {
@@ -12,13 +12,28 @@ type DeliveryResult = {
   responseBody?: unknown;
 };
 
-function requireEnv(name: string) {
-  const value = process.env[name]?.trim();
-  if (!value) {
-    throw new Error(`${name} is not configured`);
-  }
-  return value;
+const recentlySent = new Set<string>();
+
+function makeDedupKey(eventId: string, channel: "email" | "sms", recipient: string): string {
+  return `${eventId}:${channel}:${recipient}`;
 }
+
+function markSent(key: string) {
+  recentlySent.add(key);
+  setTimeout(() => recentlySent.delete(key), 30_000);
+}
+
+function isRecentlySent(key: string): boolean {
+  return recentlySent.has(key);
+}
+
+import {
+  getResendApiKey,
+  getResendFromEmail,
+  getTermiiApiKey,
+  getTermiiSenderId,
+  getTermiiBaseUrl,
+} from "./env";
 
 async function sendEmail({
   recipient,
@@ -31,31 +46,46 @@ async function sendEmail({
   html: string;
   text: string;
 }): Promise<DeliveryResult> {
-  const apiKey = requireEnv("RESEND_API_KEY");
-  const from = requireEnv("RESEND_FROM_EMAIL");
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from,
-      to: [recipient],
-      subject,
-      html,
-      text,
-    }),
-  });
-  const body = await response.json().catch(() => null);
-  return {
-    provider: "resend",
-    recipient,
-    success: response.ok,
-    statusCode: response.status,
-    error: response.ok ? undefined : `Resend request failed with ${response.status}`,
-    responseBody: body,
-  };
+  const apiKey = getResendApiKey();
+  const from = getResendFromEmail();
+
+  async function attempt(): Promise<DeliveryResult> {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from,
+        to: [recipient],
+        subject,
+        html,
+        text,
+      }),
+    });
+    const body = await response.json().catch(() => null);
+    return {
+      provider: "resend",
+      recipient,
+      success: response.ok,
+      statusCode: response.status,
+      error: response.ok ? undefined : `Resend request failed with ${response.status}`,
+      responseBody: body,
+    };
+  }
+
+  let result = await attempt();
+  console.log("[EMAIL_DELIVERY]", JSON.stringify(result));
+
+  if (!result.success) {
+    console.log("[EMAIL_RETRY]", JSON.stringify({ recipient, subject, attempt: 1 }));
+    await new Promise((r) => setTimeout(r, 1000));
+    result = await attempt();
+    console.log("[EMAIL_RETRY_RESULT]", JSON.stringify(result));
+  }
+
+  return result;
 }
 
 async function sendSms({
@@ -65,9 +95,9 @@ async function sendSms({
   recipient: string;
   message: string;
 }): Promise<DeliveryResult> {
-  const apiKey = requireEnv("TERMII_API_KEY");
-  const senderId = requireEnv("TERMII_SENDER_ID");
-  const baseUrl = process.env.TERMII_BASE_URL?.trim() || "https://api.ng.termii.com/api";
+  const apiKey = getTermiiApiKey();
+  const senderId = getTermiiSenderId();
+  const baseUrl = getTermiiBaseUrl();
   const response = await fetch(`${baseUrl}/sms/send`, {
     method: "POST",
     headers: {
@@ -83,7 +113,7 @@ async function sendSms({
     }),
   });
   const body = await response.json().catch(() => null);
-  return {
+  const result: DeliveryResult = {
     provider: "termii",
     recipient,
     success: response.ok,
@@ -91,9 +121,11 @@ async function sendSms({
     error: response.ok ? undefined : `Termii request failed with ${response.status}`,
     responseBody: body,
   };
+  console.log("[SMS_DELIVERY]", JSON.stringify(result));
+  return result;
 }
 
-export const sendEmergencyAlert = action({
+export const sendEmergencyAlert = internalAction({
   args: {
     eventId: v.id("emergencyEvents"),
     officerName: v.string(),
@@ -131,20 +163,40 @@ export const sendEmergencyAlert = action({
       </div>
     `;
 
-    const emailTasks = args.emailRecipients.map((recipient) =>
-      sendEmail({
-        recipient,
-        subject,
-        html,
-        text,
-      }),
-    );
-    const smsTasks = args.phoneRecipients.map((recipient) =>
-      sendSms({
-        recipient,
-        message: text,
-      }),
-    );
+    const emailTasks = args.emailRecipients
+      .filter((recipient) => {
+        const key = makeDedupKey(args.eventId, "email", recipient);
+        if (isRecentlySent(key)) {
+          console.log("[DEDUP_SKIP]", JSON.stringify({ eventId: args.eventId, recipient, channel: "email" }));
+          return false;
+        }
+        markSent(key);
+        return true;
+      })
+      .map((recipient) =>
+        sendEmail({
+          recipient,
+          subject,
+          html,
+          text,
+        }),
+      );
+    const smsTasks = args.phoneRecipients
+      .filter((recipient) => {
+        const key = makeDedupKey(args.eventId, "sms", recipient);
+        if (isRecentlySent(key)) {
+          console.log("[DEDUP_SKIP]", JSON.stringify({ eventId: args.eventId, recipient, channel: "sms" }));
+          return false;
+        }
+        markSent(key);
+        return true;
+      })
+      .map((recipient) =>
+        sendSms({
+          recipient,
+          message: text,
+        }),
+      );
 
     const deliveries = await Promise.all(
       [...emailTasks, ...smsTasks].map((task, index) =>
@@ -167,6 +219,13 @@ export const sendEmergencyAlert = action({
     const succeeded = deliveries.filter((item) => item.success);
     const failed = deliveries.filter((item) => !item.success);
 
+    console.log("[EMERGENCY_ALERT_SUMMARY]", JSON.stringify({
+      eventId: args.eventId,
+      attempted: deliveries.length,
+      delivered: succeeded.length,
+      failed: failed.length,
+    }));
+
     return {
       status:
         deliveries.length === 0
@@ -186,7 +245,7 @@ export const sendEmergencyAlert = action({
   },
 });
 
-export const sendMissedPatrolAlert = action({
+export const sendMissedPatrolAlert = internalAction({
   args: {
     alertId: v.id("missedPatrolAlerts"),
     checkpointName: v.string(),
@@ -227,12 +286,32 @@ export const sendMissedPatrolAlert = action({
       </div>
     `;
 
-    const emailTasks = args.emailRecipients.map((recipient) =>
-      sendEmail({ recipient, subject, html, text }),
-    );
-    const smsTasks = args.phoneRecipients.map((recipient) =>
-      sendSms({ recipient, message: text }),
-    );
+    const emailTasks = args.emailRecipients
+      .filter((recipient) => {
+        const key = makeDedupKey(args.alertId, "email", recipient);
+        if (isRecentlySent(key)) {
+          console.log("[DEDUP_SKIP]", JSON.stringify({ alertId: args.alertId, recipient, channel: "email" }));
+          return false;
+        }
+        markSent(key);
+        return true;
+      })
+      .map((recipient) =>
+        sendEmail({ recipient, subject, html, text }),
+      );
+    const smsTasks = args.phoneRecipients
+      .filter((recipient) => {
+        const key = makeDedupKey(args.alertId, "sms", recipient);
+        if (isRecentlySent(key)) {
+          console.log("[DEDUP_SKIP]", JSON.stringify({ alertId: args.alertId, recipient, channel: "sms" }));
+          return false;
+        }
+        markSent(key);
+        return true;
+      })
+      .map((recipient) =>
+        sendSms({ recipient, message: text }),
+      );
 
     const deliveries = await Promise.all(
       [...emailTasks, ...smsTasks].map((task, index) =>
@@ -254,6 +333,13 @@ export const sendMissedPatrolAlert = action({
 
     const succeeded = deliveries.filter((item) => item.success);
     const failed = deliveries.filter((item) => !item.success);
+
+    console.log("[MISSED_PATROL_ALERT_SUMMARY]", JSON.stringify({
+      alertId: args.alertId,
+      attempted: deliveries.length,
+      delivered: succeeded.length,
+      failed: failed.length,
+    }));
 
     return {
       status:

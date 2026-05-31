@@ -10,7 +10,6 @@ function normalizeApiBase(rawUrl: string | undefined) {
     if (url.hostname.endsWith('.onrender.com')) {
       return DEFAULT_API_BASE
     }
-
     if (url.hostname.endsWith('.convex.cloud')) {
       url.hostname = url.hostname.replace(/\.convex\.cloud$/, '.convex.site')
       url.pathname = '/api/v1'
@@ -23,9 +22,7 @@ function normalizeApiBase(rawUrl: string | undefined) {
   }
 }
 
-export const API_BASE = import.meta.env.PROD
-  ? '/api/v1'
-  : normalizeApiBase(import.meta.env.VITE_API_URL)
+export const API_BASE = normalizeApiBase(import.meta.env.VITE_API_URL)
 
 export function apiFileUrl(path: string) {
   if (!path) return ''

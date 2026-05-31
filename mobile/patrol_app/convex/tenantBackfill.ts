@@ -1,7 +1,7 @@
-import { mutation } from "./_generated/server";
+import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 
-export const backfillTenantFields = mutation({
+export const backfillTenantFields = internalMutation({
   args: { dryRun: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
     const dryRun = args.dryRun ?? true;

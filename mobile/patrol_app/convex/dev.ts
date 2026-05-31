@@ -1,8 +1,8 @@
-import { mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 
-export const hasUsers = query({
+export const hasUsers = internalQuery({
   args: {},
   handler: async (ctx) => {
     const users = await ctx.db.query("users").first();
@@ -10,7 +10,7 @@ export const hasUsers = query({
   },
 });
 
-export const seedDefaults = mutation({
+export const seedDefaults = internalMutation({
   args: {
     adminPasswordHash: v.string(),
     clientPasswordHash: v.string(),
@@ -142,7 +142,7 @@ export const seedDefaults = mutation({
   },
 })
 
-export const resetAllPasswords = mutation({
+export const resetAllPasswords = internalMutation({
   args: { passwordHash: v.string() },
   handler: async (ctx, args) => {
     const users = await ctx.db.query("users").collect();
@@ -153,7 +153,7 @@ export const resetAllPasswords = mutation({
   },
 });
 
-export const assignGuardToFirstSite = mutation({
+export const assignGuardToFirstSite = internalMutation({
   args: {
     email: v.string(),
   },
@@ -181,7 +181,7 @@ export const assignGuardToFirstSite = mutation({
   },
 });
 
-export const addMissingSeedUsers = mutation({
+export const addMissingSeedUsers = internalMutation({
   args: { passwordHash: v.string() },
   handler: async (ctx, args) => {
     const existing = await ctx.db.query("users").collect();
@@ -246,22 +246,10 @@ export const addMissingSeedUsers = mutation({
   },
 });
 
-// SECURITY: wipeAll mutation has been removed from production deployment
-// DO NOT expose destructive operations
+// SECURITY: Destructive operations removed from production deployment
+// DO NOT expose destructive operations as public mutations
 
-export const deleteUserByEmail = mutation({
-  args: { email: v.string() },
-  handler: async (ctx, args) => {
-    const user = await ctx.db.query("users").withIndex("by_email", (q) => q.eq("email", args.email)).unique();
-    if (!user) return { deleted: false, reason: "not found" };
-    const assignments = await ctx.db.query("userSiteAssignments").withIndex("by_userId", (q) => q.eq("userId", user._id)).collect();
-    for (const a of assignments) await ctx.db.delete(a._id);
-    await ctx.db.delete(user._id);
-    return { deleted: true };
-  },
-});
-
-export const assignUserToSite = mutation({
+export const assignUserToSite = internalMutation({
   args: { userId: v.id("users"), siteId: v.id("sites") },
   handler: async (ctx, args) => {
     await ctx.db.insert("userSiteAssignments", {
@@ -271,7 +259,7 @@ export const assignUserToSite = mutation({
   },
 });
 
-export const ensureDemoContent = mutation({
+export const ensureDemoContent = internalMutation({
   args: {},
   handler: async (ctx) => {
     const guard = await ctx.db

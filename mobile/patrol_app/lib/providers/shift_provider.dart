@@ -109,13 +109,13 @@ class ShiftProvider extends ChangeNotifier {
     _sendingPosition = true;
     final location = await LocationService.getCurrentLocation();
     try {
-      if (location.position == null) return;
+      if (!location.isSuccess) return;
       await ApiService.updatePosition(
-        latitude: location.position!.latitude,
-        longitude: location.position!.longitude,
-        accuracy: location.position!.accuracy,
-        speed: location.position!.speed,
-        heading: location.position!.heading,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        accuracy: location.accuracyMeters,
+        speed: location.speed,
+        heading: location.heading,
       );
     } finally {
       _sendingPosition = false;
@@ -130,8 +130,8 @@ class ShiftProvider extends ChangeNotifier {
     try {
       final location = await LocationService.getCurrentLocation();
       final data = await ApiService.clockIn(
-        latitude: location.position?.latitude,
-        longitude: location.position?.longitude,
+        latitude: location.isSuccess ? location.latitude : null,
+        longitude: location.isSuccess ? location.longitude : null,
       );
       _applyShiftPayload(data);
       await loadStatus();
@@ -155,8 +155,8 @@ class ShiftProvider extends ChangeNotifier {
     try {
       final location = await LocationService.getCurrentLocation();
       final data = await ApiService.clockOut(
-        latitude: location.position?.latitude,
-        longitude: location.position?.longitude,
+        latitude: location.isSuccess ? location.latitude : null,
+        longitude: location.isSuccess ? location.longitude : null,
       );
       _applyShiftPayload(data);
       await loadStatus();

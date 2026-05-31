@@ -1,13 +1,10 @@
 import { SignJWT, jwtVerify } from "jose";
+import { getJwtSecret as getJwtSecretString } from "../env";
 
 const encoder = new TextEncoder();
 
 function getJwtSecret() {
-  const secret = process.env.PATROL_JWT_SECRET;
-  if (!secret) {
-    throw new Error("PATROL_JWT_SECRET is not configured");
-  }
-  return encoder.encode(secret);
+  return encoder.encode(getJwtSecretString());
 }
 
 export async function signPatrolToken(payload: {

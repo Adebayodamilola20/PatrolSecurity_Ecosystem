@@ -106,8 +106,8 @@ class DutyProvider extends ChangeNotifier {
         orderId: orderId,
         photo: photo,
         proofNote: note,
-        gpsLatitude: location.position?.latitude,
-        gpsLongitude: location.position?.longitude,
+        gpsLatitude: location.isSuccess ? location.latitude : null,
+        gpsLongitude: location.isSuccess ? location.longitude : null,
       );
       await load();
       return true;

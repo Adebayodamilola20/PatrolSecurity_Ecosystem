@@ -1,10 +1,8 @@
-import { api } from "../_generated/api";
+import { internal } from "../_generated/api";
 import { verifyPatrolToken } from "./jwt";
 
 export async function requireAuth(
-  ctx: {
-    runQuery: (reference: unknown, args: Record<string, unknown>) => Promise<unknown>;
-  },
+  ctx: any,
   request: Request,
 ) {
   const header = request.headers.get("authorization") ?? "";
@@ -19,8 +17,8 @@ export async function requireAuth(
 
   try {
     const payload = await verifyPatrolToken(token);
-    const profile = (await ctx.runQuery(api.users.getSafeProfile, {
-      userId: payload.userId as never,
+    const profile = (await ctx.runQuery(internal.users.getSafeProfile, {
+      userId: payload.userId,
     })) as {
       id: string;
       convexId: string;

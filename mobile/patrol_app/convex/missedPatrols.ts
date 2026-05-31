@@ -1,4 +1,4 @@
-import { mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 
 const DEFAULT_INTERVAL_MINUTES = 60;
@@ -10,23 +10,25 @@ function positiveMinutes(value: unknown, fallback: number) {
     : fallback;
 }
 
-export const list = query({
+export const list = internalQuery({
   args: {
     status: v.optional(v.union(v.literal("open"), v.literal("resolved"))),
     clientId: v.optional(v.id("clients")),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    let alerts = await ctx.db.query("missedPatrolAlerts").order("desc").collect();
+    const query = args.status
+      ? ctx.db.query("missedPatrolAlerts").withIndex("by_status", (q) =>
+          q.eq("status", args.status!),
+        )
+      : ctx.db.query("missedPatrolAlerts");
+    let alerts = await query.order("desc").take(args.limit ?? 100);
 
-    if (args.status) {
-      alerts = alerts.filter((alert) => alert.status === args.status);
-    }
     if (args.clientId) {
       alerts = alerts.filter((alert) => alert.clientId === args.clientId);
     }
 
-    return alerts.slice(0, args.limit ?? 100).map((alert) => ({
+    return alerts.map((alert) => ({
       id: alert._id,
       checkpointId: alert.checkpointId,
       siteId: alert.siteId ?? null,
@@ -44,7 +46,7 @@ export const list = query({
   },
 });
 
-export const checkNow = mutation({
+export const checkNow = internalMutation({
   args: {
     clientId: v.optional(v.id("clients")),
   },
@@ -130,7 +132,7 @@ export const checkNow = mutation({
   },
 });
 
-export const markNotificationResult = mutation({
+export const markNotificationResult = internalMutation({
   args: {
     alertId: v.id("missedPatrolAlerts"),
     notificationStatus: v.string(),

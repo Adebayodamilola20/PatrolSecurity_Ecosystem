@@ -1,0 +1,69 @@
+import { v } from "convex/values";
+import { internalMutation } from "./_generated/server";
+
+const sensitiveActions = [
+  "user.login",
+  "user.logout",
+  "user.password_change",
+  "user.created",
+  "user.deactivated",
+  "scan.submitted",
+  "scan.rejected",
+  "scan.suspicious",
+  "checkpoint.created",
+  "checkpoint.updated",
+  "checkpoint.deleted",
+  "site.created",
+  "site.updated",
+  "client.created",
+  "client.updated",
+  "emergency.triggered",
+  "shift.clock_in",
+  "shift.clock_out",
+  "settings.changed",
+  "report.generated",
+  "export.created",
+  "incident.created",
+  "incident.status_changed",
+  "rate_limit.exceeded",
+  "report.submitted",
+  "handover.created",
+  "pass_on_log.created",
+  "post_order.created",
+  "post_order.updated",
+  "post_order_completion.reviewed",
+] as const;
+
+export type SensitiveAction = (typeof sensitiveActions)[number];
+
+export const record = internalMutation({
+  args: {
+    action: v.string(),
+    actorId: v.string(),
+    actorRole: v.string(),
+    targetType: v.optional(v.string()),
+    targetId: v.optional(v.string()),
+    details: v.optional(v.string()),
+    ipAddress: v.optional(v.string()),
+    userAgent: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
+    siteId: v.optional(v.id("sites")),
+    success: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("auditLogs", {
+      action: args.action,
+      actorId: args.actorId,
+      actorRole: args.actorRole,
+      targetType: args.targetType,
+      targetId: args.targetId,
+      details: args.details,
+      ipAddress: args.ipAddress,
+      userAgent: args.userAgent,
+      clientId: args.clientId,
+      siteId: args.siteId,
+      success: args.success,
+      timestamp: Date.now(),
+    });
+  },
+});

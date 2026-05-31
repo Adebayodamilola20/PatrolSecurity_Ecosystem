@@ -228,14 +228,14 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
   Future<void> _retryLocation() async {
     setState(() => _loading = true);
     final location = await LocationService.getCurrentLocation();
-    final pos = location.position;
+    final hasLocation = location.isSuccess;
 
     if (!mounted) return;
     final updatedData = <String, dynamic>{
       ...?widget.scanData,
-      'gpsLatitude': pos?.latitude,
-      'gpsLongitude': pos?.longitude,
-      'locationCaptured': pos != null,
+      'gpsLatitude': hasLocation ? location.latitude : null,
+      'gpsLongitude': hasLocation ? location.longitude : null,
+      'locationCaptured': hasLocation,
       'locationError': location.error,
       'timestamp': DateTime.now().toIso8601String(),
     };

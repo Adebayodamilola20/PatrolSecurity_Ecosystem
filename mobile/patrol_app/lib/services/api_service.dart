@@ -14,9 +14,27 @@ class TokenExpiredException implements Exception {
 class ApiService {
   static final _storage = FlutterSecureStorage();
   static final _client = http.Client();
-  static const _timeout = Duration(seconds: 60);
+  static Duration _timeout = const Duration(seconds: 30);
+  static bool _baseUrlVerified = false;
 
   static void Function()? onUnauthorized;
+
+  static set timeout(Duration duration) {
+    _timeout = duration;
+  }
+
+  static Duration get timeout => _timeout;
+
+  static void _ensureHttps() {
+    if (_baseUrlVerified) return;
+    if (!baseUrl.startsWith('https://')) {
+      throw Exception(
+        'Insecure connection: API base URL must use HTTPS. '
+        'Current URL: $baseUrl',
+      );
+    }
+    _baseUrlVerified = true;
+  }
 
   static Exception _apiException(http.Response res, String fallback) {
     if (res.statusCode == 401) {
@@ -43,8 +61,31 @@ class ApiService {
     };
   }
 
+  static Map<String, dynamic>? _decodeJwtPayload(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return null;
+      final payload = utf8.decode(base64Url.decode(base64Url.normalize(parts[1])));
+      return jsonDecode(payload) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<bool> isTokenExpired() async {
+    final token = await getToken();
+    if (token == null) return true;
+    final payload = _decodeJwtPayload(token);
+    if (payload == null) return true;
+    final exp = payload['exp'];
+    if (exp is! int) return true;
+    final expiryDate = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
+    return DateTime.now().isAfter(expiryDate);
+  }
+
   static Future<Map<String, dynamic>> login(
       String email, String password) async {
+    _ensureHttps();
     final res = await _client.post(
       Uri.parse('$baseUrl/auth/login'),
       headers: {'Content-Type': 'application/json'},
@@ -63,6 +104,7 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getScans({Map<String, String>? params}) async {
+    _ensureHttps();
     final uri = Uri.parse('$baseUrl/scans').replace(queryParameters: params);
     final res = await _client
         .get(uri, headers: await _headers())
@@ -75,6 +117,7 @@ class ApiService {
 
   static Future<Map<String, dynamic>> submitScan(
       Map<String, dynamic> scanData) async {
+    _ensureHttps();
     final res = await _client.post(
       Uri.parse('$baseUrl/scans'),
       headers: await _headers(),
@@ -87,7 +130,7 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getCheckpoints() async {
-    
+    _ensureHttps();
     final res = await _client.get(
       Uri.parse('$baseUrl/checkpoints'),
       headers: await _headers(),
@@ -99,6 +142,7 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> changePassword(String currentPassword, String newPassword) async {
+    _ensureHttps();
     final res = await _client.post(
       Uri.parse('$baseUrl/auth/change-password'),
       headers: await _headers(),
@@ -115,7 +159,7 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> clockIn({double? latitude, double? longitude}) async {
-    
+    _ensureHttps();
     final body = <String, dynamic>{};
     if (latitude != null) body['gpsLatitude'] = latitude;
     if (longitude != null) body['gpsLongitude'] = longitude;
@@ -131,7 +175,7 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> clockOut({double? latitude, double? longitude}) async {
-    
+    _ensureHttps();
     final body = <String, dynamic>{};
     if (latitude != null) body['gpsLatitude'] = latitude;
     if (longitude != null) body['gpsLongitude'] = longitude;
@@ -153,8 +197,9 @@ class ApiService {
     double? speed,
     double? heading,
   }) async {
+    _ensureHttps();
     try {
-      await _client.post(
+      final res = await _client.post(
         Uri.parse('$baseUrl/positions'),
         headers: await _headers(),
         body: jsonEncode({
@@ -166,11 +211,16 @@ class ApiService {
           'capturedAt': DateTime.now().toIso8601String(),
         }),
       ).timeout(const Duration(seconds: 10));
-    } catch (_) {}
+      if (res.statusCode == 401) {
+        onUnauthorized?.call();
+      }
+    } catch (_) {
+      // Position updates are non-critical; silently ignore failures
+    }
   }
 
   static Future<Map<String, dynamic>> getShiftStatus() async {
-    
+    _ensureHttps();
     final res = await _client.get(
       Uri.parse('$baseUrl/shifts/status'),
       headers: await _headers(),
@@ -187,7 +237,7 @@ class ApiService {
     String? checkpointId,
     String severity = 'low',
   }) async {
-    
+    _ensureHttps();
     final res = await _client.post(
       Uri.parse('$baseUrl/incidents'),
       headers: await _headers(),
@@ -212,7 +262,7 @@ class ApiService {
     String? checkpointId,
     String shiftWindow = '',
   }) async {
-    
+    _ensureHttps();
     final res = await _client.post(
       Uri.parse('$baseUrl/reports/daily-activity'),
       headers: await _headers(),
@@ -238,7 +288,7 @@ class ApiService {
     String severity = 'medium',
     String? checkpointId,
   }) async {
-    
+    _ensureHttps();
     final res = await _client.post(
       Uri.parse('$baseUrl/reports/maintenance'),
       headers: await _headers(),
@@ -263,7 +313,7 @@ class ApiService {
     String note = '',
     String location = '',
   }) async {
-    
+    _ensureHttps();
     final res = await _client.post(
       Uri.parse('$baseUrl/emergency/trigger'),
       headers: await _headers(),
@@ -289,7 +339,7 @@ class ApiService {
     String? checkpointId,
     bool requiresAcknowledgement = false,
   }) async {
-    
+    _ensureHttps();
     final res = await _client.post(
       Uri.parse('$baseUrl/pass-on-logs'),
       headers: await _headers(),
@@ -311,7 +361,7 @@ class ApiService {
   static Future<Map<String, dynamic>> requestDailyTourExport({
     required String date,
   }) async {
-    
+    _ensureHttps();
     final res = await _client.post(
       Uri.parse('$baseUrl/scans/export/daily'),
       headers: await _headers(),
@@ -327,7 +377,7 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getDailyTourExports() async {
-    
+    _ensureHttps();
     final res = await _client.get(
       Uri.parse('$baseUrl/scans/export/daily'),
       headers: await _headers(),
@@ -339,7 +389,7 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getPassOnLogs() async {
-    
+    _ensureHttps();
     final res = await _client.get(
       Uri.parse('$baseUrl/pass-on-logs'),
       headers: await _headers(),
@@ -351,7 +401,7 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> checkPendingAcknowledgements() async {
-    
+    _ensureHttps();
     final res = await _client.get(
       Uri.parse('$baseUrl/pass-on-logs/pending-acknowledgements'),
       headers: await _headers(),
@@ -363,7 +413,7 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getPendingPassOnLogs() async {
-    
+    _ensureHttps();
     final res = await _client.get(
       Uri.parse('$baseUrl/pass-on-logs/pending'),
       headers: await _headers(),
@@ -375,7 +425,7 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> acknowledgePassOnLog(String id, {String note = ''}) async {
-    
+    _ensureHttps();
     final res = await _client.post(
       Uri.parse('$baseUrl/pass-on-logs/$id/acknowledge'),
       headers: await _headers(),
@@ -388,7 +438,7 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getPostOrders() async {
-    
+    _ensureHttps();
     final res = await _client.get(
       Uri.parse('$baseUrl/post-orders'),
       headers: await _headers(),
@@ -400,7 +450,7 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> acknowledgePostOrder(String id) async {
-    
+    _ensureHttps();
     final res = await _client.post(
       Uri.parse('$baseUrl/post-orders/$id/acknowledge'),
       headers: await _headers(),
@@ -418,6 +468,7 @@ class ApiService {
     double? gpsLatitude,
     double? gpsLongitude,
   }) async {
+    _ensureHttps();
     final bytes = await photo.readAsBytes();
     final res = await _client.post(
       Uri.parse('$baseUrl/post-orders/$orderId/complete'),
@@ -439,7 +490,7 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getPendingHandovers() async {
-    
+    _ensureHttps();
     final res = await _client.get(
       Uri.parse('$baseUrl/handovers/pending'),
       headers: await _headers(),
@@ -458,6 +509,7 @@ class ApiService {
     String? checkpointId,
     File? photo,
   }) async {
+    _ensureHttps();
     String? photoBase64;
     String? photoName;
     if (photo != null) {
@@ -490,7 +542,7 @@ class ApiService {
     String id, {
     String acceptedNote = '',
   }) async {
-    
+    _ensureHttps();
     final res = await _client.patch(
       Uri.parse('$baseUrl/handovers/$id/accept'),
       headers: await _headers(),

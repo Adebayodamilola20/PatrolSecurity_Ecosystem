@@ -1,7 +1,7 @@
-import { mutation } from "./_generated/server";
+import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 
-export const record = mutation({
+export const record = internalMutation({
   args: {
     userId: v.id("users"),
     latitude: v.number(),

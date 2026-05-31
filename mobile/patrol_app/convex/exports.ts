@@ -1,7 +1,7 @@
-import { mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 
-export const listDailyExportsForUser = query({
+export const listDailyExportsForUser = internalQuery({
   args: {
     userId: v.id("users"),
   },
@@ -33,7 +33,7 @@ export const listDailyExportsForUser = query({
   },
 });
 
-export const createDailyExportRecord = mutation({
+export const createDailyExportRecord = internalMutation({
   args: {
     userId: v.id("users"),
     date: v.string(),

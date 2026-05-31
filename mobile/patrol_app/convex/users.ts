@@ -1,7 +1,7 @@
-import { mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 
-export const findByEmail = query({
+export const findByEmail = internalQuery({
   args: {
     email: v.string(),
   },
@@ -13,7 +13,7 @@ export const findByEmail = query({
   },
 });
 
-export const getSafeProfile = query({
+export const getSafeProfile = internalQuery({
   args: {
     userId: v.id("users"),
   },
@@ -46,7 +46,7 @@ export const getSafeProfile = query({
   },
 });
 
-export const listAll = query({
+export const listAll = internalQuery({
   args: { clientId: v.optional(v.id("clients")) },
   handler: async (ctx, args) => {
     let users = await ctx.db.query("users").collect()
@@ -84,7 +84,7 @@ export const listAll = query({
   },
 });
 
-export const getById = query({
+export const getById = internalQuery({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
     const u = await ctx.db.get(args.userId);
@@ -94,7 +94,7 @@ export const getById = query({
   },
 });
 
-export const create = mutation({
+export const create = internalMutation({
   args: {
     name: v.string(),
     email: v.string(),
@@ -113,7 +113,7 @@ export const create = mutation({
   },
 });
 
-export const resolveId = query({
+export const resolveId = internalQuery({
   args: { id: v.string() },
   handler: async (ctx, args) => {
     const byLegacyId = await ctx.db
@@ -126,7 +126,7 @@ export const resolveId = query({
   },
 });
 
-export const getDetail = query({
+export const getDetail = internalQuery({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
     const found = await ctx.db.get(args.userId);
@@ -193,7 +193,7 @@ export const getDetail = query({
   },
 });
 
-export const changePassword = mutation({
+export const changePassword = internalMutation({
   args: {
     userId: v.id("users"),
     passwordHash: v.string(),

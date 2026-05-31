@@ -1,7 +1,7 @@
-import { mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 
-export const getActiveForUser = query({
+export const getActiveForUser = internalQuery({
   args: {
     userId: v.id("users"),
   },
@@ -15,7 +15,7 @@ export const getActiveForUser = query({
   },
 });
 
-export const getStatusForUser = query({
+export const getStatusForUser = internalQuery({
   args: {
     userId: v.id("users"),
   },
@@ -52,10 +52,10 @@ export const getStatusForUser = query({
   },
 });
 
-export const listForExport = query({
+export const listForExport = internalQuery({
   args: {},
   handler: async (ctx) => {
-    const shifts = await ctx.db.query("shifts").collect();
+    const shifts = await ctx.db.query("shifts").order("desc").take(500);
     const users = await ctx.db.query("users").collect();
     return shifts.map((shift) => ({
       id: shift.legacyId ?? shift._id,
@@ -70,7 +70,7 @@ export const listForExport = query({
   },
 });
 
-export const listAll = query({
+export const listAll = internalQuery({
   args: {
     startDate: v.optional(v.number()),
     endDate: v.optional(v.number()),
@@ -78,7 +78,12 @@ export const listAll = query({
     clientId: v.optional(v.id("clients")),
   },
   handler: async (ctx, args) => {
-    let shifts = await ctx.db.query("shifts").order("desc").collect();
+    const query = args.clientId
+      ? ctx.db.query("shifts").withIndex("by_clientId", (q) =>
+          q.eq("clientId", args.clientId),
+        )
+      : ctx.db.query("shifts");
+    let shifts = await query.order("desc").take(200);
     if (args.userId) shifts = shifts.filter((s) => s.userId === args.userId);
     if (args.startDate)
       shifts = shifts.filter((s) => s.clockIn >= args.startDate!);
@@ -108,14 +113,14 @@ export const listAll = query({
   },
 });
 
-export const missingClockins = query({
+export const missingClockins = internalQuery({
   args: { clientId: v.optional(v.id("clients")) },
   handler: async (ctx, args) => {
     const users = await ctx.db.query("users").collect();
     const now = Date.now();
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
-    const shifts = await ctx.db.query("shifts").collect();
+    const shifts = await ctx.db.query("shifts").order("desc").take(500);
     const todayShifts = shifts.filter((s) => s.clockIn >= todayStart.getTime());
     const activeUsers = users.filter(
       (u) => u.active && (!args.clientId || u.clientId === args.clientId),
@@ -131,12 +136,13 @@ export const missingClockins = query({
   },
 });
 
-export const clockIn = mutation({
+export const clockIn = internalMutation({
   args: {
     userId: v.id("users"),
     latitude: v.optional(v.number()),
     longitude: v.optional(v.number()),
     siteLabel: v.optional(v.string()),
+    clockInPhoto: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -160,7 +166,7 @@ export const clockIn = mutation({
       userId: args.userId,
       status: "active",
       clockIn: now,
-      clockInPhoto: "",
+      clockInPhoto: args.clockInPhoto ?? "",
       clockInLatitude: args.latitude,
       clockInLongitude: args.longitude,
       siteLabel: args.siteLabel ?? "",
@@ -181,7 +187,7 @@ export const clockIn = mutation({
   },
 });
 
-export const clockOut = mutation({
+export const clockOut = internalMutation({
   args: {
     shiftId: v.id("shifts"),
     latitude: v.optional(v.number()),

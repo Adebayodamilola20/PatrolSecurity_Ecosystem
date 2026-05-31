@@ -1,7 +1,7 @@
-import { mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 
-export const listAll = query({
+export const listAll = internalQuery({
   args: { clientId: v.optional(v.id("clients")) },
   handler: async (ctx, args) => {
     let handovers = await ctx.db.query("handovers").order("desc").collect();
@@ -39,7 +39,7 @@ export const listAll = query({
   },
 });
 
-export const updateStatus = mutation({
+export const updateStatus = internalMutation({
   args: { handoverId: v.id("handovers"), status: v.string() },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.handoverId, { status: args.status as any });
@@ -47,7 +47,7 @@ export const updateStatus = mutation({
   },
 });
 
-export const listPendingForUser = query({
+export const listPendingForUser = internalQuery({
   args: {
     userId: v.id("users"),
   },
@@ -83,7 +83,7 @@ export const listPendingForUser = query({
   },
 });
 
-export const create = mutation({
+export const create = internalMutation({
   args: {
     userId: v.id("users"),
     summary: v.string(),
@@ -136,7 +136,7 @@ export const create = mutation({
   },
 });
 
-export const accept = mutation({
+export const accept = internalMutation({
   args: {
     handoverId: v.id("handovers"),
     userId: v.id("users"),
@@ -176,7 +176,7 @@ export const accept = mutation({
   },
 });
 
-export const resolveId = query({
+export const resolveId = internalQuery({
   args: { id: v.string() },
   handler: async (ctx, args) => {
     const all = await ctx.db.query("handovers").collect();

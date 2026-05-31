@@ -1,4 +1,5 @@
-import { mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
 
 function distanceMeters(
@@ -19,38 +20,45 @@ function distanceMeters(
   return Math.round(earthRadius * c);
 }
 
-export const list = query({
+export const list = internalQuery({
   args: {
     officerId: v.optional(v.id("users")),
     checkpointId: v.optional(v.id("checkpoints")),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    let scans = await ctx.db.query("scans").order("desc").collect();
+    const query = args.officerId
+      ? ctx.db.query("scans").withIndex("by_officerId_scannedAt", (q) =>
+          q.eq("officerId", args.officerId!),
+        )
+      : ctx.db.query("scans");
+    let scans = await query.order("desc").take(args.limit ?? 100);
 
-    if (args.officerId) {
-      scans = scans.filter((scan) => scan.officerId === args.officerId);
-    }
     if (args.checkpointId) {
       scans = scans.filter((scan) => scan.checkpointId === args.checkpointId);
     }
 
-    return scans.slice(0, args.limit ?? 100);
+    return scans;
   },
 });
 
-export const listForApi = query({
+export const listForApi = internalQuery({
   args: {
     officerId: v.optional(v.id("users")),
     limit: v.optional(v.number()),
     clientId: v.optional(v.id("clients")),
   },
   handler: async (ctx, args) => {
-    let scans = await ctx.db.query("scans").order("desc").collect();
-
-    if (args.officerId) {
-      scans = scans.filter((scan) => scan.officerId === args.officerId);
-    }
+    const query = args.officerId
+      ? ctx.db.query("scans").withIndex("by_officerId_scannedAt", (q) =>
+          q.eq("officerId", args.officerId!),
+        )
+      : args.clientId
+        ? ctx.db.query("scans").withIndex("by_clientId", (q) =>
+            q.eq("clientId", args.clientId!),
+          )
+        : ctx.db.query("scans");
+    let scans = await query.order("desc").take(args.limit ?? 100);
 
     if (args.clientId) {
       const clientCheckpoints = await ctx.db.query("checkpoints").collect();
@@ -68,7 +76,7 @@ export const listForApi = query({
     const users = await ctx.db.query("users").collect();
     const checkpoints = await ctx.db.query("checkpoints").collect();
 
-    return scans.slice(0, args.limit ?? 100).map((scan) => {
+    return scans.map((scan) => {
       const officer = users.find((user) => user._id === scan.officerId);
       const checkpoint = checkpoints.find(
         (item) => item._id === scan.checkpointId,
@@ -95,13 +103,17 @@ export const listForApi = query({
   },
 });
 
-export const getRecent = query({
+export const getRecent = internalQuery({
   args: {
     limit: v.optional(v.number()),
     clientId: v.optional(v.id("clients")),
   },
   handler: async (ctx, args) => {
-    let scans = await ctx.db.query("scans").order("desc").collect();
+    let scans = await ctx.db
+      .query("scans")
+      .withIndex("by_scannedAt")
+      .order("desc")
+      .take(args.limit ?? 50);
     if (args.clientId) {
       const cps = await ctx.db.query("checkpoints").collect();
       const cpIds = new Set(
@@ -111,7 +123,7 @@ export const getRecent = query({
     }
     const users = await ctx.db.query("users").collect();
     const checkpoints = await ctx.db.query("checkpoints").collect();
-    return scans.slice(0, args.limit ?? 50).map((s) => ({
+    return scans.map((s) => ({
       id: s.legacyId ?? s._id,
       officerId: s.officerId,
       officerName: users.find((u) => u._id === s.officerId)?.name ?? "",
@@ -127,7 +139,7 @@ export const getRecent = query({
   },
 });
 
-export const resolveId = query({
+export const resolveId = internalQuery({
   args: { id: v.string() },
   handler: async (ctx, args) => {
     const byLegacyId = await ctx.db
@@ -140,7 +152,7 @@ export const resolveId = query({
   },
 });
 
-export const getDetail = query({
+export const getDetail = internalQuery({
   args: { scanId: v.id("scans") },
   handler: async (ctx, args) => {
     const scan = await ctx.db.get(args.scanId);
@@ -165,7 +177,7 @@ export const getDetail = query({
   },
 });
 
-export const getById = query({
+export const getById = internalQuery({
   args: { scanId: v.id("scans") },
   handler: async (ctx, args) => {
     const s = await ctx.db.get(args.scanId);
@@ -192,7 +204,7 @@ export const getById = query({
   },
 });
 
-export const create = mutation({
+export const create = internalMutation({
   args: {
     officerId: v.id("users"),
     checkpointId: v.id("checkpoints"),
@@ -210,6 +222,54 @@ export const create = mutation({
     const siteId = checkpoint.siteId;
 
     const scannedAt = Date.now();
+
+    if (siteId) {
+      const assigned = await ctx.db
+        .query("userSiteAssignments")
+        .withIndex("by_userId_siteId", (q) =>
+          q.eq("userId", args.officerId).eq("siteId", siteId),
+        )
+        .first();
+      if (!assigned) {
+        await ctx.runMutation(internal.audit.record, {
+          action: "scan.rejected",
+          actorId: args.officerId,
+          actorRole: officer?.role ?? "guard",
+          targetType: "checkpoint",
+          targetId: args.checkpointId,
+          details: "Officer not assigned to this checkpoint's site",
+          clientId,
+          siteId,
+          success: false,
+        });
+        throw new Error("Officer is not assigned to this checkpoint's site");
+      }
+    }
+
+    const recentByOfficer = await ctx.db
+      .query("scans")
+      .withIndex("by_officerId_scannedAt", (q) =>
+        q.eq("officerId", args.officerId).gte("scannedAt", scannedAt - 60000),
+      )
+      .collect();
+    const duplicate = recentByOfficer.find(
+      (s) => s.checkpointId === args.checkpointId,
+    );
+    if (duplicate) {
+      await ctx.runMutation(internal.audit.record, {
+        action: "scan.rejected",
+        actorId: args.officerId,
+        actorRole: officer?.role ?? "guard",
+        targetType: "checkpoint",
+        targetId: args.checkpointId,
+        details: "Duplicate scan within 60 second window",
+        clientId,
+        siteId,
+        success: false,
+      });
+      throw new Error("Duplicate scan within 60 seconds");
+    }
+
     let computedDistance: number | undefined;
     let gpsValid = true;
 
@@ -220,7 +280,23 @@ export const create = mutation({
         args.gpsLatitude,
         args.gpsLongitude,
       );
-      gpsValid = computedDistance <= Math.min(checkpoint.radiusMeters, 10);
+      gpsValid = computedDistance <= checkpoint.radiusMeters;
+      if (!gpsValid) {
+        await ctx.runMutation(internal.audit.record, {
+          action: "scan.rejected",
+          actorId: args.officerId,
+          actorRole: officer?.role ?? "guard",
+          targetType: "checkpoint",
+          targetId: args.checkpointId,
+          details: `GPS out of radius: ${computedDistance}m > ${checkpoint.radiusMeters}m`,
+          clientId,
+          siteId,
+          success: false,
+        });
+        throw new Error(
+          "GPS location is outside the allowed radius for this checkpoint",
+        );
+      }
     }
 
     const scanId = await ctx.db.insert("scans", {
@@ -245,6 +321,26 @@ export const create = mutation({
         latitude: args.gpsLatitude,
         longitude: args.gpsLongitude,
         capturedAt: scannedAt,
+      });
+    }
+
+    const recentScans = await ctx.db
+      .query("scans")
+      .withIndex("by_officerId_scannedAt", (q) =>
+        q.eq("officerId", args.officerId).gte("scannedAt", scannedAt - 300000),
+      )
+      .collect();
+    if (recentScans.length > 10) {
+      await ctx.runMutation(internal.audit.record, {
+        action: "scan.suspicious",
+        actorId: args.officerId,
+        actorRole: officer?.role ?? "guard",
+        targetType: "scan",
+        targetId: scanId,
+        details: `Officer submitted ${recentScans.length} scans in the last 5 minutes`,
+        clientId,
+        siteId,
+        success: true,
       });
     }
 

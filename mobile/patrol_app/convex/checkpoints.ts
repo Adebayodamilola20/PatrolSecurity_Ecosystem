@@ -1,14 +1,14 @@
-import { mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 
-export const list = query({
+export const list = internalQuery({
   args: {
     activeOnly: v.optional(v.boolean()),
     clientLegacyId: v.optional(v.string()),
     siteLegacyId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    let checkpoints = await ctx.db.query("checkpoints").collect();
+    let checkpoints = await ctx.db.query("checkpoints").take(500);
 
     if (args.activeOnly !== false) {
       checkpoints = checkpoints.filter((checkpoint) => checkpoint.active);
@@ -38,16 +38,21 @@ export const list = query({
   },
 });
 
-export const listForApi = query({
+export const listForApi = internalQuery({
   args: { clientId: v.optional(v.id("clients")) },
   handler: async (ctx, args) => {
-    let checkpoints = await ctx.db.query("checkpoints").collect();
+    const query = args.clientId
+      ? ctx.db.query("checkpoints").withIndex("by_clientId", (q) =>
+          q.eq("clientId", args.clientId),
+        )
+      : ctx.db.query("checkpoints");
+    let checkpoints = await query.take(200);
 
     if (args.clientId) {
       checkpoints = checkpoints.filter((cp) => cp.clientId === args.clientId);
     }
 
-    const scans = await ctx.db.query("scans").collect();
+    const scans = await ctx.db.query("scans").take(500);
 
     return checkpoints
       .filter((checkpoint) => checkpoint.active)
@@ -99,7 +104,7 @@ const cpShape = (cp: any, site?: any) => ({
   createdAt: new Date(cp.createdAt).toISOString(),
 });
 
-export const create = mutation({
+export const create = internalMutation({
   args: {
     name: v.string(),
     code: v.string(),
@@ -126,7 +131,7 @@ export const create = mutation({
   },
 });
 
-export const update = mutation({
+export const update = internalMutation({
   args: {
     checkpointId: v.id("checkpoints"),
     name: v.optional(v.string()),
@@ -148,14 +153,14 @@ export const update = mutation({
   },
 });
 
-export const remove = mutation({
+export const remove = internalMutation({
   args: { checkpointId: v.id("checkpoints") },
   handler: async (ctx, args) => {
     await ctx.db.delete(args.checkpointId);
   },
 });
 
-export const resolveId = query({
+export const resolveId = internalQuery({
   args: {
     id: v.string(),
   },

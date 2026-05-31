@@ -8,11 +8,13 @@
  * @module
  */
 
+import type * as audit from "../audit.js";
 import type * as checkpoints from "../checkpoints.js";
 import type * as clients from "../clients.js";
 import type * as crons from "../crons.js";
 import type * as dev from "../dev.js";
 import type * as emergency from "../emergency.js";
+import type * as env from "../env.js";
 import type * as exports from "../exports.js";
 import type * as handovers from "../handovers.js";
 import type * as health from "../health.js";
@@ -20,9 +22,12 @@ import type * as http from "../http.js";
 import type * as importer from "../importer.js";
 import type * as incidents from "../incidents.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_authHelpers from "../lib/authHelpers.js";
+import type * as lib_errors from "../lib/errors.js";
 import type * as lib_http from "../lib/http.js";
 import type * as lib_httpAuth from "../lib/httpAuth.js";
 import type * as lib_jwt from "../lib/jwt.js";
+import type * as lib_rateLimiter from "../lib/rateLimiter.js";
 import type * as missedPatrolScheduler from "../missedPatrolScheduler.js";
 import type * as missedPatrols from "../missedPatrols.js";
 import type * as notifications from "../notifications.js";
@@ -44,11 +49,13 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  audit: typeof audit;
   checkpoints: typeof checkpoints;
   clients: typeof clients;
   crons: typeof crons;
   dev: typeof dev;
   emergency: typeof emergency;
+  env: typeof env;
   exports: typeof exports;
   handovers: typeof handovers;
   health: typeof health;
@@ -56,9 +63,12 @@ declare const fullApi: ApiFromModules<{
   importer: typeof importer;
   incidents: typeof incidents;
   "lib/auth": typeof lib_auth;
+  "lib/authHelpers": typeof lib_authHelpers;
+  "lib/errors": typeof lib_errors;
   "lib/http": typeof lib_http;
   "lib/httpAuth": typeof lib_httpAuth;
   "lib/jwt": typeof lib_jwt;
+  "lib/rateLimiter": typeof lib_rateLimiter;
   missedPatrolScheduler: typeof missedPatrolScheduler;
   missedPatrols: typeof missedPatrols;
   notifications: typeof notifications;

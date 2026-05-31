@@ -294,20 +294,20 @@ class _DashboardTab extends StatelessWidget {
 
     try {
       final location = await LocationService.getCurrentLocation();
-      final pos = location.position;
-      final nearestCheckpoint = pos == null
+      final hasLocation = location.isSuccess;
+      final nearestCheckpoint = !hasLocation
           ? null
           : _findNearestCheckpoint(
               scanProvider.checkpoints,
-              pos.latitude,
-              pos.longitude,
+              location.latitude,
+              location.longitude,
             );
-      final locationText = pos == null
+      final locationText = !hasLocation
           ? ''
           : nearestCheckpoint == null
-              ? '${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}'
+              ? '${location.latitude.toStringAsFixed(6)}, ${location.longitude.toStringAsFixed(6)}'
               : '${nearestCheckpoint.name} '
-                  '(${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)})';
+                  '(${location.latitude.toStringAsFixed(6)}, ${location.longitude.toStringAsFixed(6)})';
       final note = location.error == null
           ? nearestCheckpoint == null
               ? 'Emergency button pressed from mobile patrol app.'
@@ -322,7 +322,7 @@ class _DashboardTab extends StatelessWidget {
         location: locationText,
       );
 
-      final message = _emergencyResultMessage(result, hasGps: pos != null);
+      final message = _emergencyResultMessage(result, hasGps: hasLocation);
       messenger.showSnackBar(
         SnackBar(
           content: Text(message),

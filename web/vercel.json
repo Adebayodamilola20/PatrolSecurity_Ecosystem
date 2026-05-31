@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/v1/:path*",
-      "destination": "https://harmless-pigeon-186.convex.site/api/v1/:path*"
+      "destination": "https://resilient-buffalo-226.convex.site/api/v1/:path*"
     },
     { "source": "/(.*)", "destination": "/index.html" }
   ],

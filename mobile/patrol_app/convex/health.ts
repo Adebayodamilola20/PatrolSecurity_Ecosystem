@@ -1,6 +1,6 @@
-import { query } from "./_generated/server";
+import { internalQuery } from "./_generated/server";
 
-export const status = query({
+export const status = internalQuery({
   args: {},
   handler: async () => {
     return {

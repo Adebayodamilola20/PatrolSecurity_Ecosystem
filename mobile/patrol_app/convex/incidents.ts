@@ -1,7 +1,7 @@
-import { mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 
-export const list = query({
+export const list = internalQuery({
   args: {
     officerId: v.optional(v.id("users")),
     status: v.optional(
@@ -13,25 +13,26 @@ export const list = query({
     ),
   },
   handler: async (ctx, args) => {
-    let incidents = await ctx.db.query("incidents").order("desc").collect();
-
-    if (args.officerId) {
-      incidents = incidents.filter(
-        (incident) => incident.officerId === args.officerId,
-      );
-    }
-
-    if (args.status) {
-      incidents = incidents.filter(
-        (incident) => incident.status === args.status,
-      );
-    }
+    const query = args.officerId && args.status
+      ? ctx.db.query("incidents").withIndex("by_officerId_status", (q) =>
+          q.eq("officerId", args.officerId!).eq("status", args.status!),
+        )
+      : args.officerId
+        ? ctx.db.query("incidents").withIndex("by_officerId_status", (q) =>
+            q.eq("officerId", args.officerId!),
+          )
+        : args.status
+          ? ctx.db.query("incidents").withIndex("by_status", (q) =>
+              q.eq("status", args.status!),
+            )
+          : ctx.db.query("incidents");
+    let incidents = await query.order("desc").take(100);
 
     return incidents;
   },
 });
 
-export const listForApi = query({
+export const listForApi = internalQuery({
   args: {
     status: v.optional(v.string()),
     officerId: v.optional(v.id("users")),
@@ -39,7 +40,24 @@ export const listForApi = query({
     clientId: v.optional(v.id("clients")),
   },
   handler: async (ctx, args) => {
-    let incidents = await ctx.db.query("incidents").order("desc").collect();
+    const query = args.clientId && args.status
+      ? ctx.db.query("incidents").withIndex("by_clientId_status", (q) =>
+          q.eq("clientId", args.clientId!).eq("status", args.status! as "open" | "investigating" | "resolved"),
+        )
+      : args.clientId
+        ? ctx.db.query("incidents").withIndex("by_clientId_status", (q) =>
+            q.eq("clientId", args.clientId!),
+          )
+        : args.status
+          ? ctx.db.query("incidents").withIndex("by_status", (q) =>
+              q.eq("status", args.status! as "open" | "investigating" | "resolved"),
+            )
+          : args.officerId
+            ? ctx.db.query("incidents").withIndex("by_officerId_status", (q) =>
+                q.eq("officerId", args.officerId!),
+              )
+            : ctx.db.query("incidents");
+    let incidents = await query.order("desc").take(100);
     if (args.status)
       incidents = incidents.filter((i) => i.status === args.status);
     if (args.officerId)
@@ -73,7 +91,7 @@ export const listForApi = query({
   },
 });
 
-export const updateStatus = mutation({
+export const updateStatus = internalMutation({
   args: { incidentId: v.id("incidents"), status: v.string() },
   handler: async (ctx, args) => {
     const patch: any = { status: args.status };
@@ -83,15 +101,18 @@ export const updateStatus = mutation({
   },
 });
 
-export const missedPatrols = query({
+export const missedPatrols = internalQuery({
   args: { clientId: v.optional(v.id("clients")) },
   handler: async (ctx, args) => {
-    let checkpoints = await ctx.db.query("checkpoints").collect();
-    if (args.clientId)
-      checkpoints = checkpoints.filter((c) => c.clientId === args.clientId);
+    const queryCheckpoints = args.clientId
+      ? ctx.db.query("checkpoints").withIndex("by_clientId", (q) =>
+          q.eq("clientId", args.clientId),
+        )
+      : ctx.db.query("checkpoints");
+    let checkpoints = await queryCheckpoints.take(500);
     const now = Date.now();
     const sixHours = 6 * 60 * 60 * 1000;
-    const scans = await ctx.db.query("scans").order("desc").collect();
+    const scans = await ctx.db.query("scans").order("desc").take(500);
     return checkpoints
       .filter((c) => c.active)
       .map((c) => {
@@ -113,7 +134,7 @@ export const missedPatrols = query({
   },
 });
 
-export const resolveId = query({
+export const resolveId = internalQuery({
   args: { id: v.string() },
   handler: async (ctx, args) => {
     const byLegacyId = await ctx.db
@@ -126,7 +147,7 @@ export const resolveId = query({
   },
 });
 
-export const create = mutation({
+export const create = internalMutation({
   args: {
     officerId: v.id("users"),
     checkpointId: v.optional(v.id("checkpoints")),
