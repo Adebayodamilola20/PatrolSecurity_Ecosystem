@@ -30,20 +30,25 @@ export const useScanStore = create<ScanStore>((set) => ({
   loading: false,
 
   addScan: (scan) =>
-    set((state) => ({
-      scans: [scan, ...state.scans].slice(0, 500),
-      stats: {
-        ...state.stats,
-        totalScans: state.stats.totalScans + 1,
-        scansToday: state.stats.scansToday + 1,
-        verifiedScans: scan.gpsValid
-          ? state.stats.verifiedScans + 1
-          : state.stats.verifiedScans,
-        flaggedScans: !scan.gpsValid
-          ? state.stats.flaggedScans + 1
-          : state.stats.flaggedScans,
-      },
-    })),
+    set((state) => {
+      if (state.scans.some((existing) => existing.id === scan.id)) {
+        return state
+      }
+      return {
+        scans: [scan, ...state.scans].slice(0, 500),
+        stats: {
+          ...state.stats,
+          totalScans: state.stats.totalScans + 1,
+          scansToday: state.stats.scansToday + 1,
+          verifiedScans: scan.gpsValid
+            ? state.stats.verifiedScans + 1
+            : state.stats.verifiedScans,
+          flaggedScans: !scan.gpsValid
+            ? state.stats.flaggedScans + 1
+            : state.stats.flaggedScans,
+        },
+      }
+    }),
 
   setScans: (scans) => set({ scans }),
   setStats: (stats) => set({ stats }),

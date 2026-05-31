@@ -23,7 +23,7 @@ function normalizeApiBase(rawUrl: string | undefined) {
   }
 }
 
-const API_BASE = import.meta.env.PROD
+export const API_BASE = import.meta.env.PROD
   ? '/api/v1'
   : normalizeApiBase(import.meta.env.VITE_API_URL)
 
