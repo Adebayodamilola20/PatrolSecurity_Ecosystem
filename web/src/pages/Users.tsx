@@ -25,7 +25,7 @@ export default function Users() {
     setLoading(true)
     api.users.list().then((users) => {
       setOfficers(users.filter((u: User) => u.role === 'guard' || u.role === 'supervisor' || u.role === 'main_account'))
-    }).catch(() => {}).finally(() => setLoading(false))
+    }).catch((err) => { console.error('Failed to load users:', err) }).finally(() => setLoading(false))
   }
 
   useEffect(() => {

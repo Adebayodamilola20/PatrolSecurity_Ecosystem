@@ -604,6 +604,7 @@ http.route({
     );
     const siteLabel = typeof body?.siteLabel === "string" ? body.siteLabel : "";
     const note = typeof body?.note === "string" ? body.note : "";
+    const category = typeof body?.category === "string" ? body.category : undefined;
     const location =
       typeof body?.location === "string" && body.location.trim()
         ? body.location
@@ -612,6 +613,7 @@ http.route({
       userId: user.convexId,
       checkpointId,
       siteLabel,
+      category,
       note,
       location,
     });
@@ -856,11 +858,12 @@ http.route({
       return json(await ctx.runMutation(api.handovers.accept, { handoverId, userId: user.convexId, acceptedNote: typeof body?.acceptedNote === "string" ? body.acceptedNote : undefined }));
     }
     if (action === "status") {
-      const handovers = await ctx.db.query("handovers").collect();
-      const handover = handovers.find(h => h.legacyId === id || h._id === id);
-      if (!handover) return json({ message: "Handover not found" }, { status: 404 });
-      await ctx.db.patch(handover._id, { status: String(body?.status ?? "closed") as any });
-      return json(await ctx.db.get(handover._id));
+      const handoverId = await ctx.runQuery(api.handovers.resolveId, { id });
+      if (!handoverId) return json({ message: "Handover not found" }, { status: 404 });
+      const updated = await ctx.runMutation(api.handovers.updateStatus, {
+        handoverId, status: String(body?.status ?? "closed"),
+      });
+      return json(updated);
     }
     return json({ message: "Handover route not found" }, { status: 404 });
   }),
@@ -903,22 +906,9 @@ http.route({ pathPrefix: "/scans/", method: "GET", handler: httpAction(async (ct
   if (!user) return json({ message: "Unauthorized" }, { status: 401 });
   const id = lastPathPart(request);
   if (id === "recent" || id === "export") return json({ message: "Scan route not found" }, { status: 404 });
-  const scans = await ctx.db.query("scans").collect();
-  const scan = scans.find(s => s.legacyId === id || s._id === id);
-  if (!scan) return json({ message: "Scan not found" }, { status: 404 });
-  const users = await ctx.db.query("users").collect();
-  const checkpoints = await ctx.db.query("checkpoints").collect();
-  return json({
-    id: scan.legacyId ?? scan._id, officerId: scan.officerId,
-    officerName: users.find(u => u._id === scan.officerId)?.name ?? "",
-    checkpointId: scan.checkpointId,
-    checkpointName: checkpoints.find(c => c._id === scan.checkpointId)?.name ?? "",
-    checkpointCode: checkpoints.find(c => c._id === scan.checkpointId)?.code ?? "",
-    scannedAt: new Date(scan.scannedAt).toISOString(),
-    receivedAt: new Date(scan.receivedAt).toISOString(),
-    gpsLatitude: scan.gpsLatitude, gpsLongitude: scan.gpsLongitude,
-    gpsValid: scan.gpsValid, distanceMeters: scan.distanceMeters, notes: scan.notes,
-  });
+  const scanId = await ctx.runQuery(api.scans.resolveId, { id });
+  if (!scanId) return json({ message: "Scan not found" }, { status: 404 });
+  return json(await ctx.runQuery(api.scans.getDetail, { scanId }));
 })});
 
 http.route({ path: "/checkpoints", method: "POST", handler: httpAction(async (ctx, request) => {
@@ -942,24 +932,20 @@ http.route({ pathPrefix: "/checkpoints/", method: "PUT", handler: httpAction(asy
   if (!user) return json({ message: "Unauthorized" }, { status: 401 });
   const id = lastPathPart(request);
   if (!id) return json({ message: "Checkpoint ID required" }, { status: 400 });
-  const checkpoints = await ctx.db.query("checkpoints").collect();
-  const cp = checkpoints.find(c => c.legacyId === id || c._id === id);
-  if (!cp) return json({ message: "Checkpoint not found" }, { status: 404 });
+  const cpId = await ctx.runQuery(api.checkpoints.resolveId, { id });
+  if (!cpId) return json({ message: "Checkpoint not found" }, { status: 404 });
   const body = await parseJson(request);
-  const update: any = {};
-  if (body.name !== undefined) update.name = String(body.name);
-  if (body.code !== undefined) update.code = String(body.code);
-  if (body.latitude !== undefined) update.latitude = Number(body.latitude);
-  if (body.longitude !== undefined) update.longitude = Number(body.longitude);
-  if (body.radiusMeters !== undefined) update.radiusMeters = Number(body.radiusMeters);
-  if (body.expectedIntervalMinutes !== undefined) update.expectedIntervalMinutes = Number(body.expectedIntervalMinutes);
-  if (body.scheduledTimeIn !== undefined) update.scheduledTimeIn = String(body.scheduledTimeIn);
-  if (body.scheduledTimeOut !== undefined) update.scheduledTimeOut = String(body.scheduledTimeOut);
-  if (body.active !== undefined) update.active = Boolean(body.active);
-  await ctx.db.patch(cp._id, update);
-  const updated = await ctx.db.get(cp._id);
-  const site = updated?.siteId ? await ctx.db.get(updated.siteId) : undefined;
-  return json(updated ? { id: updated.legacyId ?? updated._id, name: updated.name, code: updated.code, latitude: updated.latitude, longitude: updated.longitude, radiusMeters: updated.radiusMeters, expectedIntervalMinutes: updated.expectedIntervalMinutes, scheduledTimeIn: updated.scheduledTimeIn, scheduledTimeOut: updated.scheduledTimeOut, active: updated.active, siteId: updated.siteId, clientId: updated.clientId, siteName: site?.name ?? null, createdAt: new Date(updated.createdAt).toISOString() } : null);
+  const fields: any = {};
+  if (body.name !== undefined) fields.name = String(body.name);
+  if (body.code !== undefined) fields.code = String(body.code);
+  if (body.latitude !== undefined) fields.latitude = Number(body.latitude);
+  if (body.longitude !== undefined) fields.longitude = Number(body.longitude);
+  if (body.radiusMeters !== undefined) fields.radiusMeters = Number(body.radiusMeters);
+  if (body.expectedIntervalMinutes !== undefined) fields.expectedIntervalMinutes = Number(body.expectedIntervalMinutes);
+  if (body.scheduledTimeIn !== undefined) fields.scheduledTimeIn = String(body.scheduledTimeIn);
+  if (body.scheduledTimeOut !== undefined) fields.scheduledTimeOut = String(body.scheduledTimeOut);
+  if (body.active !== undefined) fields.active = Boolean(body.active);
+  return json(await ctx.runMutation(api.checkpoints.update, { checkpointId: cpId, ...fields }));
 })});
 
 http.route({ pathPrefix: "/checkpoints/", method: "DELETE", handler: httpAction(async (ctx, request) => {
@@ -967,10 +953,9 @@ http.route({ pathPrefix: "/checkpoints/", method: "DELETE", handler: httpAction(
   if (!user) return json({ message: "Unauthorized" }, { status: 401 });
   const id = lastPathPart(request);
   if (!id) return json({ message: "Checkpoint ID required" }, { status: 400 });
-  const checkpoints = await ctx.db.query("checkpoints").collect();
-  const cp = checkpoints.find(c => c.legacyId === id || c._id === id);
-  if (!cp) return json({ message: "Checkpoint not found" }, { status: 404 });
-  await ctx.db.delete(cp._id);
+  const cpId = await ctx.runQuery(api.checkpoints.resolveId, { id });
+  if (!cpId) return json({ message: "Checkpoint not found" }, { status: 404 });
+  await ctx.runMutation(api.checkpoints.remove, { checkpointId: cpId });
   return json({ message: "Checkpoint deleted" });
 })});
 
@@ -1016,14 +1001,16 @@ http.route({ pathPrefix: "/reports/", method: "GET", handler: httpAction(async (
 http.route({ path: "/users", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  if (user.role !== "admin") return json({ message: "Admin access required" }, { status: 403 });
   return json(await ctx.runQuery(api.users.listAll, {
-    clientId: user.role === "admin" ? undefined : (user.clientId ?? undefined),
+    clientId: undefined,
   }));
 })});
 
 http.route({ path: "/users", method: "POST", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return json({ message: "Unauthorized" }, { status: 401 });
+  if (user.role !== "admin") return json({ message: "Admin access required" }, { status: 403 });
   const body = await parseJson(request);
   const passwordHash = await bcrypt.hash(String(body?.password ?? "123456"), 10);
   const clientId: Id<"clients"> | undefined =
@@ -1044,11 +1031,12 @@ http.route({ pathPrefix: "/users/", method: "GET", handler: httpAction(async (ct
   if (!user) return json({ message: "Unauthorized" }, { status: 401 });
   const id = lastPathPart(request);
   if (!id) return json({ message: "User ID required" }, { status: 400 });
-  const users = await ctx.db.query("users").collect();
-  const found = users.find(u => u.legacyId === id || u._id === id);
-  if (!found) return json({ message: "User not found" }, { status: 404 });
-  const client = found.clientId ? await ctx.db.get(found.clientId) : null;
-  return json({ id: found.legacyId ?? found._id, convexId: found._id, name: found.name, email: found.email, role: found.role, phone: found.phone, active: found.active, clientId: found.clientId, clientName: client?.name ?? null, liveTracking: found.liveTracking, createdAt: new Date(found.createdAt).toISOString() });
+  const userId = await ctx.runQuery(api.users.resolveId, { id });
+  if (!userId) return json({ message: "User not found" }, { status: 404 });
+  if (user.role.trim().toLowerCase() !== "admin" && user.convexId !== userId) {
+    return json({ message: "Access denied" }, { status: 403 });
+  }
+  return json(await ctx.runQuery(api.users.getDetail, { userId }));
 })});
 
 http.route({ path: "/shifts/missing-clockins", method: "GET", handler: httpAction(async (ctx, request) => {
@@ -1077,12 +1065,11 @@ http.route({ pathPrefix: "/incidents/", method: "PATCH", handler: httpAction(asy
   const id = lastPathPart(request, 1);
   const action = lastPathPart(request);
   if (!id || action !== "status") return json({ message: "Incident route not found" }, { status: 404 });
-  const incidents = await ctx.db.query("incidents").collect();
-  const incident = incidents.find(i => i.legacyId === id || i._id === id);
-  if (!incident) return json({ message: "Incident not found" }, { status: 404 });
+  const incidentId = await ctx.runQuery(api.incidents.resolveId, { id });
+  if (!incidentId) return json({ message: "Incident not found" }, { status: 404 });
   const body = await parseJson(request);
   return json(await ctx.runMutation(api.incidents.updateStatus, {
-    incidentId: incident._id, status: String(body?.status ?? "open"),
+    incidentId, status: String(body?.status ?? "open"),
   }));
 })});
 
@@ -1151,18 +1138,16 @@ http.route({ pathPrefix: "/post-orders/", method: "PUT", handler: httpAction(asy
   const user = await requireAuth(ctx, request);
   if (!user) return json({ message: "Unauthorized" }, { status: 401 });
   const id = lastPathPart(request);
-  const orders = await ctx.db.query("postOrders").collect();
-  const order = orders.find(o => o.legacyId === id || o._id === id);
-  if (!order) return json({ message: "Post order not found" }, { status: 404 });
+  const orderId = await ctx.runQuery(api.postOrders.resolveId, { id });
+  if (!orderId) return json({ message: "Post order not found" }, { status: 404 });
   const body = await parseJson(request);
-  const update: any = {};
-  if (body.title !== undefined) update.title = String(body.title);
-  if (body.summary !== undefined) update.summary = String(body.summary);
-  if (body.instructions !== undefined) update.instructions = String(body.instructions);
-  if (body.priority !== undefined) update.priority = String(body.priority);
-  if (body.active !== undefined) update.active = Boolean(body.active);
-  await ctx.db.patch(order._id, update);
-  return json(await ctx.db.get(order._id));
+  const fields: any = {};
+  if (body.title !== undefined) fields.title = String(body.title);
+  if (body.summary !== undefined) fields.summary = String(body.summary);
+  if (body.instructions !== undefined) fields.instructions = String(body.instructions);
+  if (body.priority !== undefined) fields.priority = String(body.priority);
+  if (body.active !== undefined) fields.active = Boolean(body.active);
+  return json(await ctx.runMutation(api.postOrders.update, { orderId, ...fields }));
 })});
 
 http.route({ pathPrefix: "/post-orders/completions/", method: "PATCH", handler: httpAction(async (ctx, request) => {
@@ -1171,12 +1156,11 @@ http.route({ pathPrefix: "/post-orders/completions/", method: "PATCH", handler: 
   const id = lastPathPart(request, 1);
   const action = lastPathPart(request);
   if (!id || action !== "review") return json({ message: "Completion route not found" }, { status: 404 });
-  const completions = await ctx.db.query("postOrderCompletions").collect();
-  const completion = completions.find(c => c.legacyId === id || c._id === id);
-  if (!completion) return json({ message: "Completion not found" }, { status: 404 });
+  const completionId = await ctx.runQuery(api.postOrders.resolveCompletionId, { id });
+  if (!completionId) return json({ message: "Completion not found" }, { status: 404 });
   const body = await parseJson(request);
   return json(await ctx.runMutation(api.postOrders.reviewCompletion, {
-    completionId: completion._id, reviewerId: user.convexId,
+    completionId, reviewerId: user.convexId,
     reviewStatus: String(body?.reviewStatus ?? "approved"),
     reviewNote: body?.reviewNote,
   }));
@@ -1196,7 +1180,7 @@ http.route({ path: "/clients", method: "GET", handler: httpAction(async (ctx, re
   if (user.role === "admin") {
     return json(await ctx.runQuery(api.clients.list, {}));
   }
-  return json(user.clientId ? [await ctx.db.get(user.clientId)].filter(Boolean) : []);
+  return json(user.clientId ? [await ctx.runQuery(api.clients.getById, { clientId: user.clientId as Id<"clients"> })].filter(Boolean) : []);
 })});
 
 http.route({ path: "/clients", method: "POST", handler: httpAction(async (ctx, request) => {
@@ -1239,32 +1223,19 @@ http.route({ pathPrefix: "/sites/", method: "PUT", handler: httpAction(async (ct
   if (user.role === "guard") return json({ message: "Supervisor access required" }, { status: 403 });
   const id = lastPathPart(request);
   if (!id) return json({ message: "Site ID required" }, { status: 400 });
-  const sites = await ctx.db.query("sites").collect();
-  const site = sites.find(s => s.legacyId === id || s._id === id);
+  const siteId = await ctx.runQuery(api.sites.resolveId, { id });
+  if (!siteId) return json({ message: "Site not found" }, { status: 404 });
+  const site = await ctx.runQuery(api.sites.getById, { siteId });
   if (!site) return json({ message: "Site not found" }, { status: 404 });
   if (user.role !== "admin" && site.clientId !== user.clientId) {
     return json({ message: "Site access denied" }, { status: 403 });
   }
   const body = await parseJson(request);
-  const patch: Record<string, unknown> = {};
-  if (body.name !== undefined) patch.name = String(body.name);
-  if (body.location !== undefined) patch.location = String(body.location);
-  if (body.active !== undefined) patch.active = Boolean(body.active);
-  if (body.patrolIntervalMinutes !== undefined) patch.patrolIntervalMinutes = Number(body.patrolIntervalMinutes);
-  if (body.patrolGracePeriodMinutes !== undefined) patch.patrolGracePeriodMinutes = Number(body.patrolGracePeriodMinutes);
-  await ctx.db.patch(site._id, patch);
-  const updated = await ctx.db.get(site._id);
-  return json(updated ? {
-    id: updated.legacyId ?? updated._id,
-    convexId: updated._id,
-    name: updated.name,
-    location: updated.location,
-    clientId: updated.clientId,
-    patrolIntervalMinutes: updated.patrolIntervalMinutes ?? null,
-    patrolGracePeriodMinutes: updated.patrolGracePeriodMinutes ?? null,
-    active: updated.active,
-    createdAt: new Date(updated.createdAt).toISOString(),
-  } : null);
+  return json(await ctx.runMutation(api.sites.update, {
+    siteId, name: body.name, location: body.location, active: body.active,
+    patrolIntervalMinutes: body.patrolIntervalMinutes === undefined ? undefined : Number(body.patrolIntervalMinutes),
+    patrolGracePeriodMinutes: body.patrolGracePeriodMinutes === undefined ? undefined : Number(body.patrolGracePeriodMinutes),
+  }));
 })});
 
 export default http;

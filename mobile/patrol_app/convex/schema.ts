@@ -276,6 +276,7 @@ export default defineSchema({
     userId: v.id("users"),
     checkpointId: v.optional(v.id("checkpoints")),
     siteLabel: v.string(),
+    category: v.optional(v.string()),
     message: v.string(),
     note: v.string(),
     triggeredAt: v.number(),

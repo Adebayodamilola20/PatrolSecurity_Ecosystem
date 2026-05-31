@@ -14,6 +14,23 @@ export const list = query({
   },
 });
 
+export const getById = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const c = await ctx.db.get(args.clientId);
+    if (!c) return null;
+    return {
+      id: c.legacyId ?? c._id,
+      convexId: c._id,
+      name: c.name,
+      email: c.email,
+      phone: c.phone,
+      active: c.active,
+      createdAt: new Date(c.createdAt).toISOString(),
+    };
+  },
+});
+
 export const create = mutation({
   args: { name: v.string(), email: v.string(), phone: v.string(), active: v.boolean() },
   handler: async (ctx, args) => {

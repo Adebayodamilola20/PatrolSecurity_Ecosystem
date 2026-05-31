@@ -122,7 +122,164 @@ class _DashboardTab extends StatelessWidget {
         : 'Emergency alert dispatched. GPS was unavailable.';
   }
 
-  Future<void> _triggerEmergency(BuildContext context) async {
+  static const List<Map<String, dynamic>> _emergencyCategories = [
+    {'icon': Icons.gavel, 'label': 'Armed Robbery', 'color': Color(0xFFB91C1C)},
+    {'icon': Icons.shopping_bag, 'label': 'Theft', 'color': Color(0xFFD97706)},
+    {'icon': Icons.people, 'label': 'Fight / Disturbance', 'color': Color(0xFFDC2626)},
+    {'icon': Icons.local_fire_department, 'label': 'Fire Outbreak', 'color': Color(0xFFEF4444)},
+    {'icon': Icons.medical_services, 'label': 'Medical Emergency', 'color': Color(0xFF059669)},
+    {'icon': Icons.directions_car, 'label': 'Suspicious Vehicle', 'color': Color(0xFF7C3AED)},
+    {'icon': Icons.person_search, 'label': 'Suspicious Person', 'color': Color(0xFF2563EB)},
+    {'icon': Icons.power_off, 'label': 'Power Outage', 'color': Color(0xFF92400E)},
+    {'icon': Icons.flood, 'label': 'Flood / Water Leak', 'color': Color(0xFF0284C7)},
+    {'icon': Icons.lock_open, 'label': 'Breach / Intrusion', 'color': Color(0xFFBE123C)},
+    {'icon': Icons.more_horiz, 'label': 'Other', 'color': Color(0xFF6B7280)},
+  ];
+
+  Future<String?> _showEmergencyCategorySheet(BuildContext context) async {
+    final customController = TextEditingController();
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        String? selectedCustom;
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: SizedBox(
+                height: MediaQuery.of(context).size.height * 0.65,
+                child: Column(
+                  children: [
+                    Container(
+                      margin: const EdgeInsets.only(top: 12),
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(20, 20, 20, 4),
+                      child: Text(
+                        'Emergency Category',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
+                      child: Text(
+                        'Select the type of emergency',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        children: [
+                          ..._emergencyCategories.map((cat) {
+                            final icon = cat['icon'] as IconData;
+                            final label = cat['label'] as String;
+                            final color = cat['color'] as Color;
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Material(
+                                color: color.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(14),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(14),
+                                  onTap: () => Navigator.pop(ctx, label),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 14),
+                                    child: Row(
+                                      children: [
+                                        Icon(icon, color: color, size: 22),
+                                        const SizedBox(width: 14),
+                                        Text(
+                                          label,
+                                          style: TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w600,
+                                            color: color,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: customController,
+                            decoration: InputDecoration(
+                              hintText: 'Or type a custom reason...',
+                              prefixIcon: const Icon(Icons.edit_outlined),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 14),
+                            ),
+                            onChanged: (v) =>
+                                setSheetState(() => selectedCustom = v),
+                          ),
+                          if ((selectedCustom ?? '').trim().isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.error,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 14),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                  ),
+                                  onPressed: () => Navigator.pop(
+                                      ctx, selectedCustom!.trim()),
+                                  child: const Text(
+                                    'Send Custom Alert',
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          const SizedBox(height: 16),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    customController.dispose();
+    return result;
+  }
+
+  Future<void> _triggerEmergency(BuildContext context, {String category = ''}) async {
     final messenger = ScaffoldMessenger.of(context);
     final shift = context.read<ShiftProvider>();
     final scanProvider = context.read<ScanProvider>();
@@ -160,6 +317,7 @@ class _DashboardTab extends StatelessWidget {
       final result = await ApiService.triggerEmergency(
         checkpointId: nearestCheckpoint?.id,
         siteLabel: shift.siteLabel ?? '',
+        category: category,
         note: note,
         location: locationText,
       );
@@ -190,29 +348,9 @@ class _DashboardTab extends StatelessWidget {
   }
 
   Future<void> _confirmEmergencyAction(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Send emergency alert?'),
-        content: const Text(
-          'This will notify the configured emergency contacts with your current patrol context and GPS when available.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(backgroundColor: AppTheme.error),
-            child: const Text('Send Alert'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true && context.mounted) {
-      await _triggerEmergency(context);
+    final category = await _showEmergencyCategorySheet(context);
+    if (category != null && category.trim().isNotEmpty && context.mounted) {
+      await _triggerEmergency(context, category: category);
     }
   }
 
@@ -378,7 +516,12 @@ class _DashboardTab extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            _EmergencyHoldButton(onConfirmed: () => _triggerEmergency(context)),
+            _EmergencyHoldButton(onConfirmed: () async {
+              final cat = await _showEmergencyCategorySheet(context);
+              if (cat != null && cat.trim().isNotEmpty && context.mounted) {
+                await _triggerEmergency(context, category: cat);
+              }
+            }),
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,

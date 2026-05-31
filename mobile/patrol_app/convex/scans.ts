@@ -125,6 +125,44 @@ export const getRecent = query({
   },
 });
 
+export const resolveId = query({
+  args: { id: v.string() },
+  handler: async (ctx, args) => {
+    const byLegacyId = await ctx.db
+      .query("scans")
+      .withIndex("by_legacyId", (q) => q.eq("legacyId", args.id))
+      .unique();
+    if (byLegacyId) return byLegacyId._id;
+    const all = await ctx.db.query("scans").collect();
+    return all.find(s => s._id === args.id)?._id ?? null;
+  },
+});
+
+export const getDetail = query({
+  args: { scanId: v.id("scans") },
+  handler: async (ctx, args) => {
+    const scan = await ctx.db.get(args.scanId);
+    if (!scan) return null;
+    const users = await ctx.db.query("users").collect();
+    const checkpoints = await ctx.db.query("checkpoints").collect();
+    return {
+      id: scan.legacyId ?? scan._id,
+      officerId: scan.officerId,
+      officerName: users.find(u => u._id === scan.officerId)?.name ?? "",
+      checkpointId: scan.checkpointId,
+      checkpointName: checkpoints.find(c => c._id === scan.checkpointId)?.name ?? "",
+      checkpointCode: checkpoints.find(c => c._id === scan.checkpointId)?.code ?? "",
+      scannedAt: new Date(scan.scannedAt).toISOString(),
+      receivedAt: new Date(scan.receivedAt).toISOString(),
+      gpsLatitude: scan.gpsLatitude,
+      gpsLongitude: scan.gpsLongitude,
+      gpsValid: scan.gpsValid,
+      distanceMeters: scan.distanceMeters,
+      notes: scan.notes,
+    };
+  },
+});
+
 export const getById = query({
   args: { scanId: v.id("scans") },
   handler: async (ctx, args) => {

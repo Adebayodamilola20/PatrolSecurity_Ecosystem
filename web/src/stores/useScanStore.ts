@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { Scan, DashboardStats } from '../types'
 import { api } from '../services/api'
-import { subscribeToScans } from '../services/websocket'
+import { subscribeToScans, subscribeToShiftUpdates } from '../services/websocket'
 import { useEffect } from 'react'
 
 interface ScanStore {
@@ -89,11 +89,18 @@ export const useScanStore = create<ScanStore>((set) => ({
 
 export function useScanWebSocket() {
   const addScan = useScanStore((s) => s.addScan)
+  const fetchStats = useScanStore((s) => s.fetchStats)
 
   useEffect(() => {
-    const unsub = subscribeToScans((data: Scan) => {
+    const unsubScans = subscribeToScans((data: Scan) => {
       addScan(data)
     })
-    return unsub
-  }, [addScan])
+    const unsubShifts = subscribeToShiftUpdates(() => {
+      fetchStats()
+    })
+    return () => {
+      unsubScans()
+      unsubShifts()
+    }
+  }, [addScan, fetchStats])
 }

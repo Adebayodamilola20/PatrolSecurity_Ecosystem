@@ -17,6 +17,7 @@ interface EmergencyAlert {
   message?: string
   note?: string
   siteLabel?: string
+  category?: string
   triggeredAt?: string
   userName?: string
   delivery?: any
@@ -187,6 +188,7 @@ function EmergencyPopup({ alert, onClose }: { alert: EmergencyAlert; onClose: ()
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <Info label="Site" value={alert.siteLabel || 'Unknown site'} />
+            <Info label="Category" value={alert.category || 'Not specified'} />
             <Info label="Time" value={when} />
           </div>
 

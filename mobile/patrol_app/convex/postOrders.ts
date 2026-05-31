@@ -72,6 +72,38 @@ export const create = mutation({
   },
 });
 
+export const update = mutation({
+  args: {
+    orderId: v.id("postOrders"),
+    title: v.optional(v.string()),
+    summary: v.optional(v.string()),
+    instructions: v.optional(v.string()),
+    priority: v.optional(v.string()),
+    active: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const { orderId, ...fields } = args;
+    const clean = Object.fromEntries(
+      Object.entries(fields).filter(([, v]) => v !== undefined),
+    );
+    await ctx.db.patch(orderId, clean as any);
+    return await ctx.db.get(orderId);
+  },
+});
+
+export const resolveCompletionId = query({
+  args: { id: v.string() },
+  handler: async (ctx, args) => {
+    const byLegacyId = await ctx.db
+      .query("postOrderCompletions")
+      .withIndex("by_legacyId", (q) => q.eq("legacyId", args.id))
+      .unique();
+    if (byLegacyId) return byLegacyId._id;
+    const all = await ctx.db.query("postOrderCompletions").collect();
+    return all.find(c => c._id === args.id)?._id ?? null;
+  },
+});
+
 export const listCompletions = query({
   args: { clientId: v.optional(v.id("clients")) },
   handler: async (ctx, args) => {

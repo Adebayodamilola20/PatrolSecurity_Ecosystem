@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 
 export const hasUsers = query({
   args: {},
@@ -140,6 +141,110 @@ export const seedDefaults = mutation({
     return { seeded: true }
   },
 })
+
+export const resetAllPasswords = mutation({
+  args: { passwordHash: v.string() },
+  handler: async (ctx, args) => {
+    const users = await ctx.db.query("users").collect();
+    for (const user of users) {
+      await ctx.db.patch(user._id, { passwordHash: args.passwordHash });
+    }
+    return { updated: users.length };
+  },
+});
+
+export const assignGuardToFirstSite = mutation({
+  args: {
+    email: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .unique();
+    if (!user) return { assigned: false, reason: "user not found" };
+    const existing = await ctx.db
+      .query("userSiteAssignments")
+      .withIndex("by_userId", (q) => q.eq("userId", user._id))
+      .first();
+    if (existing) return { assigned: false, reason: "already assigned" };
+    const site = await ctx.db.query("sites").first();
+    if (!site) return { assigned: false, reason: "no sites exist" };
+    await ctx.db.insert("userSiteAssignments", {
+      legacyId: crypto.randomUUID(),
+      clientId: site.clientId,
+      userId: user._id,
+      siteId: site._id,
+      createdAt: Date.now(),
+    });
+    return { assigned: true, siteName: site.name, userEmail: args.email };
+  },
+});
+
+export const addMissingSeedUsers = mutation({
+  args: { passwordHash: v.string() },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.query("users").collect();
+    const existingEmails = new Set(existing.map((u) => u.email));
+    const hash = args.passwordHash;
+    const now = Date.now();
+    const added = [];
+
+    if (!existingEmails.has("client@securecorp.com")) {
+      const clients = await ctx.db.query("clients").collect();
+      let clientId: Id<"clients"> | undefined;
+      if (clients.length === 0) {
+        clientId = await ctx.db.insert("clients", {
+          legacyId: crypto.randomUUID(),
+          name: "SecureCorp Nigeria",
+          email: "client@securecorp.com",
+          phone: "+234 800 000 0001",
+          active: true,
+          createdAt: now,
+        });
+      } else {
+        clientId = clients[0]._id;
+      }
+      await ctx.db.insert("users", {
+        legacyId: crypto.randomUUID(),
+        name: "Client Admin",
+        email: "client@securecorp.com",
+        passwordHash: hash,
+        role: "main_account",
+        phone: "+234 800 000 0001",
+        active: true,
+        clientId,
+        liveTracking: true,
+        createdAt: now,
+      });
+      added.push("client@securecorp.com (main_account)");
+    }
+    if (!existingEmails.has("guard@securecorp.com")) {
+      const clients = await ctx.db.query("clients").collect();
+      await ctx.db.insert("users", {
+        legacyId: crypto.randomUUID(),
+        name: "Field Guard",
+        email: "guard@securecorp.com",
+        passwordHash: hash,
+        role: "guard",
+        phone: "+234 800 000 0002",
+        active: true,
+        clientId: clients.length > 0 ? clients[0]._id : undefined,
+        liveTracking: true,
+        createdAt: now,
+      });
+      added.push("guard@securecorp.com (guard)");
+    }
+
+    return {
+      added,
+      users: (await ctx.db.query("users").collect()).map((u) => ({
+        email: u.email,
+        role: u.role,
+      })),
+    };
+  },
+});
 
 // SECURITY: wipeAll mutation has been removed from production deployment
 // DO NOT expose destructive operations

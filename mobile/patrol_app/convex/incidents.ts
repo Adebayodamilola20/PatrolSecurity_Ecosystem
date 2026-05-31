@@ -113,6 +113,19 @@ export const missedPatrols = query({
   },
 });
 
+export const resolveId = query({
+  args: { id: v.string() },
+  handler: async (ctx, args) => {
+    const byLegacyId = await ctx.db
+      .query("incidents")
+      .withIndex("by_legacyId", (q) => q.eq("legacyId", args.id))
+      .unique();
+    if (byLegacyId) return byLegacyId._id;
+    const all = await ctx.db.query("incidents").collect();
+    return all.find(i => i._id === args.id)?._id ?? null;
+  },
+});
+
 export const create = mutation({
   args: {
     officerId: v.id("users"),

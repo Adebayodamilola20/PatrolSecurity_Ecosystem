@@ -14,7 +14,7 @@ export default function UserDetail() {
   useEffect(() => {
     if (!id) return
     const load = () => {
-      api.users.get(id).then(setUser).catch(() => {})
+      api.users.get(id).then(setUser).catch((err) => console.error('Failed to load user:', err))
     }
     load()
     const unsub = subscribeToShiftUpdates((payload: any) => {

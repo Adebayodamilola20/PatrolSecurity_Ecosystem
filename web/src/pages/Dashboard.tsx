@@ -68,10 +68,6 @@ export default function Dashboard() {
   useEffect(() => {
     fetchScans()
     fetchStats()
-    const unsub = subscribeToShiftUpdates(() => {
-      fetchStats()
-    })
-    return unsub
   }, [])
 
   const statCards = [

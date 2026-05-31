@@ -259,6 +259,7 @@ class ApiService {
   static Future<Map<String, dynamic>> triggerEmergency({
     String? checkpointId,
     String siteLabel = '',
+    String category = '',
     String note = '',
     String location = '',
   }) async {
@@ -269,6 +270,7 @@ class ApiService {
       body: jsonEncode({
         'checkpointId': checkpointId,
         'siteLabel': siteLabel,
+        'category': category,
         'note': note,
         'location': location,
       }),

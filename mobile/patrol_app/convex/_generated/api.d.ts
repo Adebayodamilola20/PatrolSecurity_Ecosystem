@@ -10,6 +10,7 @@
 
 import type * as checkpoints from "../checkpoints.js";
 import type * as clients from "../clients.js";
+import type * as crons from "../crons.js";
 import type * as dev from "../dev.js";
 import type * as emergency from "../emergency.js";
 import type * as exports from "../exports.js";
@@ -22,6 +23,8 @@ import type * as lib_auth from "../lib/auth.js";
 import type * as lib_http from "../lib/http.js";
 import type * as lib_httpAuth from "../lib/httpAuth.js";
 import type * as lib_jwt from "../lib/jwt.js";
+import type * as missedPatrolScheduler from "../missedPatrolScheduler.js";
+import type * as missedPatrols from "../missedPatrols.js";
 import type * as notifications from "../notifications.js";
 import type * as passOnLogs from "../passOnLogs.js";
 import type * as positions from "../positions.js";
@@ -31,6 +34,7 @@ import type * as scans from "../scans.js";
 import type * as settings from "../settings.js";
 import type * as shifts from "../shifts.js";
 import type * as sites from "../sites.js";
+import type * as tenantBackfill from "../tenantBackfill.js";
 import type * as users from "../users.js";
 
 import type {
@@ -42,6 +46,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   checkpoints: typeof checkpoints;
   clients: typeof clients;
+  crons: typeof crons;
   dev: typeof dev;
   emergency: typeof emergency;
   exports: typeof exports;
@@ -54,6 +59,8 @@ declare const fullApi: ApiFromModules<{
   "lib/http": typeof lib_http;
   "lib/httpAuth": typeof lib_httpAuth;
   "lib/jwt": typeof lib_jwt;
+  missedPatrolScheduler: typeof missedPatrolScheduler;
+  missedPatrols: typeof missedPatrols;
   notifications: typeof notifications;
   passOnLogs: typeof passOnLogs;
   positions: typeof positions;
@@ -63,6 +70,7 @@ declare const fullApi: ApiFromModules<{
   settings: typeof settings;
   shifts: typeof shifts;
   sites: typeof sites;
+  tenantBackfill: typeof tenantBackfill;
   users: typeof users;
 }>;
 
