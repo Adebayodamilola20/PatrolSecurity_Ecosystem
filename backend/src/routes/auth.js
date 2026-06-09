@@ -45,7 +45,8 @@ async function buildSafeUser(user) {
 }
 
 router.post('/login', async (req, res) => {
-  const { email, password, clientType } = req.body
+  const email = String(req.body.email || '').trim().toLowerCase()
+  const { password, clientType } = req.body
 
   if (!email || !password) {
     return res.status(400).json({ message: 'Email and password are required' })

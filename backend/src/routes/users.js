@@ -146,7 +146,8 @@ router.get('/:id', async (req, res) => {
 })
 
 router.post('/', adminOnly, async (req, res) => {
-  const { name, email, password, role, phone, clientId, siteIds } = req.body
+  const { name, password, role, phone, clientId, siteIds } = req.body
+  const email = String(req.body.email || '').trim().toLowerCase()
 
   if (!name || !email || !password) {
     return res.status(400).json({ message: 'name, email, password are required' })
