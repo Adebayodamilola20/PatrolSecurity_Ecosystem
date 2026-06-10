@@ -24,7 +24,7 @@ const defaultStats: DashboardStats = {
   flaggedScans: 0,
 }
 
-export const useScanStore = create<ScanStore>((set) => ({
+export const useScanStore = create<ScanStore>((set, get) => ({
   scans: [],
   stats: defaultStats,
   loading: false,
@@ -54,6 +54,8 @@ export const useScanStore = create<ScanStore>((set) => ({
   setStats: (stats) => set({ stats }),
 
   fetchScans: async () => {
+    // Prevent overlapping fetches that would toggle the loading flag repeatedly.
+    if (get().loading) return;
     set({ loading: true })
     try {
       const scans = await api.scans.list()

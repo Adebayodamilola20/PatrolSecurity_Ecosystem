@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
+import React from 'react'
 import {
   LayoutDashboard,
   MapPin,
@@ -104,42 +105,58 @@ export default function Sidebar({ collapsed, onToggle, mobile, onClose }: Sideba
       </div>
 
       {(!collapsed || mobile) && (
-        <div className="mx-3 mb-3 rounded-xl bg-sidebar-accent/60 px-3 py-2.5 flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary to-info shrink-0" />
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium truncate">{user?.name || 'User'}</div>
-            <div className="text-[11px] text-muted-foreground capitalize">{roleLabels[user?.role || ''] || user?.role} · Control</div>
-            {user?.clientName && (
-              <div className="text-[10px] text-muted-foreground/60 truncate">{user.clientName}</div>
-            )}
-          </div>
+      <div className="mx-3 mb-3 rounded-xl bg-sidebar-accent/60 px-3 py-2.5 flex items-center gap-2.5">
+        <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary to-info shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium truncate">{user?.name || 'User'}</div>
         </div>
+      </div>
       )}
 
       <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
-        {nav.map((item) => {
-          const active = location.pathname === item.to
-          const Icon = item.icon
-          return (
-            <Link
-              key={item.to}
-              to={item.to}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                active
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-              }`}
-            >
-              <Icon className="h-4 w-4 shrink-0" />
-              {(!collapsed || mobile) && <span>{item.label}</span>}
-              {(!collapsed || mobile) && item.label === "Alerts" && (
-                <span className="ml-auto rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-semibold text-destructive-foreground">
-                  3
-                </span>
-              )}
-            </Link>
-          )
-        })}
+            {nav.map((item) => {
+              const active = location.pathname === item.to
+              const Icon = item.icon
+              return (
+                <React.Fragment key={item.to}>
+                  <Link
+                    to={item.to}
+                    className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                      active
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    {(!collapsed || mobile) && <span>{item.label}</span>}
+                    {(!collapsed || mobile) && item.label === "Alerts" && (
+                      <span className="ml-auto rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-semibold text-destructive-foreground">
+                        3
+                      </span>
+                    )}
+                  </Link>
+                  {(!collapsed || mobile) && item.label === "Reports" && (
+                    <div className="ml-8 space-y-1 mt-1">
+                      <Link to="/reports/daily" className="flex items-center gap-2 text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent rounded-md px-2 py-1">
+                        Daily Activity Report
+                      </Link>
+                      <Link to="/reports/incidents" className="flex items-center gap-2 text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent rounded-md px-2 py-1">
+                        Incident Report
+                      </Link>
+                      <Link to="/reports/parking-wisdom" className="flex items-center gap-2 text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent rounded-md px-2 py-1">
+                        Parking Wisdom
+                      </Link>
+                      <Link to="/reports/maintenance" className="flex items-center gap-2 text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent rounded-md px-2 py-1">
+                        Maintenance Request
+                      </Link>
+                      <Link to="/reports/pass-on-logs" className="flex items-center gap-2 text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent rounded-md px-2 py-1">
+                        Pass‑On Logs
+                      </Link>
+                    </div>
+                  )}
+                </React.Fragment>
+              )
+            })}
       </nav>
 
       <div className="border-t border-sidebar-border">
