@@ -22,7 +22,19 @@ class DutyProvider extends ChangeNotifier {
   String? get error => _error;
   int get pendingAcknowledgementCount => _pendingAcknowledgementCount;
   bool get hasPendingAcknowledgements => _pendingAcknowledgementCount > 0;
-  List<Map<String, dynamic>> get pendingAcknowledgementOrders => _pendingPassOnLogs;
+  List<Map<String, dynamic>> get pendingAcknowledgementOrders =>
+      _pendingPassOnLogs;
+
+  void clearData() {
+    _orders = [];
+    _pendingHandovers = [];
+    _pendingPassOnLogs = [];
+    _loading = false;
+    _submitting = false;
+    _error = null;
+    _pendingAcknowledgementCount = 0;
+    notifyListeners();
+  }
 
   Future<void> load() async {
     _loading = true;
@@ -35,11 +47,14 @@ class DutyProvider extends ChangeNotifier {
     ]);
 
     _orders = results[0]
-        .map((item) => PostOrder.fromJson(item as Map<String, dynamic>)).toList();
+        .map((item) => PostOrder.fromJson(item as Map<String, dynamic>))
+        .toList();
     _pendingHandovers = results[1]
-        .map((item) => Handover.fromJson(item as Map<String, dynamic>)).toList();
+        .map((item) => Handover.fromJson(item as Map<String, dynamic>))
+        .toList();
     _pendingPassOnLogs = results[2]
-        .map((item) => item as Map<String, dynamic>).toList();
+        .map((item) => item as Map<String, dynamic>)
+        .toList();
     _pendingAcknowledgementCount = _pendingPassOnLogs.length;
 
     _error = null;

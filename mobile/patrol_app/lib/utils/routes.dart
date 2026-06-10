@@ -10,6 +10,13 @@ class AppRoutes {
   static const String checkpoints = '/checkpoints';
   static const String checkpointDetail = '/checkpoint-detail';
   static const String reports = '/reports';
+  static const String schedule = '/schedule';
+  static const String patrol = '/patrol';
+  static const String policy = '/policy';
+  static const String truckCheck = '/truck-check';
+  static const String visitorCheck = '/visitor-check';
+  static const String vacation = '/vacation';
+  static const String users = '/users';
   static const String profile = '/profile';
   static const String settings = '/settings';
 }

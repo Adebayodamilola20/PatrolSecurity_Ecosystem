@@ -14,12 +14,12 @@ class ExportTotals {
   });
 
   factory ExportTotals.fromJson(Map<String, dynamic> json) => ExportTotals(
-        scans: json['scans'] ?? 0,
-        verifiedScans: json['verifiedScans'] ?? 0,
-        flaggedScans: json['flaggedScans'] ?? 0,
-        shifts: json['shifts'] ?? 0,
-        totalShiftHours: (json['totalShiftHours'] ?? 0).toDouble(),
-      );
+    scans: json['scans'] ?? 0,
+    verifiedScans: json['verifiedScans'] ?? 0,
+    flaggedScans: json['flaggedScans'] ?? 0,
+    shifts: json['shifts'] ?? 0,
+    totalShiftHours: (json['totalShiftHours'] ?? 0).toDouble(),
+  );
 }
 
 class ExportFile {
@@ -56,27 +56,27 @@ class ExportFile {
   });
 
   factory ExportFile.fromJson(Map<String, dynamic> json) => ExportFile(
-        id: json['id'] ?? '',
-        type: json['type'] ?? '',
-        date: json['date'] ?? '',
-        format: json['format'] ?? 'csv',
-        status: json['status'] ?? 'ready',
-        scopeLabel: json['scopeLabel'] ?? '',
-        clientId: json['clientId'],
-        requestedBy: json['requestedBy'] ?? '',
-        requestedByName: json['requestedByName'] ?? '',
-        fileName: json['fileName'] ?? '',
-        downloadUrl: json['downloadUrl'] ?? '',
-        generatedAt: DateTime.tryParse(json['generatedAt']?.toString() ?? ''),
-        createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? ''),
-        totals: json['totals'] is Map<String, dynamic>
-            ? ExportTotals.fromJson(json['totals'] as Map<String, dynamic>)
-            : const ExportTotals(
-                scans: 0,
-                verifiedScans: 0,
-                flaggedScans: 0,
-                shifts: 0,
-                totalShiftHours: 0,
-              ),
-      );
+    id: json['id'] ?? '',
+    type: json['type'] ?? '',
+    date: json['date'] ?? '',
+    format: json['format'] ?? 'csv',
+    status: json['status'] ?? 'ready',
+    scopeLabel: json['scopeLabel'] ?? '',
+    clientId: json['clientId'],
+    requestedBy: json['requestedBy'] ?? '',
+    requestedByName: json['requestedByName'] ?? '',
+    fileName: json['fileName'] ?? '',
+    downloadUrl: json['downloadUrl'] ?? '',
+    generatedAt: DateTime.tryParse(json['generatedAt']?.toString() ?? ''),
+    createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? ''),
+    totals: json['totals'] is Map<String, dynamic>
+        ? ExportTotals.fromJson(json['totals'] as Map<String, dynamic>)
+        : const ExportTotals(
+            scans: 0,
+            verifiedScans: 0,
+            flaggedScans: 0,
+            shifts: 0,
+            totalShiftHours: 0,
+          ),
+  );
 }

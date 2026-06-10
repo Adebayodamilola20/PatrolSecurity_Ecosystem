@@ -63,7 +63,9 @@ class ProfileScreen extends StatelessWidget {
                   const SizedBox(height: 4),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 4),
+                      horizontal: 12,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: AppTheme.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(20),
@@ -152,8 +154,7 @@ class ProfileScreen extends StatelessWidget {
             width: double.infinity,
             height: 50,
             child: ElevatedButton.icon(
-              onPressed: () =>
-                  Navigator.pushNamed(context, AppRoutes.settings),
+              onPressed: () => Navigator.pushNamed(context, AppRoutes.settings),
               icon: const Icon(Icons.settings_outlined),
               label: const Text('Settings'),
               style: ElevatedButton.styleFrom(
@@ -175,7 +176,10 @@ class ProfileScreen extends StatelessWidget {
                 await auth.logout();
                 if (context.mounted) {
                   Navigator.pushNamedAndRemoveUntil(
-                      context, AppRoutes.login, (_) => false);
+                    context,
+                    AppRoutes.login,
+                    (_) => false,
+                  );
                 }
               },
               icon: const Icon(Icons.logout),
@@ -214,14 +218,22 @@ class _ProfileRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label,
-                  style: const TextStyle(
-                      fontSize: 12, color: AppTheme.textSecondary)),
-              Text(value,
-                  style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w500),
-                  softWrap: true,
-                  overflow: TextOverflow.ellipsis),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+                softWrap: true,
+                overflow: TextOverflow.ellipsis,
+              ),
             ],
           ),
         ),
@@ -257,10 +269,7 @@ class _StatWidget extends StatelessWidget {
         ),
         Text(
           label,
-          style: const TextStyle(
-            fontSize: 11,
-            color: AppTheme.textSecondary,
-          ),
+          style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
           softWrap: true,
           overflow: TextOverflow.ellipsis,
         ),

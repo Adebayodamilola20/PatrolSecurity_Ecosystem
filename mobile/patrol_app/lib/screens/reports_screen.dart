@@ -55,10 +55,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       final message = e.toString().replaceFirst('Exception: ', '');
       setState(() => _statusMessage = message);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: AppTheme.error,
-        ),
+        SnackBar(content: Text(message), backgroundColor: AppTheme.error),
       );
     } finally {
       if (mounted) {
@@ -109,7 +106,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final canExport = _canExport(role);
 
     return DefaultTabController(
-      length: 4,
+      length: 6,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Reports & Control'),
@@ -118,8 +115,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
             tabs: [
               Tab(text: 'Daily Activity'),
               Tab(text: 'Incident'),
+              Tab(text: 'Parking'),
               Tab(text: 'Maintenance'),
               Tab(text: 'Pass-On Log'),
+              Tab(text: 'Custom'),
             ],
           ),
         ),
@@ -186,16 +185,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       );
                     },
                     onRequestExport: () {
-                      return _submit(
-                        () async {
-                          final result = await ApiService.requestDailyTourExport(
-                            date: DateFormat('yyyy-MM-dd').format(_exportDate),
-                          );
-                          await _loadDailyExports();
-                          return result;
-                        },
-                        'CSV export requested for $exportLabel.',
-                      );
+                      return _submit(() async {
+                        final result = await ApiService.requestDailyTourExport(
+                          date: DateFormat('yyyy-MM-dd').format(_exportDate),
+                        );
+                        await _loadDailyExports();
+                        return result;
+                      }, 'CSV export requested for $exportLabel.');
                     },
                     exportLabel: exportLabel,
                     onPickExportDate: _pickExportDate,
@@ -217,21 +213,38 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       );
                     },
                   ),
+                  _ParkingViolationTab(
+                    checkpoints: checkpoints,
+                    busy: _submitting,
+                    onSubmit: (plate, vehicle, location, notes, checkpointId) {
+                      return _submit(
+                        () => ApiService.reportIncident(
+                          title: 'Parking Violation: $plate',
+                          description:
+                              'Vehicle: $vehicle\nLocation: $location\nNotes: $notes',
+                          checkpointId: checkpointId,
+                          severity: 'low',
+                        ),
+                        'Parking violation submitted.',
+                      );
+                    },
+                  ),
                   _MaintenanceTab(
                     checkpoints: checkpoints,
                     busy: _submitting,
-                    onSubmit: (title, issue, assetName, checkpointId, severity) {
-                      return _submit(
-                        () => ApiService.submitMaintenanceReport(
-                          title: title,
-                          issue: issue,
-                          assetName: assetName,
-                          checkpointId: checkpointId,
-                          severity: severity,
-                        ),
-                        'Maintenance report submitted.',
-                      );
-                    },
+                    onSubmit:
+                        (title, issue, assetName, checkpointId, severity) {
+                          return _submit(
+                            () => ApiService.submitMaintenanceReport(
+                              title: title,
+                              issue: issue,
+                              assetName: assetName,
+                              checkpointId: checkpointId,
+                              severity: severity,
+                            ),
+                            'Maintenance report submitted.',
+                          );
+                        },
                   ),
                   _PassOnLogTab(
                     checkpoints: checkpoints,
@@ -249,6 +262,21 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       );
                     },
                   ),
+                  _CustomReportTab(
+                    checkpoints: checkpoints,
+                    busy: _submitting,
+                    onSubmit: (type, title, details, checkpointId) {
+                      return _submit(
+                        () => ApiService.reportIncident(
+                          title: '$type: $title',
+                          description: details,
+                          checkpointId: checkpointId,
+                          severity: 'medium',
+                        ),
+                        'Custom report submitted.',
+                      );
+                    },
+                  ),
                 ],
               ),
             ),
@@ -260,8 +288,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   String _buildShiftWindow(ShiftProvider shift) {
     final formatter = DateFormat('HH:mm');
-    final start = shift.clockInTime == null ? '--:--' : formatter.format(shift.clockInTime!);
-    final end = shift.scheduledEnd == null ? '--:--' : formatter.format(shift.scheduledEnd!);
+    final start = shift.clockInTime == null
+        ? '--:--'
+        : formatter.format(shift.clockInTime!);
+    final end = shift.scheduledEnd == null
+        ? '--:--'
+        : formatter.format(shift.scheduledEnd!);
     return '$start - $end';
   }
 
@@ -321,7 +353,8 @@ class _DailyActivityTabState extends State<_DailyActivityTab> {
       children: [
         const _SectionTitle(
           title: 'Daily Activity Report',
-          description: 'Summarise the shift, key patrols, and unresolved items.',
+          description:
+              'Summarise the shift, key patrols, and unresolved items.',
         ),
         _CheckpointField(
           checkpoints: widget.checkpoints,
@@ -361,11 +394,11 @@ class _DailyActivityTabState extends State<_DailyActivityTab> {
           onPressed: widget.busy || _summaryCtrl.text.trim().isEmpty
               ? null
               : () => widget.onSubmit(
-                    _summaryCtrl.text.trim(),
-                    _activitiesCtrl.text.trim(),
-                    _issuesCtrl.text.trim(),
-                    _checkpointId,
-                  ),
+                  _summaryCtrl.text.trim(),
+                  _activitiesCtrl.text.trim(),
+                  _issuesCtrl.text.trim(),
+                  _checkpointId,
+                ),
           icon: const Icon(Icons.description_outlined),
           label: Text(widget.busy ? 'Submitting...' : 'Submit Daily Report'),
         ),
@@ -373,7 +406,8 @@ class _DailyActivityTabState extends State<_DailyActivityTab> {
           const SizedBox(height: 24),
           const _SectionTitle(
             title: 'CSV Export',
-            description: 'Generate and review the day’s tour export in spreadsheet format.',
+            description:
+                'Generate and review the day’s tour export in spreadsheet format.',
           ),
           OutlinedButton.icon(
             onPressed: widget.busy ? null : widget.onPickExportDate,
@@ -411,7 +445,8 @@ class _DailyActivityTabState extends State<_DailyActivityTab> {
           const SizedBox(height: 24),
           const _SectionTitle(
             title: 'CSV Export',
-            description: 'Accessible only to Admin and Client Main Account users.',
+            description:
+                'Accessible only to Admin and Client Main Account users.',
           ),
         ],
       ],
@@ -449,7 +484,9 @@ class _ExportArchiveCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  item.scopeLabel.isNotEmpty ? item.scopeLabel : 'Patrol Export',
+                  item.scopeLabel.isNotEmpty
+                      ? item.scopeLabel
+                      : 'Patrol Export',
                   style: const TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 16,
@@ -458,7 +495,10 @@ class _ExportArchiveCard extends StatelessWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: AppTheme.primary.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(999),
@@ -485,7 +525,10 @@ class _ExportArchiveCard extends StatelessWidget {
             runSpacing: 8,
             children: [
               _ExportMetric(label: 'Scans', value: '${item.totals.scans}'),
-              _ExportMetric(label: 'Verified', value: '${item.totals.verifiedScans}'),
+              _ExportMetric(
+                label: 'Verified',
+                value: '${item.totals.verifiedScans}',
+              ),
               _ExportMetric(label: 'Shifts', value: '${item.totals.shifts}'),
               _ExportMetric(
                 label: 'Hours',
@@ -496,10 +539,7 @@ class _ExportArchiveCard extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             'Generated: $generatedLabel',
-            style: const TextStyle(
-              fontSize: 12,
-              color: AppTheme.textSecondary,
-            ),
+            style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
           ),
           const SizedBox(height: 12),
           Row(
@@ -516,7 +556,9 @@ class _ExportArchiveCard extends StatelessWidget {
                       );
                     }
                     if (!opened) {
-                      await Clipboard.setData(ClipboardData(text: fullDownloadUrl));
+                      await Clipboard.setData(
+                        ClipboardData(text: fullDownloadUrl),
+                      );
                     }
                     if (!context.mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -545,10 +587,7 @@ class _ExportMetric extends StatelessWidget {
   final String label;
   final String value;
 
-  const _ExportMetric({
-    required this.label,
-    required this.value,
-  });
+  const _ExportMetric({required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
@@ -613,7 +652,8 @@ class _IncidentTabState extends State<_IncidentTab> {
       children: [
         const _SectionTitle(
           title: 'Incident Report',
-          description: 'Raise security, safety, or escalation issues immediately.',
+          description:
+              'Raise security, safety, or escalation issues immediately.',
         ),
         _CheckpointField(
           checkpoints: widget.checkpoints,
@@ -634,7 +674,9 @@ class _IncidentTabState extends State<_IncidentTab> {
           initialValue: _severity,
           decoration: const InputDecoration(labelText: 'Severity'),
           items: const ['low', 'medium', 'high', 'critical']
-              .map((value) => DropdownMenuItem(value: value, child: Text(value)))
+              .map(
+                (value) => DropdownMenuItem(value: value, child: Text(value)),
+              )
               .toList(),
           onChanged: (value) => setState(() => _severity = value ?? 'low'),
         ),
@@ -652,11 +694,11 @@ class _IncidentTabState extends State<_IncidentTab> {
           onPressed: widget.busy || _titleCtrl.text.trim().isEmpty
               ? null
               : () => widget.onSubmit(
-                    _titleCtrl.text.trim(),
-                    _descriptionCtrl.text.trim(),
-                    _checkpointId,
-                    _severity,
-                  ),
+                  _titleCtrl.text.trim(),
+                  _descriptionCtrl.text.trim(),
+                  _checkpointId,
+                  _severity,
+                ),
           icon: const Icon(Icons.warning_amber_rounded),
           label: Text(widget.busy ? 'Submitting...' : 'Submit Incident'),
         ),
@@ -702,7 +744,8 @@ class _MaintenanceTabState extends State<_MaintenanceTab> {
       children: [
         const _SectionTitle(
           title: 'Maintenance Report',
-          description: 'Log failed bulbs, damaged equipment, and facility faults.',
+          description:
+              'Log failed bulbs, damaged equipment, and facility faults.',
         ),
         _CheckpointField(
           checkpoints: widget.checkpoints,
@@ -731,7 +774,9 @@ class _MaintenanceTabState extends State<_MaintenanceTab> {
           initialValue: _severity,
           decoration: const InputDecoration(labelText: 'Priority'),
           items: const ['low', 'medium', 'high']
-              .map((value) => DropdownMenuItem(value: value, child: Text(value)))
+              .map(
+                (value) => DropdownMenuItem(value: value, child: Text(value)),
+              )
               .toList(),
           onChanged: (value) => setState(() => _severity = value ?? 'medium'),
         ),
@@ -747,19 +792,123 @@ class _MaintenanceTabState extends State<_MaintenanceTab> {
         ),
         const SizedBox(height: 16),
         FilledButton.icon(
-          onPressed: widget.busy ||
+          onPressed:
+              widget.busy ||
                   _titleCtrl.text.trim().isEmpty ||
                   _issueCtrl.text.trim().isEmpty
               ? null
               : () => widget.onSubmit(
-                    _titleCtrl.text.trim(),
-                    _issueCtrl.text.trim(),
-                    _assetCtrl.text.trim(),
-                    _checkpointId,
-                    _severity,
-                  ),
+                  _titleCtrl.text.trim(),
+                  _issueCtrl.text.trim(),
+                  _assetCtrl.text.trim(),
+                  _checkpointId,
+                  _severity,
+                ),
           icon: const Icon(Icons.build_outlined),
-          label: Text(widget.busy ? 'Submitting...' : 'Submit Maintenance Report'),
+          label: Text(
+            widget.busy ? 'Submitting...' : 'Submit Maintenance Report',
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ParkingViolationTab extends StatefulWidget {
+  final List<Checkpoint> checkpoints;
+  final bool busy;
+  final Future<void> Function(String, String, String, String, String?) onSubmit;
+
+  const _ParkingViolationTab({
+    required this.checkpoints,
+    required this.busy,
+    required this.onSubmit,
+  });
+
+  @override
+  State<_ParkingViolationTab> createState() => _ParkingViolationTabState();
+}
+
+class _ParkingViolationTabState extends State<_ParkingViolationTab> {
+  final _plateCtrl = TextEditingController();
+  final _vehicleCtrl = TextEditingController();
+  final _locationCtrl = TextEditingController();
+  final _notesCtrl = TextEditingController();
+  String? _checkpointId;
+
+  @override
+  void dispose() {
+    _plateCtrl.dispose();
+    _vehicleCtrl.dispose();
+    _locationCtrl.dispose();
+    _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const _SectionTitle(
+          title: 'Parking Violation',
+          description:
+              'Log unauthorized, unsafe, or restricted-area parking issues.',
+        ),
+        _CheckpointField(
+          checkpoints: widget.checkpoints,
+          value: _checkpointId,
+          onChanged: (value) => setState(() => _checkpointId = value),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _plateCtrl,
+          onChanged: (_) => setState(() {}),
+          decoration: const InputDecoration(
+            labelText: 'Plate number *',
+            hintText: 'ABC-1234',
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _vehicleCtrl,
+          decoration: const InputDecoration(
+            labelText: 'Vehicle description',
+            hintText: 'White Toyota Hilux',
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _locationCtrl,
+          decoration: const InputDecoration(
+            labelText: 'Violation location',
+            hintText: 'Fire lane, loading bay, reserved space...',
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _notesCtrl,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            labelText: 'Notes',
+            hintText: 'Describe the issue and any action taken.',
+          ),
+        ),
+        const SizedBox(height: 16),
+        FilledButton.icon(
+          onPressed: widget.busy || _plateCtrl.text.trim().isEmpty
+              ? null
+              : () => widget.onSubmit(
+                  _plateCtrl.text.trim(),
+                  _vehicleCtrl.text.trim(),
+                  _locationCtrl.text.trim(),
+                  _notesCtrl.text.trim(),
+                  _checkpointId,
+                ),
+          icon: const Icon(Icons.local_parking_outlined),
+          label: Text(
+            widget.busy ? 'Submitting...' : 'Submit Parking Violation',
+          ),
         ),
       ],
     );
@@ -801,7 +950,8 @@ class _PassOnLogTabState extends State<_PassOnLogTab> {
       children: [
         const _SectionTitle(
           title: 'Pass-On Log',
-          description: 'Create one-off instructions officers can act on without a separate acknowledgement step.',
+          description:
+              'Create one-off instructions officers can act on without a separate acknowledgement step.',
         ),
         _CheckpointField(
           checkpoints: widget.checkpoints,
@@ -822,7 +972,9 @@ class _PassOnLogTabState extends State<_PassOnLogTab> {
           initialValue: _priority,
           decoration: const InputDecoration(labelText: 'Priority'),
           items: const ['normal', 'urgent', 'critical']
-              .map((value) => DropdownMenuItem(value: value, child: Text(value)))
+              .map(
+                (value) => DropdownMenuItem(value: value, child: Text(value)),
+              )
               .toList(),
           onChanged: (value) => setState(() => _priority = value ?? 'normal'),
         ),
@@ -838,18 +990,122 @@ class _PassOnLogTabState extends State<_PassOnLogTab> {
         ),
         const SizedBox(height: 16),
         FilledButton.icon(
-          onPressed: widget.busy ||
+          onPressed:
+              widget.busy ||
                   _titleCtrl.text.trim().isEmpty ||
                   _instructionCtrl.text.trim().isEmpty
               ? null
               : () => widget.onSubmit(
-                    _titleCtrl.text.trim(),
-                    _instructionCtrl.text.trim(),
-                    _checkpointId,
-                    _priority,
-                  ),
+                  _titleCtrl.text.trim(),
+                  _instructionCtrl.text.trim(),
+                  _checkpointId,
+                  _priority,
+                ),
           icon: const Icon(Icons.assignment_late_outlined),
           label: Text(widget.busy ? 'Submitting...' : 'Create Pass-On Log'),
+        ),
+      ],
+    );
+  }
+}
+
+class _CustomReportTab extends StatefulWidget {
+  final List<Checkpoint> checkpoints;
+  final bool busy;
+  final Future<void> Function(String, String, String, String?) onSubmit;
+
+  const _CustomReportTab({
+    required this.checkpoints,
+    required this.busy,
+    required this.onSubmit,
+  });
+
+  @override
+  State<_CustomReportTab> createState() => _CustomReportTabState();
+}
+
+class _CustomReportTabState extends State<_CustomReportTab> {
+  final _titleCtrl = TextEditingController();
+  final _detailsCtrl = TextEditingController();
+  String _type = 'General Report';
+  String? _checkpointId;
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _detailsCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const _SectionTitle(
+          title: 'Custom Reports',
+          description:
+              'Capture site-specific reports that do not fit the standard categories.',
+        ),
+        _CheckpointField(
+          checkpoints: widget.checkpoints,
+          value: _checkpointId,
+          onChanged: (value) => setState(() => _checkpointId = value),
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          initialValue: _type,
+          decoration: const InputDecoration(labelText: 'Report type'),
+          items:
+              const [
+                    'General Report',
+                    'Access Control',
+                    'Safety Observation',
+                    'Equipment Check',
+                    'Supervisor Note',
+                  ]
+                  .map(
+                    (value) =>
+                        DropdownMenuItem(value: value, child: Text(value)),
+                  )
+                  .toList(),
+          onChanged: (value) =>
+              setState(() => _type = value ?? 'General Report'),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _titleCtrl,
+          onChanged: (_) => setState(() {}),
+          decoration: const InputDecoration(
+            labelText: 'Title *',
+            hintText: 'Brief report title',
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _detailsCtrl,
+          onChanged: (_) => setState(() {}),
+          maxLines: 5,
+          decoration: const InputDecoration(
+            labelText: 'Details *',
+            hintText: 'Document the observation, action, and follow-up.',
+          ),
+        ),
+        const SizedBox(height: 16),
+        FilledButton.icon(
+          onPressed:
+              widget.busy ||
+                  _titleCtrl.text.trim().isEmpty ||
+                  _detailsCtrl.text.trim().isEmpty
+              ? null
+              : () => widget.onSubmit(
+                  _type,
+                  _titleCtrl.text.trim(),
+                  _detailsCtrl.text.trim(),
+                  _checkpointId,
+                ),
+          icon: const Icon(Icons.note_add_outlined),
+          label: Text(widget.busy ? 'Submitting...' : 'Submit Custom Report'),
         ),
       ],
     );
@@ -871,9 +1127,7 @@ class _CheckpointField extends StatelessWidget {
   Widget build(BuildContext context) {
     return DropdownButtonFormField<String?>(
       initialValue: value,
-      decoration: const InputDecoration(
-        labelText: 'Checkpoint / site',
-      ),
+      decoration: const InputDecoration(labelText: 'Checkpoint / site'),
       items: [
         const DropdownMenuItem<String?>(
           value: null,
@@ -895,10 +1149,7 @@ class _SectionTitle extends StatelessWidget {
   final String title;
   final String description;
 
-  const _SectionTitle({
-    required this.title,
-    required this.description,
-  });
+  const _SectionTitle({required this.title, required this.description});
 
   @override
   Widget build(BuildContext context) {

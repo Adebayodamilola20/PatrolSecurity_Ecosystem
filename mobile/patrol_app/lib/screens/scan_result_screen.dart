@@ -118,8 +118,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                           ),
                         ),
                       ],
-                      if (order != orders.last)
-                        const Divider(height: 22),
+                      if (order != orders.last) const Divider(height: 22),
                     ],
                   ),
                 );

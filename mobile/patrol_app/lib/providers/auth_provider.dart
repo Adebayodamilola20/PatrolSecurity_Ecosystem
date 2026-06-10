@@ -26,13 +26,6 @@ class AuthProvider extends ChangeNotifier {
     try {
       final data = await ApiService.login(email, password);
       final user = User.fromJson(data['user']);
-      if (user.role.trim().toLowerCase() != 'guard') {
-        await ApiService.logout();
-        _error = 'This mobile app is restricted to guard accounts.';
-        _loading = false;
-        notifyListeners();
-        return false;
-      }
       _user = user;
       await _storage.write(
         key: _userStorageKey,
@@ -95,7 +88,10 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> changePassword(String currentPassword, String newPassword) async {
+  Future<void> changePassword(
+    String currentPassword,
+    String newPassword,
+  ) async {
     await ApiService.changePassword(currentPassword, newPassword);
   }
 

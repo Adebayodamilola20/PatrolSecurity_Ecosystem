@@ -18,22 +18,22 @@ class User {
   });
 
   factory User.fromJson(Map<String, dynamic> json) => User(
-        id: json['id'] ?? '',
-        name: json['name'] ?? '',
-        email: json['email'] ?? '',
-        role: json['role'] ?? 'officer',
-        phone: json['phone'] ?? '',
-        active: json['active'] == true || json['active'] == 1,
-        lastActive: json['lastActive'],
-      );
+    id: json['id'] ?? '',
+    name: json['name'] ?? '',
+    email: json['email'] ?? '',
+    role: json['role'] ?? 'officer',
+    phone: json['phone'] ?? '',
+    active: json['active'] == true || json['active'] == 1,
+    lastActive: json['lastActive'],
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'email': email,
-        'role': role,
-        'phone': phone,
-        'active': active,
-        'lastActive': lastActive,
-      };
+    'id': id,
+    'name': name,
+    'email': email,
+    'role': role,
+    'phone': phone,
+    'active': active,
+    'lastActive': lastActive,
+  };
 }

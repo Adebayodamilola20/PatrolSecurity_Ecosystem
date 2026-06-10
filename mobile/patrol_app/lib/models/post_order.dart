@@ -17,7 +17,8 @@ class PostOrderCompletion {
     this.proofNote,
   });
 
-  factory PostOrderCompletion.fromJson(Map<String, dynamic> json) => PostOrderCompletion(
+  factory PostOrderCompletion.fromJson(Map<String, dynamic> json) =>
+      PostOrderCompletion(
         id: json['id'] ?? '',
         status: json['status'] ?? 'pending',
         reviewStatus: json['reviewStatus'] ?? 'pending',
@@ -56,18 +57,23 @@ class PostOrder {
   });
 
   factory PostOrder.fromJson(Map<String, dynamic> json) => PostOrder(
-        id: json['id'] ?? '',
-        title: json['title'] ?? '',
-        summary: json['summary'] ?? '',
-        instructions: json['instructions'] ?? '',
-        checkpointId: json['checkpointId'],
-        checkpointName: json['checkpointName'],
-        priority: json['priority'] ?? 'normal',
-        active: json['active'] == true || json['active'] == 1,
-        requiresAcknowledgement: json['requiresAcknowledgement'] == true || json['requiresAcknowledgement'] == 1,
-        requiresPhotoProof: json['requiresPhotoProof'] == true || json['requiresPhotoProof'] == 1,
-        latestCompletion: json['latestCompletion'] is Map<String, dynamic>
-            ? PostOrderCompletion.fromJson(json['latestCompletion'] as Map<String, dynamic>)
-            : null,
-      );
+    id: json['id'] ?? '',
+    title: json['title'] ?? '',
+    summary: json['summary'] ?? '',
+    instructions: json['instructions'] ?? '',
+    checkpointId: json['checkpointId'],
+    checkpointName: json['checkpointName'],
+    priority: json['priority'] ?? 'normal',
+    active: json['active'] == true || json['active'] == 1,
+    requiresAcknowledgement:
+        json['requiresAcknowledgement'] == true ||
+        json['requiresAcknowledgement'] == 1,
+    requiresPhotoProof:
+        json['requiresPhotoProof'] == true || json['requiresPhotoProof'] == 1,
+    latestCompletion: json['latestCompletion'] is Map<String, dynamic>
+        ? PostOrderCompletion.fromJson(
+            json['latestCompletion'] as Map<String, dynamic>,
+          )
+        : null,
+  );
 }

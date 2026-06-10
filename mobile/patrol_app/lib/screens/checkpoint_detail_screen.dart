@@ -14,8 +14,8 @@ class CheckpointDetailScreen extends StatelessWidget {
     final cp = checkpointId != null
         ? scan.checkpoints.where((c) => c.id == checkpointId).firstOrNull
         : scan.checkpoints.isNotEmpty
-            ? scan.checkpoints.first
-            : null;
+        ? scan.checkpoints.first
+        : null;
 
     if (cp == null) {
       return Scaffold(
@@ -26,8 +26,10 @@ class CheckpointDetailScreen extends StatelessWidget {
                 onRetry: scan.loadCheckpoints,
               )
             : const Center(
-                child: Text('Checkpoint not found',
-                    style: TextStyle(color: AppTheme.textSecondary)),
+                child: Text(
+                  'Checkpoint not found',
+                  style: TextStyle(color: AppTheme.textSecondary),
+                ),
               ),
       );
     }
@@ -81,7 +83,9 @@ class CheckpointDetailScreen extends StatelessWidget {
                   const SizedBox(height: 12),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 6),
+                      horizontal: 14,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: cp.active
                           ? const Color(0xFF10B981).withValues(alpha: 0.1)
@@ -185,16 +189,23 @@ class _DetailRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label,
-                  style: const TextStyle(
-                      fontSize: 12, color: AppTheme.textSecondary)),
-              Text(value,
-                  style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: AppTheme.text),
-                  softWrap: true,
-                  overflow: TextOverflow.ellipsis),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: AppTheme.text,
+                ),
+                softWrap: true,
+                overflow: TextOverflow.ellipsis,
+              ),
             ],
           ),
         ),

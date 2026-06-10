@@ -19,6 +19,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _obscure = true;
+  String _loginRole = 'site';
 
   @override
   void dispose() {
@@ -34,10 +35,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final shift = context.read<ShiftProvider>();
     final duty = context.read<DutyProvider>();
     final navigator = Navigator.of(context);
-    final ok = await auth.login(
-      _emailCtrl.text.trim(),
-      _passCtrl.text,
-    );
+    final ok = await auth.login(_emailCtrl.text.trim(), _passCtrl.text);
     if (!mounted) return;
     if (ok) {
       await scan.loadScans();
@@ -93,7 +91,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Security Patrol System',
+                      'Enterprise Guard Tour System',
                       style: TextStyle(
                         fontSize: 13,
                         color: Colors.white.withValues(alpha: 0.5),
@@ -108,6 +106,30 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       child: Column(
                         children: [
+                          SegmentedButton<String>(
+                            segments: const [
+                              ButtonSegment(
+                                value: 'site',
+                                label: Text('Site'),
+                                icon: Icon(Icons.location_city_outlined),
+                              ),
+                              ButtonSegment(
+                                value: 'client',
+                                label: Text('Client'),
+                                icon: Icon(Icons.business_outlined),
+                              ),
+                              ButtonSegment(
+                                value: 'admin',
+                                label: Text('Admin'),
+                                icon: Icon(Icons.admin_panel_settings_outlined),
+                              ),
+                            ],
+                            selected: {_loginRole},
+                            onSelectionChanged: (value) {
+                              setState(() => _loginRole = value.first);
+                            },
+                          ),
+                          const SizedBox(height: 16),
                           TextFormField(
                             controller: _emailCtrl,
                             decoration: const InputDecoration(
@@ -183,11 +205,14 @@ class _LoginScreenState extends State<LoginScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.business,
-                            size: 14, color: Colors.white.withValues(alpha: 0.4)),
+                        Icon(
+                          Icons.business,
+                          size: 14,
+                          color: Colors.white.withValues(alpha: 0.4),
+                        ),
                         const SizedBox(width: 6),
                         Text(
-                          'Guard account only',
+                          'Site, client, and admin accounts supported',
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.white.withValues(alpha: 0.4),

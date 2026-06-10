@@ -7,12 +7,11 @@ import '../providers/scan_provider.dart';
 import '../providers/shift_provider.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
+import '../models/user.dart';
+import '../utils/access_control.dart';
 import '../utils/routes.dart';
 import '../utils/theme.dart';
 import '../widgets/scan_tile.dart';
-import 'duties_screen.dart';
-import 'history_screen.dart';
-import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -22,15 +21,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _currentIndex = 0;
-
-  final _pages = [
-    const _DashboardTab(),
-    const DutiesScreen(),
-    const HistoryScreen(),
-    const SettingsScreen(),
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -43,29 +33,186 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openScannerOrExplain(BuildContext context) {
+    if (!canSubmitPatrol(context.read<AuthProvider>().user)) {
+      Navigator.pushNamed(context, AppRoutes.patrol);
+      return;
+    }
     Navigator.pushNamed(context, AppRoutes.scanner);
+  }
+
+  Future<void> _signOut(BuildContext context) async {
+    final navigator = Navigator.of(context);
+    context.read<ScanProvider>().clearData();
+    context.read<ShiftProvider>().clearData();
+    context.read<DutyProvider>().clearData();
+    await context.read<AuthProvider>().logout();
+    navigator.pushNamedAndRemoveUntil(AppRoutes.login, (_) => false);
   }
 
   @override
   Widget build(BuildContext context) {
+    final user = context.watch<AuthProvider>().user;
+    final role = roleForUser(user);
+
     return Scaffold(
-      body: _pages[_currentIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (i) => setState(() => _currentIndex = i),
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.assignment_turned_in_outlined), label: 'Duties'),
-          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'History'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+      appBar: AppBar(
+        title: const Text('Patrol Command'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => Navigator.pushNamed(context, AppRoutes.settings),
+          ),
         ],
       ),
+      drawer: _buildDrawer(context, user, role),
+      body: const _DashboardTab(),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _openScannerOrExplain(context),
         backgroundColor: AppTheme.primary,
-        child: const Icon(Icons.qr_code_scanner, color: Colors.white),
+        child: const Icon(Icons.route_outlined, color: Colors.white),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+    );
+  }
+
+  Widget _buildDrawer(BuildContext context, User? user, AccountRole role) {
+    final items = [
+      _MenuItem(
+        icon: Icons.login,
+        title: 'Clock In / Out',
+        subtitle: 'Start or end your active shift',
+        onTap: () => Navigator.pop(context),
+      ),
+      _MenuItem(
+        icon: Icons.calendar_month_outlined,
+        title: 'View Schedule',
+        subtitle: 'Assigned shifts and site coverage',
+        route: AppRoutes.schedule,
+      ),
+      _MenuItem(
+        icon: Icons.route_outlined,
+        title: 'Patrol Tour',
+        subtitle: canSubmitPatrol(user)
+            ? 'Scan QR checkpoints and monitor patrol status'
+            : 'Review patrol activity within your access scope',
+        route: AppRoutes.patrol,
+      ),
+      _MenuItem(
+        icon: Icons.description_outlined,
+        title: 'Reports',
+        subtitle: 'Daily activity, incidents, maintenance, and logs',
+        route: AppRoutes.reports,
+      ),
+      _MenuItem(
+        icon: Icons.policy_outlined,
+        title: 'Security Policy',
+        subtitle: 'Post orders, handovers, and policy instructions',
+        route: AppRoutes.policy,
+      ),
+      _MenuItem(
+        icon: Icons.local_shipping_outlined,
+        title: 'Truck Check In / Out',
+        subtitle: 'Vehicle movement records by site',
+        route: AppRoutes.truckCheck,
+      ),
+      _MenuItem(
+        icon: Icons.badge_outlined,
+        title: 'Visitor Check In / Out',
+        subtitle: 'Visitor arrival and departure tracking',
+        route: AppRoutes.visitorCheck,
+      ),
+      _MenuItem(
+        icon: Icons.event_available_outlined,
+        title: 'Vacation Requests',
+        subtitle: 'Submit and review leave requests',
+        route: AppRoutes.vacation,
+      ),
+      if (role == AccountRole.admin)
+        _MenuItem(
+          icon: Icons.manage_accounts_outlined,
+          title: 'Manage Users',
+          subtitle: 'Administer users and site access',
+          route: AppRoutes.users,
+        ),
+      _MenuItem(
+        icon: Icons.logout,
+        title: 'Sign Out',
+        subtitle: 'End this secure app session',
+        destructive: true,
+        onTap: () {
+          Navigator.pop(context);
+          _signOut(context);
+        },
+      ),
+    ];
+
+    return Drawer(
+      child: SafeArea(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              color: AppTheme.primary,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CircleAvatar(
+                    radius: 24,
+                    backgroundColor: Colors.white.withValues(alpha: 0.2),
+                    child: const Icon(
+                      Icons.shield_outlined,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    user?.name ?? 'Officer',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    role.scopeLabel,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.86),
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ...items.map(
+              (item) => ListTile(
+                leading: Icon(
+                  item.icon,
+                  color: item.destructive ? AppTheme.error : AppTheme.primary,
+                ),
+                title: Text(
+                  item.title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: item.destructive ? AppTheme.error : AppTheme.text,
+                  ),
+                ),
+                subtitle: Text(item.subtitle),
+                trailing: const Icon(Icons.chevron_right),
+                onTap:
+                    item.onTap ??
+                    () {
+                      if (item.route != null) {
+                        Navigator.pop(context);
+                        Navigator.pushNamed(context, item.route!);
+                      }
+                    },
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -93,12 +240,12 @@ class _DashboardTab extends StatelessWidget {
     final deliveries = delivery['deliveries'];
     final smsFailures = deliveries is List
         ? deliveries
-            .whereType<Map>()
-            .where(
-              (item) =>
-                  item['provider'] == 'termii' && item['success'] != true,
-            )
-            .toList()
+              .whereType<Map>()
+              .where(
+                (item) =>
+                    item['provider'] == 'termii' && item['success'] != true,
+              )
+              .toList()
         : const [];
 
     if (status == 'no_recipients_configured') {
@@ -125,14 +272,46 @@ class _DashboardTab extends StatelessWidget {
   static const List<Map<String, dynamic>> _emergencyCategories = [
     {'icon': Icons.gavel, 'label': 'Armed Robbery', 'color': Color(0xFFB91C1C)},
     {'icon': Icons.shopping_bag, 'label': 'Theft', 'color': Color(0xFFD97706)},
-    {'icon': Icons.people, 'label': 'Fight / Disturbance', 'color': Color(0xFFDC2626)},
-    {'icon': Icons.local_fire_department, 'label': 'Fire Outbreak', 'color': Color(0xFFEF4444)},
-    {'icon': Icons.medical_services, 'label': 'Medical Emergency', 'color': Color(0xFF059669)},
-    {'icon': Icons.directions_car, 'label': 'Suspicious Vehicle', 'color': Color(0xFF7C3AED)},
-    {'icon': Icons.person_search, 'label': 'Suspicious Person', 'color': Color(0xFF2563EB)},
-    {'icon': Icons.power_off, 'label': 'Power Outage', 'color': Color(0xFF92400E)},
-    {'icon': Icons.flood, 'label': 'Flood / Water Leak', 'color': Color(0xFF0284C7)},
-    {'icon': Icons.lock_open, 'label': 'Breach / Intrusion', 'color': Color(0xFFBE123C)},
+    {
+      'icon': Icons.people,
+      'label': 'Fight / Disturbance',
+      'color': Color(0xFFDC2626),
+    },
+    {
+      'icon': Icons.local_fire_department,
+      'label': 'Fire Outbreak',
+      'color': Color(0xFFEF4444),
+    },
+    {
+      'icon': Icons.medical_services,
+      'label': 'Medical Emergency',
+      'color': Color(0xFF059669),
+    },
+    {
+      'icon': Icons.directions_car,
+      'label': 'Suspicious Vehicle',
+      'color': Color(0xFF7C3AED),
+    },
+    {
+      'icon': Icons.person_search,
+      'label': 'Suspicious Person',
+      'color': Color(0xFF2563EB),
+    },
+    {
+      'icon': Icons.power_off,
+      'label': 'Power Outage',
+      'color': Color(0xFF92400E),
+    },
+    {
+      'icon': Icons.flood,
+      'label': 'Flood / Water Leak',
+      'color': Color(0xFF0284C7),
+    },
+    {
+      'icon': Icons.lock_open,
+      'label': 'Breach / Intrusion',
+      'color': Color(0xFFBE123C),
+    },
     {'icon': Icons.more_horiz, 'label': 'Other', 'color': Color(0xFF6B7280)},
   ];
 
@@ -179,10 +358,7 @@ class _DashboardTab extends StatelessWidget {
                       padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
                       child: Text(
                         'Select the type of emergency',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey,
-                        ),
+                        style: TextStyle(fontSize: 14, color: Colors.grey),
                       ),
                     ),
                     Expanded(
@@ -203,7 +379,9 @@ class _DashboardTab extends StatelessWidget {
                                   onTap: () => Navigator.pop(ctx, label),
                                   child: Padding(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 16, vertical: 14),
+                                      horizontal: 16,
+                                      vertical: 14,
+                                    ),
                                     child: Row(
                                       children: [
                                         Icon(icon, color: color, size: 22),
@@ -233,7 +411,9 @@ class _DashboardTab extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(14),
                               ),
                               contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 14),
+                                horizontal: 16,
+                                vertical: 14,
+                              ),
                             ),
                             onChanged: (v) =>
                                 setSheetState(() => selectedCustom = v),
@@ -248,17 +428,21 @@ class _DashboardTab extends StatelessWidget {
                                     backgroundColor: AppTheme.error,
                                     foregroundColor: Colors.white,
                                     padding: const EdgeInsets.symmetric(
-                                        vertical: 14),
+                                      vertical: 14,
+                                    ),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(14),
                                     ),
                                   ),
                                   onPressed: () => Navigator.pop(
-                                      ctx, selectedCustom!.trim()),
+                                    ctx,
+                                    selectedCustom!.trim(),
+                                  ),
                                   child: const Text(
                                     'Send Custom Alert',
                                     style: TextStyle(
-                                        fontWeight: FontWeight.w700),
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -279,14 +463,19 @@ class _DashboardTab extends StatelessWidget {
     return result;
   }
 
-  Future<void> _triggerEmergency(BuildContext context, {String category = ''}) async {
+  Future<void> _triggerEmergency(
+    BuildContext context, {
+    String category = '',
+  }) async {
     final messenger = ScaffoldMessenger.of(context);
     final shift = context.read<ShiftProvider>();
     final scanProvider = context.read<ScanProvider>();
 
     messenger.showSnackBar(
       const SnackBar(
-        content: Text('Emergency alert triggered. Getting GPS and notifying response contacts...'),
+        content: Text(
+          'Emergency alert triggered. Getting GPS and notifying response contacts...',
+        ),
         duration: Duration(seconds: 3),
         backgroundColor: AppTheme.error,
       ),
@@ -305,13 +494,13 @@ class _DashboardTab extends StatelessWidget {
       final locationText = !hasLocation
           ? ''
           : nearestCheckpoint == null
-              ? '${location.latitude.toStringAsFixed(6)}, ${location.longitude.toStringAsFixed(6)}'
-              : '${nearestCheckpoint.name} '
-                  '(${location.latitude.toStringAsFixed(6)}, ${location.longitude.toStringAsFixed(6)})';
+          ? '${location.latitude.toStringAsFixed(6)}, ${location.longitude.toStringAsFixed(6)}'
+          : '${nearestCheckpoint.name} '
+                '(${location.latitude.toStringAsFixed(6)}, ${location.longitude.toStringAsFixed(6)})';
       final note = location.error == null
           ? nearestCheckpoint == null
-              ? 'Emergency button pressed from mobile patrol app.'
-              : 'Emergency button pressed from mobile patrol app near ${nearestCheckpoint.name}.'
+                ? 'Emergency button pressed from mobile patrol app.'
+                : 'Emergency button pressed from mobile patrol app near ${nearestCheckpoint.name}.'
           : 'Emergency button pressed from mobile patrol app. GPS note: ${location.error}';
 
       final result = await ApiService.triggerEmergency(
@@ -327,7 +516,8 @@ class _DashboardTab extends StatelessWidget {
         SnackBar(
           content: Text(message),
           duration: const Duration(seconds: 5),
-          backgroundColor: message.contains('failed') ||
+          backgroundColor:
+              message.contains('failed') ||
                   message.contains('not configured') ||
                   message.contains('not notified')
               ? AppTheme.flagged
@@ -384,18 +574,9 @@ class _DashboardTab extends StatelessWidget {
     final duty = context.watch<DutyProvider>();
     final scan = context.watch<ScanProvider>();
     final shift = context.watch<ShiftProvider>();
+    final role = roleForUser(auth.user);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Patrol Command'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () => Navigator.pushNamed(context, AppRoutes.settings),
-          ),
-        ],
-      ),
-      body: RefreshIndicator(
+    return RefreshIndicator(
         onRefresh: () async {
           await scan.loadScans();
           await scan.loadCheckpoints();
@@ -446,7 +627,9 @@ class _DashboardTab extends StatelessWidget {
                   height: 10,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: shift.onDuty ? AppTheme.verified : AppTheme.textSecondary,
+                    color: shift.onDuty
+                        ? AppTheme.verified
+                        : AppTheme.textSecondary,
                   ),
                 ),
                 const SizedBox(width: 6),
@@ -454,7 +637,9 @@ class _DashboardTab extends StatelessWidget {
                   shift.onDuty ? 'On Duty' : 'Off Duty',
                   style: TextStyle(
                     fontSize: 14,
-                    color: shift.onDuty ? AppTheme.verified : AppTheme.textSecondary,
+                    color: shift.onDuty
+                        ? AppTheme.verified
+                        : AppTheme.textSecondary,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -471,6 +656,46 @@ class _DashboardTab extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 20),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Icon(
+                      role == AccountRole.admin
+                          ? Icons.admin_panel_settings_outlined
+                          : role == AccountRole.client
+                          ? Icons.business_outlined
+                          : Icons.location_city_outlined,
+                      color: AppTheme.primary,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            role.label,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.text,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            role.scopeLabel,
+                            style: const TextStyle(
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
             Row(
               children: [
                 Expanded(
@@ -497,11 +722,17 @@ class _DashboardTab extends StatelessWidget {
               width: double.infinity,
               height: 56,
               child: ElevatedButton.icon(
-                onPressed: () => context
-                    .findAncestorStateOfType<_HomeScreenState>()
-                    ?._openScannerOrExplain(context),
+                onPressed: canSubmitPatrol(auth.user)
+                    ? () => context
+                          .findAncestorStateOfType<_HomeScreenState>()
+                          ?._openScannerOrExplain(context)
+                    : () => Navigator.pushNamed(context, AppRoutes.patrol),
                 icon: const Icon(Icons.qr_code_scanner, size: 24),
-                label: const Text('Scan QR Code'),
+                label: Text(
+                  canSubmitPatrol(auth.user)
+                      ? 'Scan QR Code'
+                      : 'View Patrol Tour',
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primary,
                   foregroundColor: Colors.white,
@@ -516,12 +747,14 @@ class _DashboardTab extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            _EmergencyHoldButton(onConfirmed: () async {
-              final cat = await _showEmergencyCategorySheet(context);
-              if (cat != null && cat.trim().isNotEmpty && context.mounted) {
-                await _triggerEmergency(context, category: cat);
-              }
-            }),
+            _EmergencyHoldButton(
+              onConfirmed: () async {
+                final cat = await _showEmergencyCategorySheet(context);
+                if (cat != null && cat.trim().isNotEmpty && context.mounted) {
+                  await _triggerEmergency(context, category: cat);
+                }
+              },
+            ),
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
@@ -540,34 +773,32 @@ class _DashboardTab extends StatelessWidget {
                               content: Text(
                                 ok
                                     ? (wasOnDuty
-                                        ? 'Clocked out successfully'
-                                        : 'Clocked in successfully')
+                                          ? 'Clocked out successfully'
+                                          : 'Clocked in successfully')
                                     : (shift.error ??
-                                        'Action failed. Check your connection and try again.'),
+                                          'Action failed. Check your connection and try again.'),
                               ),
                               backgroundColor: ok
                                   ? (wasOnDuty
-                                      ? AppTheme.textSecondary
-                                      : AppTheme.verified)
+                                        ? AppTheme.textSecondary
+                                        : AppTheme.verified)
                                   : AppTheme.error,
                             ),
                           );
                         }
                       },
-                icon: Icon(
-                  shift.onDuty ? Icons.logout : Icons.login,
-                  size: 20,
-                ),
+                icon: Icon(shift.onDuty ? Icons.logout : Icons.login, size: 20),
                 label: Text(
                   shift.loading
                       ? 'Processing...'
                       : shift.onDuty
-                          ? 'Clock Out'
-                          : 'Clock In',
+                      ? 'Clock Out'
+                      : 'Clock In',
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor:
-                      shift.onDuty ? Colors.orange : AppTheme.verified,
+                  backgroundColor: shift.onDuty
+                      ? Colors.orange
+                      : AppTheme.verified,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
@@ -585,22 +816,19 @@ class _DashboardTab extends StatelessWidget {
                 _QuickAction(
                   icon: Icons.description_outlined,
                   label: 'Reports',
-                  onTap: () =>
-                      Navigator.pushNamed(context, AppRoutes.reports),
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.reports),
                 ),
                 const SizedBox(width: 12),
                 _QuickAction(
                   icon: Icons.assignment_turned_in_outlined,
                   label: 'Duties',
-                  onTap: () =>
-                      Navigator.pushNamed(context, AppRoutes.duties),
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.duties),
                 ),
                 const SizedBox(width: 12),
                 _QuickAction(
                   icon: Icons.history,
                   label: 'History',
-                  onTap: () =>
-                      Navigator.pushNamed(context, AppRoutes.history),
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.history),
                 ),
               ],
             ),
@@ -623,8 +851,7 @@ class _DashboardTab extends StatelessWidget {
                 _QuickAction(
                   icon: Icons.person_outline,
                   label: 'Profile',
-                  onTap: () =>
-                      Navigator.pushNamed(context, AppRoutes.profile),
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.profile),
                 ),
               ],
             ),
@@ -634,10 +861,7 @@ class _DashboardTab extends StatelessWidget {
               children: [
                 const Text(
                   'Recent Activity',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
                 ),
                 TextButton(
                   onPressed: () =>
@@ -657,17 +881,20 @@ class _DashboardTab extends StatelessWidget {
                 ),
               )
             else
-              ...scan.scans.take(5).map((s) => ScanTile(
-                    scan: s,
-                    onTap: () => Navigator.pushNamed(
-                      context,
-                      AppRoutes.scanDetail,
-                      arguments: {'scanId': s.id},
+              ...scan.scans
+                  .take(5)
+                  .map(
+                    (s) => ScanTile(
+                      scan: s,
+                      onTap: () => Navigator.pushNamed(
+                        context,
+                        AppRoutes.scanDetail,
+                        arguments: {'scanId': s.id},
+                      ),
                     ),
-                  )),
+                  ),
           ],
         ),
-      ),
     );
   }
 
@@ -677,7 +904,24 @@ class _DashboardTab extends StatelessWidget {
     if (h < 17) return 'afternoon';
     return 'evening';
   }
+}
 
+class _MenuItem {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String? route;
+  final VoidCallback? onTap;
+  final bool destructive;
+
+  const _MenuItem({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.route,
+    this.onTap,
+    this.destructive = false,
+  });
 }
 
 class _EmergencyHoldButton extends StatefulWidget {
@@ -746,11 +990,7 @@ class _EmergencyHoldButtonState extends State<_EmergencyHoldButton> {
                         color: Colors.white,
                       ),
                     )
-                  : const Icon(
-                      Icons.sos,
-                      color: Colors.white,
-                      size: 26,
-                    ),
+                  : const Icon(Icons.sos, color: Colors.white, size: 26),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -780,11 +1020,7 @@ class _EmergencyHoldButtonState extends State<_EmergencyHoldButton> {
                 ],
               ),
             ),
-            const Icon(
-              Icons.touch_app_outlined,
-              color: Colors.white,
-              size: 22,
-            ),
+            const Icon(Icons.touch_app_outlined, color: Colors.white, size: 22),
           ],
         ),
       ),

@@ -17,8 +17,8 @@ class ScanDetailScreen extends StatelessWidget {
     final item = scanId != null
         ? scan.where((s) => s.id == scanId).firstOrNull
         : scan.isNotEmpty
-            ? scan.first
-            : null;
+        ? scan.first
+        : null;
 
     if (item == null) {
       return Scaffold(
@@ -29,8 +29,10 @@ class ScanDetailScreen extends StatelessWidget {
                 onRetry: provider.loadScans,
               )
             : const Center(
-                child: Text('Scan not found',
-                    style: TextStyle(color: AppTheme.textSecondary)),
+                child: Text(
+                  'Scan not found',
+                  style: TextStyle(color: AppTheme.textSecondary),
+                ),
               ),
       );
     }
@@ -95,15 +97,15 @@ class ScanDetailScreen extends StatelessWidget {
                   _DetailRow(
                     icon: Icons.location_on,
                     label: 'Checkpoint',
-                    value:
-                        '${item.checkpointName} (${item.checkpointCode})',
+                    value: '${item.checkpointName} (${item.checkpointCode})',
                   ),
                   const Divider(height: 24),
                   _DetailRow(
                     icon: Icons.access_time,
                     label: 'Scanned At',
-                    value: DateFormat('MMM d, yyyy – h:mm:ss a')
-                        .format(item.scannedAt),
+                    value: DateFormat(
+                      'MMM d, yyyy – h:mm:ss a',
+                    ).format(item.scannedAt),
                   ),
                   const Divider(height: 24),
                   _DetailRow(
@@ -133,7 +135,11 @@ class ScanDetailScreen extends StatelessWidget {
                   children: [
                     const Row(
                       children: [
-                        Icon(Icons.notes, size: 18, color: AppTheme.textSecondary),
+                        Icon(
+                          Icons.notes,
+                          size: 18,
+                          color: AppTheme.textSecondary,
+                        ),
                         SizedBox(width: 8),
                         Text(
                           'Patrol Notes',
@@ -185,16 +191,23 @@ class _DetailRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label,
-                  style: const TextStyle(
-                      fontSize: 12, color: AppTheme.textSecondary)),
-              Text(value,
-                  style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: AppTheme.text),
-                  softWrap: true,
-                  overflow: TextOverflow.ellipsis),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: AppTheme.text,
+                ),
+                softWrap: true,
+                overflow: TextOverflow.ellipsis,
+              ),
             ],
           ),
         ),

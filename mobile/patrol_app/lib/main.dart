@@ -15,6 +15,8 @@ import 'screens/checkpoint_detail_screen.dart';
 import 'screens/reports_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/patrol_screen.dart';
+import 'screens/workflow_module_screen.dart';
 import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/scan_provider.dart';
@@ -42,7 +44,10 @@ void main() {
     const storage = FlutterSecureStorage();
     storage.delete(key: 'patrol_token');
     storage.delete(key: 'patrol_user');
-    navigatorKey.currentState?.pushNamedAndRemoveUntil(AppRoutes.login, (_) => false);
+    navigatorKey.currentState?.pushNamedAndRemoveUntil(
+      AppRoutes.login,
+      (_) => false,
+    );
   };
   runApp(
     MultiProvider(
@@ -80,25 +85,96 @@ class PatrolApp extends StatelessWidget {
           case AppRoutes.scanner:
             return _route(const ScannerScreen());
           case AppRoutes.scanResult:
-            return _route(ScanResultScreen(
-              scanData: args?['scanData'] as Map<String, dynamic>?,
-            ));
+            return _route(
+              ScanResultScreen(
+                scanData: args?['scanData'] as Map<String, dynamic>?,
+              ),
+            );
           case AppRoutes.duties:
             return _route(const DutiesScreen());
           case AppRoutes.history:
             return _route(const HistoryScreen());
           case AppRoutes.scanDetail:
-            return _route(ScanDetailScreen(
-              scanId: args?['scanId'] as String?,
-            ));
+            return _route(ScanDetailScreen(scanId: args?['scanId'] as String?));
           case AppRoutes.checkpoints:
             return _route(const CheckpointsScreen());
           case AppRoutes.checkpointDetail:
-            return _route(CheckpointDetailScreen(
-              checkpointId: args?['checkpointId'] as String?,
-            ));
+            return _route(
+              CheckpointDetailScreen(
+                checkpointId: args?['checkpointId'] as String?,
+              ),
+            );
           case AppRoutes.reports:
             return _route(const ReportsScreen());
+          case AppRoutes.schedule:
+            return _route(
+              const WorkflowModuleScreen(
+                title: 'View Schedule',
+                icon: Icons.calendar_month_outlined,
+                capabilities: [
+                  'Review assigned shifts and post coverage.',
+                  'Client accounts can view schedules across assigned sites.',
+                  'Admins can review schedule coverage globally.',
+                ],
+                visibleFor: ['Admin', 'Client Account', 'Site Account'],
+              ),
+            );
+          case AppRoutes.patrol:
+            return _route(const PatrolScreen());
+          case AppRoutes.policy:
+            return _route(const DutiesScreen());
+          case AppRoutes.truckCheck:
+            return _route(
+              const WorkflowModuleScreen(
+                title: 'Truck Check In / Out',
+                icon: Icons.local_shipping_outlined,
+                capabilities: [
+                  'Record inbound and outbound truck movement.',
+                  'Capture driver, plate number, purpose, time, and site.',
+                  'Restrict site accounts to the assigned site.',
+                ],
+                visibleFor: ['Admin', 'Client Account', 'Site Account'],
+              ),
+            );
+          case AppRoutes.visitorCheck:
+            return _route(
+              const WorkflowModuleScreen(
+                title: 'Visitor Check In / Out',
+                icon: Icons.badge_outlined,
+                capabilities: [
+                  'Record visitor identity, host, site, and visit purpose.',
+                  'Track check-in and check-out timestamps.',
+                  'Expose visitor history by role-based site scope.',
+                ],
+                visibleFor: ['Admin', 'Client Account', 'Site Account'],
+              ),
+            );
+          case AppRoutes.vacation:
+            return _route(
+              const WorkflowModuleScreen(
+                title: 'Vacation Requests',
+                icon: Icons.event_available_outlined,
+                capabilities: [
+                  'Submit time-off requests for supervisor review.',
+                  'Review request history and approval status.',
+                  'Admins can monitor requests across clients and sites.',
+                ],
+                visibleFor: ['Admin', 'Client Account', 'Site Account'],
+              ),
+            );
+          case AppRoutes.users:
+            return _route(
+              const WorkflowModuleScreen(
+                title: 'User Management',
+                icon: Icons.manage_accounts_outlined,
+                capabilities: [
+                  'Manage admin, client account, and site account users.',
+                  'Assign client and site access.',
+                  'Control active status and role visibility.',
+                ],
+                visibleFor: ['Admin'],
+              ),
+            );
           case AppRoutes.profile:
             return _route(const ProfileScreen());
           case AppRoutes.settings:

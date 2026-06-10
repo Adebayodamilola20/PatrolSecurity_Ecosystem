@@ -4,8 +4,6 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../models/scan.dart';
 import '../models/checkpoint.dart';
 import '../services/api_service.dart';
-import '../services/location_service.dart';
-import '../utils/constants.dart';
 
 class ScanProvider extends ChangeNotifier {
   static const _pendingScansKey = 'patrol_pending_scans';
@@ -44,11 +42,11 @@ class ScanProvider extends ChangeNotifier {
 
   int get totalScans => _scans.length;
   int get todayScans => _scans.where((s) {
-        final now = DateTime.now();
-        return s.scannedAt.year == now.year &&
-            s.scannedAt.month == now.month &&
-            s.scannedAt.day == now.day;
-      }).length;
+    final now = DateTime.now();
+    return s.scannedAt.year == now.year &&
+        s.scannedAt.month == now.month &&
+        s.scannedAt.day == now.day;
+  }).length;
 
   Future<void> loadScans() async {
     _scansLoading = true;

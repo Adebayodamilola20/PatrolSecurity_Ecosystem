@@ -15,7 +15,7 @@ export async function signPatrolToken(payload: {
   return await new SignJWT(payload)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("30d")
+    .setExpirationTime("365d")
     .sign(getJwtSecret());
 }
 

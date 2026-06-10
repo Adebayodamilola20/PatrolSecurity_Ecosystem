@@ -18,17 +18,20 @@ class HistoryScreen extends StatelessWidget {
       body: scan.scansLoading && scan.scans.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : scan.scansError != null && scan.scans.isEmpty
-              ? NetworkErrorState(
-                  message: scan.scansError!,
-                  onRetry: scan.loadScans,
-                )
-              : scan.scans.isEmpty
+          ? NetworkErrorState(
+              message: scan.scansError!,
+              onRetry: scan.loadScans,
+            )
+          : scan.scans.isEmpty
           ? Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.history,
-                      size: 48, color: AppTheme.textSecondary.withValues(alpha: 0.5)),
+                  Icon(
+                    Icons.history,
+                    size: 48,
+                    color: AppTheme.textSecondary.withValues(alpha: 0.5),
+                  ),
                   const SizedBox(height: 12),
                   const Text(
                     'No scans recorded yet',
@@ -37,21 +40,21 @@ class HistoryScreen extends StatelessWidget {
                 ],
               ),
             )
-              : RefreshIndicator(
-                  onRefresh: () => scan.loadScans(),
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: scan.scans.length,
-                    itemBuilder: (_, i) => ScanTile(
-                      scan: scan.scans[i],
-                      onTap: () => Navigator.pushNamed(
-                        context,
-                        AppRoutes.scanDetail,
-                        arguments: {'scanId': scan.scans[i].id},
-                      ),
-                    ),
+          : RefreshIndicator(
+              onRefresh: () => scan.loadScans(),
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                itemCount: scan.scans.length,
+                itemBuilder: (_, i) => ScanTile(
+                  scan: scan.scans[i],
+                  onTap: () => Navigator.pushNamed(
+                    context,
+                    AppRoutes.scanDetail,
+                    arguments: {'scanId': scan.scans[i].id},
                   ),
                 ),
+              ),
+            ),
     );
   }
 }

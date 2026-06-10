@@ -44,7 +44,8 @@ class LocationService {
         longitude: 0,
         accuracyMeters: double.infinity,
         capturedAt: DateTime.now(),
-        error: 'Phone location is turned off. Enable device location and try again.',
+        error:
+            'Phone location is turned off. Enable device location and try again.',
       );
     }
 
@@ -68,7 +69,8 @@ class LocationService {
         longitude: 0,
         accuracyMeters: double.infinity,
         capturedAt: DateTime.now(),
-        error: 'Location permission is blocked for this app. Allow location in Android app settings.',
+        error:
+            'Location permission is blocked for this app. Allow location in Android app settings.',
       );
     }
 
@@ -81,14 +83,15 @@ class LocationService {
         ),
       );
 
-      final accuracy = position.accuracy ?? double.infinity;
+      final accuracy = position.accuracy;
       if (accuracy > _maxAccuracyMeters) {
         return SafeLocationResult(
           latitude: 0,
           longitude: 0,
           accuracyMeters: accuracy,
           capturedAt: DateTime.now(),
-          error: 'GPS accuracy is too low (${accuracy.toStringAsFixed(0)}m). Move to an open area and try again.',
+          error:
+              'GPS accuracy is too low (${accuracy.toStringAsFixed(0)}m). Move to an open area and try again.',
         );
       }
 
@@ -96,20 +99,20 @@ class LocationService {
         latitude: position.latitude,
         longitude: position.longitude,
         accuracyMeters: accuracy,
-        capturedAt: position.timestamp ?? DateTime.now(),
+        capturedAt: position.timestamp,
         speed: position.speed,
         heading: position.heading,
       );
     } on TimeoutException {
       final lastKnown = await Geolocator.getLastKnownPosition();
       if (lastKnown != null) {
-        final accuracy = lastKnown.accuracy ?? double.infinity;
+        final accuracy = lastKnown.accuracy;
         if (accuracy <= _maxAccuracyMeters) {
           return SafeLocationResult(
             latitude: lastKnown.latitude,
             longitude: lastKnown.longitude,
             accuracyMeters: accuracy,
-            capturedAt: lastKnown.timestamp ?? DateTime.now(),
+            capturedAt: lastKnown.timestamp,
             speed: lastKnown.speed,
             heading: lastKnown.heading,
           );
@@ -120,7 +123,8 @@ class LocationService {
         longitude: 0,
         accuracyMeters: double.infinity,
         capturedAt: DateTime.now(),
-        error: 'Could not get accurate GPS in time. Move to an open area and try again.',
+        error:
+            'Could not get accurate GPS in time. Move to an open area and try again.',
       );
     } on LocationServiceDisabledException {
       return SafeLocationResult(
@@ -128,18 +132,19 @@ class LocationService {
         longitude: 0,
         accuracyMeters: double.infinity,
         capturedAt: DateTime.now(),
-        error: 'Phone location is turned off. Enable device location and try again.',
+        error:
+            'Phone location is turned off. Enable device location and try again.',
       );
     } catch (_) {
       final lastKnown = await Geolocator.getLastKnownPosition();
       if (lastKnown != null) {
-        final accuracy = lastKnown.accuracy ?? double.infinity;
+        final accuracy = lastKnown.accuracy;
         if (accuracy <= _maxAccuracyMeters) {
           return SafeLocationResult(
             latitude: lastKnown.latitude,
             longitude: lastKnown.longitude,
             accuracyMeters: accuracy,
-            capturedAt: lastKnown.timestamp ?? DateTime.now(),
+            capturedAt: lastKnown.timestamp,
             speed: lastKnown.speed,
             heading: lastKnown.heading,
           );
@@ -150,14 +155,17 @@ class LocationService {
         longitude: 0,
         accuracyMeters: double.infinity,
         capturedAt: DateTime.now(),
-        error: 'GPS is unavailable right now. Check app location permission and try again.',
+        error:
+            'GPS is unavailable right now. Check app location permission and try again.',
       );
     }
   }
 
   static double calculateDistance(
-    double lat1, double lng1,
-    double lat2, double lng2,
+    double lat1,
+    double lng1,
+    double lat2,
+    double lng2,
   ) {
     return Geolocator.distanceBetween(lat1, lng1, lat2, lng2);
   }

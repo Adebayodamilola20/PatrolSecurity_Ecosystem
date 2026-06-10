@@ -68,7 +68,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
     if (capture.barcodes.isEmpty) return;
     String? code = capture.barcodes.first.rawValue;
     if (code == null || code.isEmpty) return;
-    
+
     // If the scanned QR code is a URL, extract the ID from the end of it
     if (code.startsWith('http') && code.contains('/')) {
       code = code.split('/').last;
@@ -107,9 +107,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
         ),
         actions: [
           IconButton(
-            icon: Icon(
-              _flashlight ? Icons.flash_on : Icons.flash_off,
-            ),
+            icon: Icon(_flashlight ? Icons.flash_on : Icons.flash_off),
             onPressed: () {
               controller.toggleTorch();
               setState(() => _flashlight = !_flashlight);
@@ -118,141 +116,136 @@ class _ScannerScreenState extends State<ScannerScreen> {
         ],
       ),
       body: _checkingAccess
-          ? const Center(
-              child: CircularProgressIndicator(),
-            )
+          ? const Center(child: CircularProgressIndicator())
           : _blockedMessage != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.assignment_late_outlined,
-                          size: 56,
-                          color: AppTheme.flagged,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          _blockedMessage!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: AppTheme.text,
-                            fontSize: 15,
-                            height: 1.5,
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: () =>
-                                Navigator.pushReplacementNamed(
-                                  context,
-                                  AppRoutes.duties,
-                                ),
-                            icon: const Icon(Icons.assignment_turned_in_outlined),
-                            label: const Text('Open Duties'),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton(
-                            onPressed: _prepareScanner,
-                            child: const Text('Re-check Access'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              : Stack(
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    MobileScanner(
-                      controller: controller,
-                      onDetect: _onDetect,
+                    const Icon(
+                      Icons.assignment_late_outlined,
+                      size: 56,
+                      color: AppTheme.flagged,
                     ),
-                    Center(
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          final size = constraints.biggest.shortestSide * 0.75;
-                          return Container(
+                    const SizedBox(height: 16),
+                    Text(
+                      _blockedMessage!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: AppTheme.text,
+                        fontSize: 15,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () => Navigator.pushReplacementNamed(
+                          context,
+                          AppRoutes.duties,
+                        ),
+                        icon: const Icon(Icons.assignment_turned_in_outlined),
+                        label: const Text('Open Duties'),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        onPressed: _prepareScanner,
+                        child: const Text('Re-check Access'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : Stack(
+              children: [
+                MobileScanner(controller: controller, onDetect: _onDetect),
+                Center(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final size = constraints.biggest.shortestSide * 0.75;
+                      return Container(
                         width: size.clamp(200, 300),
                         height: size.clamp(200, 300),
                         decoration: BoxDecoration(
                           border: Border.all(color: Colors.white, width: 2),
                           borderRadius: BorderRadius.circular(16),
                         ),
-                        child: CustomPaint(
-                          painter: _CornerPainter(),
-                        ),
+                        child: CustomPaint(painter: _CornerPainter()),
                       );
-                        },
+                    },
+                  ),
+                ),
+                Positioned(
+                  bottom: 80,
+                  left: 0,
+                  right: 0,
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.my_location,
+                        color: Colors.white.withValues(alpha: 0.8),
+                        size: 18,
                       ),
-                    ),
-                    Positioned(
-                      bottom: 80,
-                      left: 0,
-                      right: 0,
-                      child: Column(
-                        children: [
-                          Icon(Icons.my_location,
-                              color: Colors.white.withValues(alpha: 0.8), size: 18),
-                          const SizedBox(height: 4),
-                          Text(
-                            'GPS captured during scan',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.8),
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'Point camera at checkpoint QR code',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.6),
-                              fontSize: 14,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (_processingScan)
-                      Positioned.fill(
-                        child: Container(
-                          color: Colors.black.withValues(alpha: 0.72),
-                          child: Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                CircularProgressIndicator(color: AppTheme.primary),
-                                const SizedBox(height: 16),
-                                const Text(
-                                  'Processing scan...',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  'Getting GPS and verifying checkpoint',
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.75),
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'GPS captured during scan',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.8),
+                          fontSize: 13,
                         ),
                       ),
-                  ],
+                      const SizedBox(height: 12),
+                      Text(
+                        'Point camera at checkpoint QR code',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.6),
+                          fontSize: 14,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
                 ),
+                if (_processingScan)
+                  Positioned.fill(
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.72),
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(color: AppTheme.primary),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Processing scan...',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Getting GPS and verifying checkpoint',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.75),
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
     );
   }
 }
@@ -274,9 +267,15 @@ class _CornerPainter extends CustomPainter {
     canvas.drawLine(Offset(0, s.height - len), Offset(0, s.height), paint);
     canvas.drawLine(Offset(0, s.height), Offset(len, s.height), paint);
     canvas.drawLine(
-        Offset(s.width - len, s.height), Offset(s.width, s.height), paint);
+      Offset(s.width - len, s.height),
+      Offset(s.width, s.height),
+      paint,
+    );
     canvas.drawLine(
-        Offset(s.width, s.height - len), Offset(s.width, s.height), paint);
+      Offset(s.width, s.height - len),
+      Offset(s.width, s.height),
+      paint,
+    );
   }
 
   @override

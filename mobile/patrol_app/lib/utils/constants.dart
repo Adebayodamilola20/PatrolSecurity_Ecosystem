@@ -1,6 +1,6 @@
 const String baseUrl = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'https://harmless-pigeon-186.convex.site/api/v1',
+  defaultValue: 'https://resilient-buffalo-226.convex.site/api/v1',
 );
 const String defaultPassword = '123456';
 const double gpsRadiusMeters = 10;

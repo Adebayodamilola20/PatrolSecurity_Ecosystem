@@ -26,16 +26,16 @@ class Handover {
   });
 
   factory Handover.fromJson(Map<String, dynamic> json) => Handover(
-        id: json['id'] ?? '',
-        summary: json['summary'] ?? '',
-        status: json['status'] ?? 'pending',
-        checkpointName: json['checkpointName'],
-        siteLabel: json['siteLabel'],
-        fromUserName: json['fromUserName'],
-        toUserName: json['toUserName'],
-        openIssues: json['openIssues'],
-        equipmentStatus: json['equipmentStatus'],
-        photoUrl: json['photoUrl'],
-        createdAt: json['createdAt'] ?? '',
-      );
+    id: json['id'] ?? '',
+    summary: json['summary'] ?? '',
+    status: json['status'] ?? 'pending',
+    checkpointName: json['checkpointName'],
+    siteLabel: json['siteLabel'],
+    fromUserName: json['fromUserName'],
+    toUserName: json['toUserName'],
+    openIssues: json['openIssues'],
+    equipmentStatus: json['equipmentStatus'],
+    photoUrl: json['photoUrl'],
+    createdAt: json['createdAt'] ?? '',
+  );
 }
