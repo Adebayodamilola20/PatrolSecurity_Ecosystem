@@ -5,6 +5,7 @@ import Sidebar from './Sidebar'
 import Header from './Header'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { ErrorBoundary } from '../ErrorBoundary'
+import AiAssistantPanel, { AiAssistantLauncher } from '../AiAssistantPanel'
 import { subscribeToEmergency } from '../../services/websocket'
 
 interface AppIssue {
@@ -29,6 +30,7 @@ export default function DashboardLayout() {
   const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine)
   const [issue, setIssue] = useState<AppIssue | null>(null)
   const [emergency, setEmergency] = useState<EmergencyAlert | null>(null)
+  const [aiOpen, setAiOpen] = useState(false)
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const role = useAuthStore((s) => s.user?.role)
   const logout = useAuthStore((s) => s.logout)
@@ -146,6 +148,8 @@ export default function DashboardLayout() {
             <Outlet />
           </ErrorBoundary>
         </main>
+        <AiAssistantLauncher onClick={() => setAiOpen(true)} />
+        <AiAssistantPanel open={aiOpen} onClose={() => setAiOpen(false)} />
       </div>
     </div>
   )

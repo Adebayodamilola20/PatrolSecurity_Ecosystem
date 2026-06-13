@@ -26,6 +26,7 @@ import passOnLogRoutes from './routes/passOnLogs.js'
 import positionRoutes from './routes/positions.js'
 import clientRoutes from './routes/clients.js'
 import siteRoutes from './routes/sites.js'
+import aiRoutes from './routes/ai.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -92,10 +93,10 @@ io.on('connection', (socket) => {
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: Number(process.env.API_RATE_LIMIT_MAX || 1000),
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many requests, please try again later.' },
+  message: { message: 'Too many requests, please try again later.' },
 })
 
 const authLimiter = rateLimit({
@@ -153,6 +154,7 @@ app.use('/api/v1/pass-on-logs', passOnLogRoutes)
 app.use('/api/v1/positions', positionRoutes)
 app.use('/api/v1/clients', clientRoutes)
 app.use('/api/v1/sites', siteRoutes)
+app.use('/api/v1/ai', aiRoutes)
 
 app.get('/api/v1/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })

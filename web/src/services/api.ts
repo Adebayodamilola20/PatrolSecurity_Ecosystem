@@ -1,4 +1,4 @@
-const DEFAULT_API_BASE = 'https://harmless-pigeon-186.convex.site/api/v1'
+const DEFAULT_API_BASE = 'https://resilient-buffalo-226.convex.site/api/v1'
 
 function normalizeApiBase(rawUrl: string | undefined) {
   const trimmed = rawUrl?.trim()
@@ -78,7 +78,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }))
-    const message = err.message || 'Request failed'
+    const message = err.message || err.error || 'Request failed'
     emitAppEvent('app:request-error', {
       message,
       kind: res.status >= 500 ? 'server' : 'request',
@@ -206,5 +206,18 @@ export const api = {
     settings: () => request<any[]>('/emergency/settings'),
     saveSetting: (data: { settingKey: string; settingValue: string; scopeType?: string; scopeId?: string }) =>
       request<any>('/emergency/settings', { method: 'POST', body: JSON.stringify(data) }),
+  },
+  ai: {
+    chat: (data: { message: string; history?: Array<{ role: 'user' | 'assistant'; content: string }> }) =>
+      request<{
+        answer: string
+        intent: string
+        model?: string | null
+        assistantUnavailable?: boolean
+        generatedReportId?: string | null
+        sources?: string[]
+      }>('/ai/chat', { method: 'POST', body: JSON.stringify(data) }),
+    reports: () => request<any[]>('/ai/reports'),
+    architecture: () => request<any>('/ai/architecture'),
   },
 }

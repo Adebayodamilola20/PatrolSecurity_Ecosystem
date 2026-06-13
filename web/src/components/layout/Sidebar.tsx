@@ -15,6 +15,7 @@ import {
   Clock,
   ClipboardCheck,
   User,
+  Bot,
 } from 'lucide-react'
 import { useAuthStore, useCanManageUsers, useCanViewAlerts } from '../../stores/useAuthStore'
 
@@ -28,6 +29,7 @@ function useNav() {
       { to: '/profile', label: 'Profile', icon: User },
       { to: '/scans', label: 'My Scan History', icon: ClipboardList },
       { to: '/timesheets', label: 'My Timesheets', icon: Clock },
+      { to: '/ai-assistant', label: 'AI Assistant', icon: Bot },
     ]
   }
 
@@ -47,6 +49,7 @@ function useNav() {
   items.push({ to: '/post-orders', label: 'Post Orders', icon: ClipboardList })
   items.push({ to: '/handovers', label: 'Handovers', icon: ClipboardCheck })
   items.push({ to: '/pass-on-logs', label: 'Pass-On Logs', icon: ClipboardList })
+  items.push({ to: '/ai-assistant', label: 'AI Assistant', icon: Bot })
 
   if (role === 'admin' || role === 'main_account') {
     items.push({ to: '/reports', label: 'Reports', icon: FileText })
@@ -74,13 +77,6 @@ export default function Sidebar({ collapsed, onToggle, mobile, onClose }: Sideba
   const location = useLocation()
   const { user, logout } = useAuthStore()
   const nav = useNav()
-
-  const roleLabels: Record<string, string> = {
-    admin: 'Admin',
-    main_account: 'Client Admin',
-    supervisor: 'Supervisor',
-    guard: 'Guard',
-  }
 
   return (
     <aside

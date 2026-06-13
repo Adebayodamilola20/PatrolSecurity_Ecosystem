@@ -896,6 +896,77 @@ async function initDb() {
       db.exec(`CREATE INDEX IF NOT EXISTS idx_officerPositions_userId ON officerPositions(userId)`);
       db.exec(`CREATE INDEX IF NOT EXISTS idx_officerPositions_capturedAt ON officerPositions(capturedAt)`);
     } catch {}
+    try { db.exec(`CREATE TABLE IF NOT EXISTS aiAuditLogs (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      userRole TEXT NOT NULL,
+      question TEXT NOT NULL,
+      intent TEXT DEFAULT 'operations',
+      dataSources TEXT DEFAULT '[]',
+      sensitive INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'completed',
+      error TEXT DEFAULT '',
+      createdAt TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );`); } catch {}
+    try { db.exec(`CREATE INDEX IF NOT EXISTS idx_aiAuditLogs_userId_createdAt ON aiAuditLogs(userId, createdAt);`); } catch {}
+    try { db.exec(`CREATE TABLE IF NOT EXISTS aiRateLimits (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      windowKey TEXT NOT NULL,
+      count INTEGER DEFAULT 0,
+      updatedAt TEXT DEFAULT (datetime('now')),
+      UNIQUE(userId, windowKey)
+    );`); } catch {}
+    try { db.exec(`CREATE TABLE IF NOT EXISTS aiGeneratedReports (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      reportType TEXT NOT NULL,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      sourceSummary TEXT DEFAULT '{}',
+      status TEXT DEFAULT 'draft',
+      createdAt TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );`); } catch {}
+    try { db.exec(`CREATE TABLE IF NOT EXISTS aiClientEmails (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      reportId TEXT,
+      clientId TEXT,
+      subject TEXT NOT NULL,
+      body TEXT NOT NULL,
+      status TEXT DEFAULT 'draft',
+      approvedBy TEXT,
+      sentAt TEXT,
+      createdAt TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (userId) REFERENCES users(id),
+      FOREIGN KEY (reportId) REFERENCES aiGeneratedReports(id),
+      FOREIGN KEY (clientId) REFERENCES clients(id)
+    );`); } catch {}
+    try { db.exec(`CREATE TABLE IF NOT EXISTS aiKnowledgeDocuments (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      type TEXT DEFAULT 'document',
+      siteId TEXT,
+      clientId TEXT,
+      uploadedBy TEXT NOT NULL,
+      createdAt TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (siteId) REFERENCES sites(id),
+      FOREIGN KEY (clientId) REFERENCES clients(id),
+      FOREIGN KEY (uploadedBy) REFERENCES users(id)
+    );`); } catch {}
+    try { db.exec(`CREATE TABLE IF NOT EXISTS aiKnowledgeChunks (
+      id TEXT PRIMARY KEY,
+      documentId TEXT NOT NULL,
+      chunkIndex INTEGER NOT NULL,
+      content TEXT NOT NULL,
+      embeddingJson TEXT DEFAULT '[]',
+      embeddingModel TEXT DEFAULT '',
+      createdAt TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (documentId) REFERENCES aiKnowledgeDocuments(id)
+    );`); } catch {}
+    try { db.exec(`CREATE INDEX IF NOT EXISTS idx_aiKnowledgeChunks_documentId ON aiKnowledgeChunks(documentId);`); } catch {}
   } else {
     await db.exec(pgSchema)
     try { await db.exec("CREATE INDEX IF NOT EXISTS idx_scans_officerId ON scans(officerId)"); } catch (e) { console.log('[PG] Create idx_scans_officerId:', e.message) }
@@ -1052,6 +1123,77 @@ async function initDb() {
       await db.exec(`CREATE INDEX IF NOT EXISTS idx_officerPositions_userId ON officerPositions(userId)`);
       await db.exec(`CREATE INDEX IF NOT EXISTS idx_officerPositions_capturedAt ON officerPositions(capturedAt)`);
     } catch {}
+    try { await db.exec(`CREATE TABLE IF NOT EXISTS aiAuditLogs (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      userRole TEXT NOT NULL,
+      question TEXT NOT NULL,
+      intent TEXT DEFAULT 'operations',
+      dataSources TEXT DEFAULT '[]',
+      sensitive INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'completed',
+      error TEXT DEFAULT '',
+      createdAt TIMESTAMPTZ DEFAULT NOW(),
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );`); } catch {}
+    try { await db.exec(`CREATE INDEX IF NOT EXISTS idx_aiAuditLogs_userId_createdAt ON aiAuditLogs(userId, createdAt);`); } catch {}
+    try { await db.exec(`CREATE TABLE IF NOT EXISTS aiRateLimits (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      windowKey TEXT NOT NULL,
+      count INTEGER DEFAULT 0,
+      updatedAt TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(userId, windowKey)
+    );`); } catch {}
+    try { await db.exec(`CREATE TABLE IF NOT EXISTS aiGeneratedReports (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      reportType TEXT NOT NULL,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      sourceSummary TEXT DEFAULT '{}',
+      status TEXT DEFAULT 'draft',
+      createdAt TIMESTAMPTZ DEFAULT NOW(),
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );`); } catch {}
+    try { await db.exec(`CREATE TABLE IF NOT EXISTS aiClientEmails (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      reportId TEXT,
+      clientId TEXT,
+      subject TEXT NOT NULL,
+      body TEXT NOT NULL,
+      status TEXT DEFAULT 'draft',
+      approvedBy TEXT,
+      sentAt TIMESTAMPTZ,
+      createdAt TIMESTAMPTZ DEFAULT NOW(),
+      FOREIGN KEY (userId) REFERENCES users(id),
+      FOREIGN KEY (reportId) REFERENCES aiGeneratedReports(id),
+      FOREIGN KEY (clientId) REFERENCES clients(id)
+    );`); } catch {}
+    try { await db.exec(`CREATE TABLE IF NOT EXISTS aiKnowledgeDocuments (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      type TEXT DEFAULT 'document',
+      siteId TEXT,
+      clientId TEXT,
+      uploadedBy TEXT NOT NULL,
+      createdAt TIMESTAMPTZ DEFAULT NOW(),
+      FOREIGN KEY (siteId) REFERENCES sites(id),
+      FOREIGN KEY (clientId) REFERENCES clients(id),
+      FOREIGN KEY (uploadedBy) REFERENCES users(id)
+    );`); } catch {}
+    try { await db.exec(`CREATE TABLE IF NOT EXISTS aiKnowledgeChunks (
+      id TEXT PRIMARY KEY,
+      documentId TEXT NOT NULL,
+      chunkIndex INTEGER NOT NULL,
+      content TEXT NOT NULL,
+      embeddingJson TEXT DEFAULT '[]',
+      embeddingModel TEXT DEFAULT '',
+      createdAt TIMESTAMPTZ DEFAULT NOW(),
+      FOREIGN KEY (documentId) REFERENCES aiKnowledgeDocuments(id)
+    );`); } catch {}
+    try { await db.exec(`CREATE INDEX IF NOT EXISTS idx_aiKnowledgeChunks_documentId ON aiKnowledgeChunks(documentId);`); } catch {}
   }
 }
 
