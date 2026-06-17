@@ -311,7 +311,25 @@ export const create = internalMutation({
       gpsValid,
       distanceMeters: computedDistance,
       notes: args.notes ?? "",
+      postOrdersRequired: false,
+      workflowStatus: "completed",
     });
+
+    const checkpointPostOrders = await ctx.db
+      .query("postOrders")
+      .withIndex("by_checkpointId", (q) =>
+        q.eq("checkpointId", args.checkpointId),
+      )
+      .collect();
+    const requiredPostOrders = checkpointPostOrders.filter(
+      (order) => order.active && order.requiresAcknowledgement,
+    );
+    if (requiredPostOrders.length > 0) {
+      await ctx.db.patch(scanId, {
+        postOrdersRequired: true,
+        workflowStatus: "pending_post_order_ack",
+      });
+    }
 
     if (args.gpsLatitude != null && args.gpsLongitude != null) {
       await ctx.db.insert("officerPositions", {
@@ -344,6 +362,37 @@ export const create = internalMutation({
       });
     }
 
+    await ctx.runMutation(internal.activity.record, {
+      clientId,
+      siteId,
+      checkpointId: args.checkpointId,
+      officerId: args.officerId,
+      activityType: "patrol_scan",
+      sourceTable: "scans",
+      sourceId: scanId,
+      locationLabel: checkpoint.name,
+      activityLabel: `Patrol scan: ${checkpoint.name}`,
+      gpsLatitude: args.gpsLatitude,
+      gpsLongitude: args.gpsLongitude,
+      gpsValid,
+      distanceMeters: computedDistance,
+      occurredAt: scannedAt,
+    });
+
+    await ctx.runMutation(internal.audit.record, {
+      action: "scan.submitted",
+      actorId: args.officerId,
+      actorRole: officer?.role ?? "guard",
+      targetType: "scan",
+      targetId: scanId,
+      details: requiredPostOrders.length
+        ? `Scan submitted; ${requiredPostOrders.length} checkpoint post order(s) require acknowledgement`
+        : "Scan submitted",
+      clientId,
+      siteId,
+      success: true,
+    });
+
     const openAlert = await ctx.db
       .query("missedPatrolAlerts")
       .withIndex("by_checkpointId_status", (q) =>
@@ -371,6 +420,191 @@ export const create = internalMutation({
       gpsValid,
       distanceMeters: computedDistance ?? 0,
       notes: args.notes ?? "",
+      postOrdersRequired: requiredPostOrders.length > 0,
+      workflowStatus:
+        requiredPostOrders.length > 0 ? "pending_post_order_ack" : "completed",
     };
+  },
+});
+
+export const acknowledgePostOrdersForScan = internalMutation({
+  args: {
+    scanId: v.id("scans"),
+    userId: v.id("users"),
+    postOrderIds: v.array(v.id("postOrders")),
+  },
+  handler: async (ctx, args) => {
+    const scan = await ctx.db.get(args.scanId);
+    if (!scan) throw new Error("Scan not found");
+    if (scan.officerId !== args.userId) {
+      throw new Error("Only the scanning officer can acknowledge this scan");
+    }
+
+    const officer = await ctx.db.get(args.userId);
+    const activeShift = await ctx.db
+      .query("shifts")
+      .withIndex("by_userId_status", (q) =>
+        q.eq("userId", args.userId).eq("status", "active"),
+      )
+      .first();
+    const requiredOrders = await ctx.db
+      .query("postOrders")
+      .withIndex("by_checkpointId", (q) =>
+        q.eq("checkpointId", scan.checkpointId),
+      )
+      .collect();
+    const requiredIds = requiredOrders
+      .filter((order) => order.active && order.requiresAcknowledgement)
+      .map((order) => order._id);
+    const submitted = new Set(args.postOrderIds);
+    const missing = requiredIds.filter((id) => !submitted.has(id));
+    if (missing.length > 0) {
+      throw new Error("All checkpoint post orders must be acknowledged");
+    }
+
+    const now = Date.now();
+    const existingForScan = await ctx.db
+      .query("scanPostOrderAcknowledgements")
+      .withIndex("by_scanId", (q) => q.eq("scanId", args.scanId))
+      .collect();
+    const created = [];
+
+    for (const postOrderId of requiredIds) {
+      if (
+        existingForScan.some(
+          (ack) => ack.postOrderId === postOrderId && ack.userId === args.userId,
+        )
+      ) {
+        continue;
+      }
+
+      const acknowledgementId = await ctx.db.insert(
+        "scanPostOrderAcknowledgements",
+        {
+          scanId: args.scanId,
+          postOrderId,
+          checkpointId: scan.checkpointId,
+          userId: args.userId,
+          shiftId: activeShift?._id,
+          acknowledgedAt: now,
+          clientId: scan.clientId,
+          siteId: scan.siteId,
+        },
+      );
+      created.push(acknowledgementId);
+
+      await ctx.db.insert("postOrderCompletions", {
+        clientId: scan.clientId,
+        siteId: scan.siteId,
+        postOrderId,
+        userId: args.userId,
+        shiftId: activeShift?._id,
+        checkpointId: scan.checkpointId,
+        status: "acknowledged",
+        acknowledgedAt: now,
+        proofPhotoUrl: "",
+        proofNote: "",
+        reviewStatus: "pending",
+        reviewNote: "",
+        createdAt: now,
+      });
+
+      await ctx.runMutation(internal.activity.record, {
+        clientId: scan.clientId,
+        siteId: scan.siteId,
+        checkpointId: scan.checkpointId,
+        officerId: args.userId,
+        activityType: "post_order_ack",
+        sourceTable: "scanPostOrderAcknowledgements",
+        sourceId: acknowledgementId,
+        activityLabel: "Checkpoint post order acknowledged",
+        occurredAt: now,
+      });
+    }
+
+    await ctx.db.patch(args.scanId, {
+      postOrdersAcknowledgedAt: now,
+      workflowStatus: "completed",
+    });
+
+    await ctx.runMutation(internal.audit.record, {
+      action: "scan.acknowledged",
+      actorId: args.userId,
+      actorRole: officer?.role ?? "guard",
+      targetType: "scan",
+      targetId: args.scanId,
+      details: `Acknowledged ${requiredIds.length} checkpoint post order(s)`,
+      clientId: scan.clientId,
+      siteId: scan.siteId,
+      success: true,
+    });
+    await ctx.runMutation(internal.audit.record, {
+      action: "post_order.acknowledged",
+      actorId: args.userId,
+      actorRole: officer?.role ?? "guard",
+      targetType: "scan",
+      targetId: args.scanId,
+      details: `Stored checkpoint post order acknowledgement for scan ${args.scanId}`,
+      clientId: scan.clientId,
+      siteId: scan.siteId,
+      success: true,
+    });
+
+    return {
+      scanId: args.scanId,
+      acknowledgedAt: new Date(now).toISOString(),
+      count: requiredIds.length,
+      created,
+    };
+  },
+});
+
+export const listPostOrderAcknowledgements = internalQuery({
+  args: {
+    clientId: v.optional(v.id("clients")),
+    siteId: v.optional(v.id("sites")),
+    userId: v.optional(v.id("users")),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    let acknowledgements = args.userId
+      ? await ctx.db
+          .query("scanPostOrderAcknowledgements")
+          .withIndex("by_userId", (q) => q.eq("userId", args.userId!))
+          .order("desc")
+          .take(args.limit ?? 200)
+      : await ctx.db
+          .query("scanPostOrderAcknowledgements")
+          .order("desc")
+          .take(args.limit ?? 200);
+    if (args.clientId) {
+      acknowledgements = acknowledgements.filter(
+        (ack) => ack.clientId === args.clientId,
+      );
+    }
+    if (args.siteId) {
+      acknowledgements = acknowledgements.filter(
+        (ack) => ack.siteId === args.siteId,
+      );
+    }
+    const users = await ctx.db.query("users").collect();
+    const checkpoints = await ctx.db.query("checkpoints").collect();
+    const orders = await ctx.db.query("postOrders").collect();
+    return acknowledgements.map((ack) => ({
+      id: ack._id,
+      scanId: ack.scanId,
+      postOrderId: ack.postOrderId,
+      postOrderTitle:
+        orders.find((order) => order._id === ack.postOrderId)?.title ?? "",
+      checkpointId: ack.checkpointId,
+      checkpointName:
+        checkpoints.find((checkpoint) => checkpoint._id === ack.checkpointId)
+          ?.name ?? "",
+      userId: ack.userId,
+      userName: users.find((user) => user._id === ack.userId)?.name ?? "",
+      acknowledgedAt: new Date(ack.acknowledgedAt).toISOString(),
+      clientId: ack.clientId ?? null,
+      siteId: ack.siteId ?? null,
+    }));
   },
 });

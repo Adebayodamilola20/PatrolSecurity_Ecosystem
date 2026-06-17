@@ -1,4 +1,5 @@
-import { internalMutation } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
 
 export const trigger = internalMutation({
@@ -18,6 +19,7 @@ export const trigger = internalMutation({
     const when = new Date().toISOString();
     const where = args.location || args.siteLabel || "Unknown location";
     const message = `Emergency alert from ${user?.name ?? "officer"} at ${where}. Immediate response required.`;
+    const triggeredAt = Date.now();
     const id = await ctx.db.insert("emergencyEvents", {
       clientId: checkpoint?.clientId ?? user?.clientId,
       siteId: checkpoint?.siteId,
@@ -27,11 +29,24 @@ export const trigger = internalMutation({
       category: args.category,
       message,
       note: args.note ?? "",
-      triggeredAt: Date.now(),
+      triggeredAt,
       emailRecipients: [],
       phoneRecipients: [],
       status: "triggered",
       deliveryPayload: {},
+    });
+    await ctx.runMutation(internal.activity.record, {
+      clientId: checkpoint?.clientId ?? user?.clientId,
+      siteId: checkpoint?.siteId,
+      checkpointId: args.checkpointId,
+      officerId: args.userId,
+      activityType: "emergency",
+      sourceTable: "emergencyEvents",
+      sourceId: id,
+      siteName: args.siteLabel ?? "",
+      locationLabel: where,
+      activityLabel: `Emergency: ${args.category ?? "Other"}`,
+      occurredAt: triggeredAt,
     });
     return {
       id,
@@ -46,6 +61,41 @@ export const trigger = internalMutation({
       status: "triggered",
       delivery: {},
     };
+  },
+});
+
+export const listActive = internalQuery({
+  args: {
+    clientId: v.optional(v.id("clients")),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    let events = await ctx.db
+      .query("emergencyEvents")
+      .withIndex("by_triggeredAt")
+      .order("desc")
+      .take(args.limit ?? 100);
+    events = events.filter(
+      (event) =>
+        event.status !== "resolved" &&
+        event.status !== "closed" &&
+        (!args.clientId || event.clientId === args.clientId),
+    );
+    const users = await ctx.db.query("users").collect();
+    return events.map((event) => ({
+      id: event.legacyId ?? event._id,
+      category: event.category ?? "Other",
+      message: event.message,
+      note: event.note,
+      status: event.status,
+      siteLabel: event.siteLabel,
+      userId: event.userId,
+      officerName: users.find((user) => user._id === event.userId)?.name ?? "",
+      triggeredAt: new Date(event.triggeredAt).toISOString(),
+      clientId: event.clientId ?? null,
+      siteId: event.siteId ?? null,
+      checkpointId: event.checkpointId ?? null,
+    }));
   },
 });
 

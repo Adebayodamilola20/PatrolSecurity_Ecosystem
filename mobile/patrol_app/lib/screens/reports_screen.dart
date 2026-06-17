@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -13,7 +15,9 @@ import '../utils/constants.dart';
 import '../utils/theme.dart';
 
 class ReportsScreen extends StatefulWidget {
-  const ReportsScreen({super.key});
+  final int? initialTab;
+
+  const ReportsScreen({super.key, this.initialTab});
 
   @override
   State<ReportsScreen> createState() => _ReportsScreenState();
@@ -107,6 +111,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
     return DefaultTabController(
       length: 6,
+      initialIndex: widget.initialTab ?? 0,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Reports & Control'),
@@ -201,17 +206,27 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   _IncidentTab(
                     checkpoints: checkpoints,
                     busy: _submitting,
-                    onSubmit: (title, description, checkpointId, severity) {
-                      return _submit(
-                        () => ApiService.reportIncident(
-                          title: title,
-                          description: description,
-                          checkpointId: checkpointId,
-                          severity: severity,
-                        ),
-                        'Incident report submitted.',
-                      );
-                    },
+                    onSubmit:
+                        (
+                          title,
+                          description,
+                          checkpointId,
+                          severity,
+                          category,
+                          photos,
+                        ) {
+                          return _submit(
+                            () => ApiService.reportIncident(
+                              title: title,
+                              description: description,
+                              checkpointId: checkpointId,
+                              severity: severity,
+                              category: category,
+                              photos: photos,
+                            ),
+                            'Incident report submitted.',
+                          );
+                        },
                   ),
                   _ParkingViolationTab(
                     checkpoints: checkpoints,
@@ -233,7 +248,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     checkpoints: checkpoints,
                     busy: _submitting,
                     onSubmit:
-                        (title, issue, assetName, checkpointId, severity) {
+                        (
+                          title,
+                          issue,
+                          assetName,
+                          checkpointId,
+                          severity,
+                          evidence,
+                        ) {
                           return _submit(
                             () => ApiService.submitMaintenanceReport(
                               title: title,
@@ -241,6 +263,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                               assetName: assetName,
                               checkpointId: checkpointId,
                               severity: severity,
+                              evidence: evidence,
                             ),
                             'Maintenance report submitted.',
                           );
@@ -620,7 +643,15 @@ class _ExportMetric extends StatelessWidget {
 class _IncidentTab extends StatefulWidget {
   final List<Checkpoint> checkpoints;
   final bool busy;
-  final Future<void> Function(String, String, String?, String) onSubmit;
+  final Future<void> Function(
+    String,
+    String,
+    String?,
+    String,
+    String,
+    List<File>,
+  )
+  onSubmit;
 
   const _IncidentTab({
     required this.checkpoints,
@@ -632,17 +663,40 @@ class _IncidentTab extends StatefulWidget {
   State<_IncidentTab> createState() => _IncidentTabState();
 }
 
+const _incidentCategories = [
+  'Security Incident',
+  'Theft',
+  'Fire',
+  'Medical',
+  'Visitor Issue',
+  'Suspicious Activity',
+  'Other',
+];
+
 class _IncidentTabState extends State<_IncidentTab> {
   final _titleCtrl = TextEditingController();
   final _descriptionCtrl = TextEditingController();
+  final _picker = ImagePicker();
   String? _checkpointId;
   String _severity = 'low';
+  String _category = 'Security Incident';
+  final List<XFile> _photos = [];
 
   @override
   void dispose() {
     _titleCtrl.dispose();
     _descriptionCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickPhoto() async {
+    final picked = await _picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 80,
+    );
+    if (picked != null) {
+      setState(() => _photos.add(picked));
+    }
   }
 
   @override
@@ -659,6 +713,18 @@ class _IncidentTabState extends State<_IncidentTab> {
           checkpoints: widget.checkpoints,
           value: _checkpointId,
           onChanged: (value) => setState(() => _checkpointId = value),
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          initialValue: _category,
+          decoration: const InputDecoration(labelText: 'Category'),
+          items: _incidentCategories
+              .map(
+                (value) => DropdownMenuItem(value: value, child: Text(value)),
+              )
+              .toList(),
+          onChanged: (value) =>
+              setState(() => _category = value ?? 'Security Incident'),
         ),
         const SizedBox(height: 12),
         TextField(
@@ -690,6 +756,60 @@ class _IncidentTabState extends State<_IncidentTab> {
           ),
         ),
         const SizedBox(height: 16),
+        OutlinedButton.icon(
+          onPressed: _pickPhoto,
+          icon: const Icon(Icons.camera_alt_outlined),
+          label: Text(
+            _photos.isEmpty
+                ? 'Attach photos (optional)'
+                : '${_photos.length} photo(s) selected',
+          ),
+        ),
+        if (_photos.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 80,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _photos.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                return Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.file(
+                        File(_photos[index].path),
+                        width: 80,
+                        height: 80,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      child: GestureDetector(
+                        onTap: () => setState(() => _photos.removeAt(index)),
+                        child: Container(
+                          decoration: const BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.close,
+                            size: 16,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+        const SizedBox(height: 16),
         FilledButton.icon(
           onPressed: widget.busy || _titleCtrl.text.trim().isEmpty
               ? null
@@ -698,6 +818,8 @@ class _IncidentTabState extends State<_IncidentTab> {
                   _descriptionCtrl.text.trim(),
                   _checkpointId,
                   _severity,
+                  _category,
+                  _photos.map((x) => File(x.path)).toList(),
                 ),
           icon: const Icon(Icons.warning_amber_rounded),
           label: Text(widget.busy ? 'Submitting...' : 'Submit Incident'),
@@ -710,7 +832,15 @@ class _IncidentTabState extends State<_IncidentTab> {
 class _MaintenanceTab extends StatefulWidget {
   final List<Checkpoint> checkpoints;
   final bool busy;
-  final Future<void> Function(String, String, String, String?, String) onSubmit;
+  final Future<void> Function(
+    String,
+    String,
+    String,
+    String?,
+    String,
+    List<File>,
+  )
+  onSubmit;
 
   const _MaintenanceTab({
     required this.checkpoints,
@@ -726,8 +856,10 @@ class _MaintenanceTabState extends State<_MaintenanceTab> {
   final _titleCtrl = TextEditingController();
   final _issueCtrl = TextEditingController();
   final _assetCtrl = TextEditingController();
+  final _picker = ImagePicker();
   String? _checkpointId;
   String _severity = 'medium';
+  final List<XFile> _evidence = [];
 
   @override
   void dispose() {
@@ -735,6 +867,16 @@ class _MaintenanceTabState extends State<_MaintenanceTab> {
     _issueCtrl.dispose();
     _assetCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickPhoto() async {
+    final picked = await _picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 80,
+    );
+    if (picked != null) {
+      setState(() => _evidence.add(picked));
+    }
   }
 
   @override
@@ -791,6 +933,60 @@ class _MaintenanceTabState extends State<_MaintenanceTab> {
           ),
         ),
         const SizedBox(height: 16),
+        OutlinedButton.icon(
+          onPressed: _pickPhoto,
+          icon: const Icon(Icons.camera_alt_outlined),
+          label: Text(
+            _evidence.isEmpty
+                ? 'Attach evidence photos (optional)'
+                : '${_evidence.length} photo(s) selected',
+          ),
+        ),
+        if (_evidence.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 80,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _evidence.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                return Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.file(
+                        File(_evidence[index].path),
+                        width: 80,
+                        height: 80,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      child: GestureDetector(
+                        onTap: () => setState(() => _evidence.removeAt(index)),
+                        child: Container(
+                          decoration: const BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.close,
+                            size: 16,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+        const SizedBox(height: 16),
         FilledButton.icon(
           onPressed:
               widget.busy ||
@@ -803,6 +999,7 @@ class _MaintenanceTabState extends State<_MaintenanceTab> {
                   _assetCtrl.text.trim(),
                   _checkpointId,
                   _severity,
+                  _evidence.map((x) => File(x.path)).toList(),
                 ),
           icon: const Icon(Icons.build_outlined),
           label: Text(

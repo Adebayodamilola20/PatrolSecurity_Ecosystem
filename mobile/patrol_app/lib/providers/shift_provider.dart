@@ -11,6 +11,10 @@ class ShiftProvider extends ChangeNotifier {
   DateTime? _clockInTime;
   DateTime? _scheduledEnd;
   String? _siteLabel;
+  bool? _clockInGpsValid;
+  double? _clockInDistanceMeters;
+  bool? _clockOutGpsValid;
+  double? _clockOutDistanceMeters;
   Timer? _positionTimer;
   bool _positionTracking = false;
   bool _sendingPosition = false;
@@ -21,6 +25,10 @@ class ShiftProvider extends ChangeNotifier {
   DateTime? get clockInTime => _clockInTime;
   DateTime? get scheduledEnd => _scheduledEnd;
   String? get siteLabel => _siteLabel;
+  bool? get clockInGpsValid => _clockInGpsValid;
+  double? get clockInDistanceMeters => _clockInDistanceMeters;
+  bool? get clockOutGpsValid => _clockOutGpsValid;
+  double? get clockOutDistanceMeters => _clockOutDistanceMeters;
   bool get positionTracking => _positionTracking;
 
   void clearData() {
@@ -31,6 +39,10 @@ class ShiftProvider extends ChangeNotifier {
     _clockInTime = null;
     _scheduledEnd = null;
     _siteLabel = null;
+    _clockInGpsValid = null;
+    _clockInDistanceMeters = null;
+    _clockOutGpsValid = null;
+    _clockOutDistanceMeters = null;
     notifyListeners();
   }
 
@@ -66,6 +78,10 @@ class ShiftProvider extends ChangeNotifier {
         ? DateTime.tryParse(scheduledEnd)
         : null;
     _siteLabel = (data['siteLabel'] ?? shift?['siteLabel'])?.toString();
+    _clockInGpsValid = data['clockInGpsValid'] ?? shift?['clockInGpsValid'];
+    _clockInDistanceMeters = (data['clockInDistanceMeters'] ?? shift?['clockInDistanceMeters'])?.toDouble();
+    _clockOutGpsValid = data['clockOutGpsValid'] ?? shift?['clockOutGpsValid'];
+    _clockOutDistanceMeters = (data['clockOutDistanceMeters'] ?? shift?['clockOutDistanceMeters'])?.toDouble();
   }
 
   Future<void> loadStatus() async {

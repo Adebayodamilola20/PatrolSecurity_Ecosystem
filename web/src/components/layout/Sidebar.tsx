@@ -16,6 +16,7 @@ import {
   ClipboardCheck,
   User,
   Bot,
+  Activity,
 } from 'lucide-react'
 import { useAuthStore, useCanManageUsers, useCanViewAlerts } from '../../stores/useAuthStore'
 
@@ -49,6 +50,7 @@ function useNav() {
   items.push({ to: '/post-orders', label: 'Post Orders', icon: ClipboardList })
   items.push({ to: '/handovers', label: 'Handovers', icon: ClipboardCheck })
   items.push({ to: '/pass-on-logs', label: 'Pass-On Logs', icon: ClipboardList })
+  items.push({ to: '/activity-summary', label: 'Activity Summary', icon: Activity })
   items.push({ to: '/ai-assistant', label: 'AI Assistant', icon: Bot })
 
   if (role === 'admin' || role === 'main_account') {

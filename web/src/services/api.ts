@@ -207,6 +207,14 @@ export const api = {
     saveSetting: (data: { settingKey: string; settingValue: string; scopeType?: string; scopeId?: string }) =>
       request<any>('/emergency/settings', { method: 'POST', body: JSON.stringify(data) }),
   },
+  activity: {
+    list: (params?: Record<string, string>) =>
+      request<any[]>(`/activity-summary?${new URLSearchParams(params)}`),
+    exportCsv: (params?: Record<string, string>) => {
+      const qs = params ? `?${new URLSearchParams(params)}` : ''
+      return `${API_BASE}/activity-summary/export${qs}`
+    },
+  },
   ai: {
     chat: (data: { message: string; history?: Array<{ role: 'user' | 'assistant'; content: string }> }) =>
       request<{

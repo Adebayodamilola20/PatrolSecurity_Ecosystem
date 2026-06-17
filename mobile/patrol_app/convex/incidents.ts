@@ -1,5 +1,16 @@
 import { internalMutation, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
+
+const incidentCategory = v.union(
+  v.literal("Security Incident"),
+  v.literal("Theft"),
+  v.literal("Fire"),
+  v.literal("Medical"),
+  v.literal("Visitor Issue"),
+  v.literal("Suspicious Activity"),
+  v.literal("Other"),
+);
 
 export const list = internalQuery({
   args: {
@@ -79,7 +90,9 @@ export const listForApi = internalQuery({
     return incidents.map((i) => ({
       id: i.legacyId ?? i._id,
       title: i.title,
+      category: i.category ?? "Security Incident",
       description: i.description,
+      photoUrls: i.photoUrls ?? [],
       severity: i.severity,
       status: i.status,
       officerId: i.officerId,
@@ -151,8 +164,10 @@ export const create = internalMutation({
   args: {
     officerId: v.id("users"),
     checkpointId: v.optional(v.id("checkpoints")),
+    category: v.optional(incidentCategory),
     title: v.string(),
     description: v.optional(v.string()),
+    photoUrls: v.optional(v.array(v.string())),
     severity: v.optional(
       v.union(
         v.literal("low"),
@@ -167,16 +182,32 @@ export const create = internalMutation({
     const checkpoint = args.checkpointId
       ? await ctx.db.get(args.checkpointId)
       : null;
-    return await ctx.db.insert("incidents", {
+    const reportedAt = Date.now();
+    const incidentId = await ctx.db.insert("incidents", {
       clientId: checkpoint?.clientId ?? officer?.clientId,
       siteId: checkpoint?.siteId,
       officerId: args.officerId,
       checkpointId: args.checkpointId,
+      category: args.category ?? "Security Incident",
       title: args.title,
       description: args.description ?? "",
+      photoUrls: args.photoUrls ?? [],
       severity: args.severity ?? "low",
       status: "open",
-      reportedAt: Date.now(),
+      reportedAt,
     });
+    await ctx.runMutation(internal.activity.record, {
+      clientId: checkpoint?.clientId ?? officer?.clientId,
+      siteId: checkpoint?.siteId,
+      checkpointId: args.checkpointId,
+      officerId: args.officerId,
+      activityType: "incident",
+      sourceTable: "incidents",
+      sourceId: incidentId,
+      locationLabel: checkpoint?.name ?? "",
+      activityLabel: `Incident: ${args.category ?? "Security Incident"}`,
+      occurredAt: reportedAt,
+    });
+    return incidentId;
   },
 });

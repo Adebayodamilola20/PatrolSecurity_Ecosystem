@@ -1,5 +1,58 @@
 import { internalMutation, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
+
+function distanceMeters(
+  latitudeA: number,
+  longitudeA: number,
+  latitudeB: number,
+  longitudeB: number,
+) {
+  const earthRadius = 6371000;
+  const dLat = ((latitudeB - latitudeA) * Math.PI) / 180;
+  const dLon = ((longitudeB - longitudeA) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((latitudeA * Math.PI) / 180) *
+      Math.cos((latitudeB * Math.PI) / 180) *
+      Math.sin(dLon / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(earthRadius * c);
+}
+
+async function validateSiteGeofence(
+  ctx: MutationCtx,
+  siteId: Id<"sites"> | undefined,
+  latitude?: number,
+  longitude?: number,
+) {
+  if (!siteId || latitude == null || longitude == null) {
+    return { gpsValid: false, distanceMeters: undefined as number | undefined };
+  }
+  const checkpoints = await ctx.db
+    .query("checkpoints")
+    .withIndex("by_siteId", (q) => q.eq("siteId", siteId))
+    .collect();
+  if (checkpoints.length === 0) {
+    return { gpsValid: true, distanceMeters: undefined as number | undefined };
+  }
+  const distances = checkpoints.map((checkpoint) => ({
+    distance: distanceMeters(
+      checkpoint.latitude,
+      checkpoint.longitude,
+      latitude,
+      longitude,
+    ),
+    radius: checkpoint.radiusMeters,
+  }));
+  const nearest = distances.sort((a, b) => a.distance - b.distance)[0];
+  return {
+    gpsValid: nearest.distance <= nearest.radius,
+    distanceMeters: nearest.distance,
+  };
+}
 
 export const getActiveForUser = internalQuery({
   args: {
@@ -160,6 +213,12 @@ export const clockIn = internalMutation({
       .query("userSiteAssignments")
       .withIndex("by_userId", (q) => q.eq("userId", args.userId))
       .first();
+    const geofence = await validateSiteGeofence(
+      ctx,
+      assignment?.siteId,
+      args.latitude,
+      args.longitude,
+    );
     const shiftId = await ctx.db.insert("shifts", {
       clientId: user?.clientId,
       siteId: assignment?.siteId,
@@ -169,8 +228,26 @@ export const clockIn = internalMutation({
       clockInPhoto: args.clockInPhoto ?? "",
       clockInLatitude: args.latitude,
       clockInLongitude: args.longitude,
+      clockInGpsValid: geofence.gpsValid,
+      clockInDistanceMeters: geofence.distanceMeters,
       siteLabel: args.siteLabel ?? "",
       createdAt: now,
+    });
+
+    await ctx.runMutation(internal.activity.record, {
+      clientId: user?.clientId,
+      siteId: assignment?.siteId,
+      officerId: args.userId,
+      activityType: "clock_in",
+      sourceTable: "shifts",
+      sourceId: shiftId,
+      siteName: args.siteLabel ?? "",
+      activityLabel: "Clock-in",
+      gpsLatitude: args.latitude,
+      gpsLongitude: args.longitude,
+      gpsValid: geofence.gpsValid,
+      distanceMeters: geofence.distanceMeters,
+      occurredAt: now,
     });
 
     return {
@@ -200,11 +277,35 @@ export const clockOut = internalMutation({
     }
 
     const clockOutAt = Date.now();
+    const geofence = await validateSiteGeofence(
+      ctx,
+      existing.siteId,
+      args.latitude,
+      args.longitude,
+    );
     await ctx.db.patch(args.shiftId, {
       status: "completed",
       clockOut: clockOutAt,
       clockOutLatitude: args.latitude,
       clockOutLongitude: args.longitude,
+      clockOutGpsValid: geofence.gpsValid,
+      clockOutDistanceMeters: geofence.distanceMeters,
+    });
+
+    await ctx.runMutation(internal.activity.record, {
+      clientId: existing.clientId,
+      siteId: existing.siteId,
+      officerId: existing.userId,
+      activityType: "clock_out",
+      sourceTable: "shifts",
+      sourceId: args.shiftId,
+      siteName: existing.siteLabel,
+      activityLabel: "Clock-out",
+      gpsLatitude: args.latitude,
+      gpsLongitude: args.longitude,
+      gpsValid: geofence.gpsValid,
+      distanceMeters: geofence.distanceMeters,
+      occurredAt: clockOutAt,
     });
 
     const updated = await ctx.db.get(args.shiftId);

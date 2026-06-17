@@ -17,6 +17,7 @@ import Timesheets from './pages/Timesheets'
 import PostOrders from './pages/PostOrders'
 import Handovers from './pages/Handovers'
 import PassOnLogs from './pages/PassOnLogs'
+import ActivitySummary from './pages/ActivitySummary'
 import AiAssistant from './pages/AiAssistant'
 import Login from './pages/Login'
 import ForgotPassword from './pages/ForgotPassword'
@@ -95,6 +96,7 @@ export default function App() {
           <Route path="/post-orders" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><PostOrders /></RoleRoute>} />
           <Route path="/handovers" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Handovers /></RoleRoute>} />
           <Route path="/pass-on-logs" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><PassOnLogs /></RoleRoute>} />
+          <Route path="/activity-summary" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><ActivitySummary /></RoleRoute>} />
           <Route path="/ai-assistant" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><AiAssistant /></RoleRoute>} />
         </Route>
 

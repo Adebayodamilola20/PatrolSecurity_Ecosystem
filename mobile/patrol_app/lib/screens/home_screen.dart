@@ -21,6 +21,9 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  bool _reportsExpanded = false;
+  bool _passOnLogBlockerShown = false;
+
   @override
   void initState() {
     super.initState();
@@ -29,7 +32,191 @@ class _HomeScreenState extends State<HomeScreen> {
       context.read<ScanProvider>().loadCheckpoints();
       context.read<ShiftProvider>().loadStatus();
       context.read<DutyProvider>().load();
+      _checkPassOnLogs();
     });
+  }
+
+  Future<void> _checkPassOnLogs() async {
+    if (_passOnLogBlockerShown) return;
+    try {
+      final pending = await ApiService.checkPendingAcknowledgements();
+      if (pending['hasPending'] == true && mounted) {
+        _passOnLogBlockerShown = true;
+        await _showPassOnLogBlocker();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _showPassOnLogBlocker() async {
+    List<dynamic> logs;
+    try {
+      logs = await ApiService.getPendingPassOnLogs();
+    } catch (_) {
+      _passOnLogBlockerShown = false;
+      return;
+    }
+    if (!mounted || logs.isEmpty) {
+      _passOnLogBlockerShown = false;
+      return;
+    }
+
+    var currentIndex = 0;
+    var isAcknowledging = false;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setInnerState) {
+            final log = logs[currentIndex] as Map<String, dynamic>;
+            final isLast = currentIndex >= logs.length - 1;
+
+            return AlertDialog(
+              title: Row(
+                children: [
+                  const Icon(Icons.receipt_long_outlined, color: AppTheme.primary),
+                  const SizedBox(width: 8),
+                  Text('Pass-On Log (${currentIndex + 1}/${logs.length})'),
+                ],
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary.withValues(alpha: 0.06),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppTheme.primary.withValues(alpha: 0.15)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              log['title'] ?? 'Untitled',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 16,
+                                color: AppTheme.text,
+                              ),
+                            ),
+                            if ((log['priority'] ?? '').isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.flagged.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  (log['priority'] as String).toUpperCase(),
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.flagged,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      const Text(
+                        'Instructions',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        log['instruction'] ?? log['description'] ?? 'No details',
+                        style: const TextStyle(
+                          color: AppTheme.text,
+                          height: 1.5,
+                        ),
+                      ),
+                      if ((log['createdAt'] ?? '').isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          'Created: ${log['createdAt']}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isAcknowledging
+                      ? null
+                      : () {
+                          currentIndex++;
+                          if (currentIndex >= logs.length) {
+                            _passOnLogBlockerShown = false;
+                            Navigator.pop(ctx);
+                          } else {
+                            setInnerState(() {});
+                          }
+                        },
+                  child: Text(isLast ? 'Skip All' : 'Skip'),
+                ),
+                FilledButton(
+                  onPressed: isAcknowledging
+                      ? null
+                      : () async {
+                          setInnerState(() => isAcknowledging = true);
+                          try {
+                            await ApiService.acknowledgePassOnLog(
+                              log['id'] ?? log['_id'],
+                            );
+                            if (currentIndex >= logs.length - 1) {
+                              _passOnLogBlockerShown = false;
+                              if (ctx.mounted) Navigator.pop(ctx);
+                            } else {
+                              currentIndex++;
+                              setInnerState(() => isAcknowledging = false);
+                            }
+                          } catch (e) {
+                            if (ctx.mounted) {
+                              setInnerState(() => isAcknowledging = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Failed: ${e.toString().replaceFirst("Exception: ", "")}',
+                                  ),
+                                  backgroundColor: AppTheme.flagged,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                  child: isAcknowledging
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(isLast ? 'Acknowledge & Continue' : 'Acknowledge & Next'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   void _openScannerOrExplain(BuildContext context) {
@@ -76,68 +263,54 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildDrawer(BuildContext context, User? user, AccountRole role) {
-    final items = [
+    final beforeReports = [
       _MenuItem(
         icon: Icons.login,
         title: 'Clock In / Out',
-        subtitle: 'Start or end your active shift',
         onTap: () => Navigator.pop(context),
       ),
       _MenuItem(
         icon: Icons.calendar_month_outlined,
         title: 'View Schedule',
-        subtitle: 'Assigned shifts and site coverage',
         route: AppRoutes.schedule,
       ),
       _MenuItem(
         icon: Icons.route_outlined,
         title: 'Patrol Tour',
-        subtitle: canSubmitPatrol(user)
-            ? 'Scan QR checkpoints and monitor patrol status'
-            : 'Review patrol activity within your access scope',
         route: AppRoutes.patrol,
       ),
-      _MenuItem(
-        icon: Icons.description_outlined,
-        title: 'Reports',
-        subtitle: 'Daily activity, incidents, maintenance, and logs',
-        route: AppRoutes.reports,
-      ),
+    ];
+
+    final afterReports = [
       _MenuItem(
         icon: Icons.policy_outlined,
         title: 'Security Policy',
-        subtitle: 'Post orders, handovers, and policy instructions',
         route: AppRoutes.policy,
       ),
       _MenuItem(
         icon: Icons.local_shipping_outlined,
         title: 'Truck Check In / Out',
-        subtitle: 'Vehicle movement records by site',
         route: AppRoutes.truckCheck,
       ),
       _MenuItem(
         icon: Icons.badge_outlined,
         title: 'Visitor Check In / Out',
-        subtitle: 'Visitor arrival and departure tracking',
         route: AppRoutes.visitorCheck,
       ),
       _MenuItem(
         icon: Icons.event_available_outlined,
         title: 'Vacation Requests',
-        subtitle: 'Submit and review leave requests',
         route: AppRoutes.vacation,
       ),
       if (role == AccountRole.admin)
         _MenuItem(
           icon: Icons.manage_accounts_outlined,
           title: 'Manage Users',
-          subtitle: 'Administer users and site access',
           route: AppRoutes.users,
         ),
       _MenuItem(
         icon: Icons.logout,
         title: 'Sign Out',
-        subtitle: 'End this secure app session',
         destructive: true,
         onTap: () {
           Navigator.pop(context);
@@ -145,6 +318,36 @@ class _HomeScreenState extends State<HomeScreen> {
         },
       ),
     ];
+
+    final reportSubItems = [
+      {'title': 'Daily Activity Report', 'tab': 0},
+      {'title': 'Incident Report', 'tab': 1},
+      {'title': 'Parking Violation', 'tab': 2},
+      {'title': 'Maintenance Request', 'tab': 3},
+      {'title': 'Pass-On Log', 'tab': 4},
+    ];
+
+    Widget tile(_MenuItem item) => ListTile(
+      leading: Icon(
+        item.icon,
+        color: item.destructive ? AppTheme.error : AppTheme.primary,
+      ),
+      title: Text(
+        item.title,
+        style: TextStyle(
+          fontWeight: FontWeight.w700,
+          color: item.destructive ? AppTheme.error : AppTheme.text,
+        ),
+      ),
+      onTap:
+          item.onTap ??
+          () {
+            if (item.route != null) {
+              Navigator.pop(context);
+              Navigator.pushNamed(context, item.route!);
+            }
+          },
+    );
 
     return Drawer(
       child: SafeArea(
@@ -185,31 +388,50 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-            ...items.map(
-              (item) => ListTile(
-                leading: Icon(
-                  item.icon,
-                  color: item.destructive ? AppTheme.error : AppTheme.primary,
-                ),
-                title: Text(
-                  item.title,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: item.destructive ? AppTheme.error : AppTheme.text,
-                  ),
-                ),
-                subtitle: Text(item.subtitle),
-                trailing: const Icon(Icons.chevron_right),
-                onTap:
-                    item.onTap ??
-                    () {
-                      if (item.route != null) {
-                        Navigator.pop(context);
-                        Navigator.pushNamed(context, item.route!);
-                      }
-                    },
+            ...beforeReports.map(tile),
+            ListTile(
+              leading: const Icon(
+                Icons.description_outlined,
+                color: AppTheme.primary,
               ),
+              title: const Text(
+                'Reports',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.text,
+                ),
+              ),
+              trailing: Icon(
+                _reportsExpanded
+                    ? Icons.keyboard_arrow_up
+                    : Icons.keyboard_arrow_down,
+                color: AppTheme.textSecondary,
+              ),
+              onTap: () => setState(() => _reportsExpanded = !_reportsExpanded),
             ),
+            if (_reportsExpanded)
+              ...reportSubItems.map(
+                (item) => ListTile(
+                  contentPadding: const EdgeInsets.only(left: 72),
+                  title: Text(
+                    item['title'] as String,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w500,
+                      color: AppTheme.text,
+                      fontSize: 14,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(
+                      context,
+                      AppRoutes.reports,
+                      arguments: {'tab': item['tab']},
+                    );
+                  },
+                ),
+              ),
+            ...afterReports.map(tile),
           ],
         ),
       ),
@@ -756,59 +978,94 @@ class _DashboardTab extends StatelessWidget {
               },
             ),
             const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton.icon(
-                onPressed: shift.loading
-                    ? null
-                    : () async {
-                        final wasOnDuty = shift.onDuty;
-                        final ok = wasOnDuty
-                            ? await shift.clockOut()
-                            : await shift.clockIn();
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                ok
-                                    ? (wasOnDuty
-                                          ? 'Clocked out successfully'
-                                          : 'Clocked in successfully')
-                                    : (shift.error ??
-                                          'Action failed. Check your connection and try again.'),
-                              ),
-                              backgroundColor: ok
-                                  ? (wasOnDuty
-                                        ? AppTheme.textSecondary
-                                        : AppTheme.verified)
-                                  : AppTheme.error,
-                            ),
-                          );
-                        }
-                      },
-                icon: Icon(shift.onDuty ? Icons.logout : Icons.login, size: 20),
-                label: Text(
-                  shift.loading
-                      ? 'Processing...'
-                      : shift.onDuty
-                      ? 'Clock Out'
-                      : 'Clock In',
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: shift.onDuty
-                      ? Colors.orange
-                      : AppTheme.verified,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+            Column(
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    onPressed: shift.loading
+                        ? null
+                        : () async {
+                            final wasOnDuty = shift.onDuty;
+                            final ok = wasOnDuty
+                                ? await shift.clockOut()
+                                : await shift.clockIn();
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    ok
+                                        ? (wasOnDuty
+                                              ? 'Clocked out successfully'
+                                              : 'Clocked in successfully')
+                                        : (shift.error ??
+                                              'Action failed. Check your connection and try again.'),
+                                  ),
+                                  backgroundColor: ok
+                                      ? (wasOnDuty
+                                            ? AppTheme.textSecondary
+                                            : AppTheme.verified)
+                                      : AppTheme.error,
+                                ),
+                              );
+                            }
+                          },
+                    icon: Icon(shift.onDuty ? Icons.logout : Icons.login, size: 20),
+                    label: Text(
+                      shift.loading
+                          ? 'Processing...'
+                          : shift.onDuty
+                          ? 'Clock Out'
+                          : 'Clock In',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: shift.onDuty
+                          ? Colors.orange
+                          : AppTheme.verified,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
-                  textStyle: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
                 ),
-              ),
+                if (shift.onDuty && shift.clockInGpsValid != null) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        shift.clockInGpsValid!
+                            ? Icons.check_circle
+                            : Icons.warning_amber,
+                        size: 14,
+                        color: shift.clockInGpsValid!
+                            ? AppTheme.verified
+                            : AppTheme.flagged,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        shift.clockInGpsValid!
+                            ? 'Geofence verified'
+                            : shift.clockInDistanceMeters != null
+                                ? '${shift.clockInDistanceMeters!.toStringAsFixed(0)}m from checkpoint'
+                                : 'Outside geofence',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: shift.clockInGpsValid!
+                              ? AppTheme.verified
+                              : AppTheme.flagged,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
             ),
             const SizedBox(height: 20),
             Row(
@@ -909,7 +1166,6 @@ class _DashboardTab extends StatelessWidget {
 class _MenuItem {
   final IconData icon;
   final String title;
-  final String subtitle;
   final String? route;
   final VoidCallback? onTap;
   final bool destructive;
@@ -917,7 +1173,6 @@ class _MenuItem {
   const _MenuItem({
     required this.icon,
     required this.title,
-    required this.subtitle,
     this.route,
     this.onTap,
     this.destructive = false,

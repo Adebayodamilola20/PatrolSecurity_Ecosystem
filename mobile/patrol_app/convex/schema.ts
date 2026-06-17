@@ -29,6 +29,22 @@ const handoverStatus = v.union(
   v.literal("closed"),
 );
 
+const activityType = v.union(
+  v.literal("clock_in"),
+  v.literal("clock_out"),
+  v.literal("patrol_scan"),
+  v.literal("incident"),
+  v.literal("maintenance"),
+  v.literal("dar"),
+  v.literal("emergency"),
+  v.literal("pass_on_log_ack"),
+  v.literal("post_order_ack"),
+  v.literal("visitor_check_in"),
+  v.literal("visitor_check_out"),
+  v.literal("truck_check_in"),
+  v.literal("truck_check_out"),
+);
+
 export default defineSchema({
   clients: defineTable({
     legacyId: v.optional(v.string()),
@@ -113,8 +129,12 @@ export default defineSchema({
     clockInPhoto: v.string(),
     clockInLatitude: v.optional(v.number()),
     clockInLongitude: v.optional(v.number()),
+    clockInGpsValid: v.optional(v.boolean()),
+    clockInDistanceMeters: v.optional(v.number()),
     clockOutLatitude: v.optional(v.number()),
     clockOutLongitude: v.optional(v.number()),
+    clockOutGpsValid: v.optional(v.boolean()),
+    clockOutDistanceMeters: v.optional(v.number()),
     scheduledStart: v.optional(v.number()),
     scheduledEnd: v.optional(v.number()),
     siteLabel: v.string(),
@@ -141,6 +161,11 @@ export default defineSchema({
     gpsValid: v.boolean(),
     distanceMeters: v.optional(v.number()),
     notes: v.string(),
+    postOrdersRequired: v.optional(v.boolean()),
+    postOrdersAcknowledgedAt: v.optional(v.number()),
+    workflowStatus: v.optional(
+      v.union(v.literal("pending_post_order_ack"), v.literal("completed")),
+    ),
   })
     .index("by_legacyId", ["legacyId"])
     .index("by_clientId", ["clientId"])
@@ -197,8 +222,20 @@ export default defineSchema({
     siteId: v.optional(v.id("sites")),
     officerId: v.id("users"),
     checkpointId: v.optional(v.id("checkpoints")),
+    category: v.optional(
+      v.union(
+        v.literal("Security Incident"),
+        v.literal("Theft"),
+        v.literal("Fire"),
+        v.literal("Medical"),
+        v.literal("Visitor Issue"),
+        v.literal("Suspicious Activity"),
+        v.literal("Other"),
+      ),
+    ),
     title: v.string(),
     description: v.string(),
+    photoUrls: v.optional(v.array(v.string())),
     severity: incidentSeverity,
     status: incidentStatus,
     reportedAt: v.number(),
@@ -221,6 +258,10 @@ export default defineSchema({
     title: v.string(),
     summary: v.string(),
     details: v.any(),
+    equipmentName: v.optional(v.string()),
+    evidenceUrls: v.optional(v.array(v.string())),
+    gpsLatitude: v.optional(v.number()),
+    gpsLongitude: v.optional(v.number()),
     checkpointId: v.optional(v.id("checkpoints")),
     siteLabel: v.string(),
     userId: v.id("users"),
@@ -391,6 +432,48 @@ export default defineSchema({
     .index("by_shiftId", ["shiftId"])
     .index("by_postOrderId_userId", ["postOrderId", "userId"]),
 
+  scanPostOrderAcknowledgements: defineTable({
+    scanId: v.id("scans"),
+    postOrderId: v.id("postOrders"),
+    checkpointId: v.id("checkpoints"),
+    userId: v.id("users"),
+    shiftId: v.optional(v.id("shifts")),
+    acknowledgedAt: v.number(),
+    clientId: v.optional(v.id("clients")),
+    siteId: v.optional(v.id("sites")),
+  })
+    .index("by_scanId", ["scanId"])
+    .index("by_postOrderId", ["postOrderId"])
+    .index("by_userId", ["userId"])
+    .index("by_checkpointId_and_acknowledgedAt", [
+      "checkpointId",
+      "acknowledgedAt",
+    ]),
+
+  siteActivityEvents: defineTable({
+    clientId: v.optional(v.id("clients")),
+    siteId: v.optional(v.id("sites")),
+    checkpointId: v.optional(v.id("checkpoints")),
+    officerId: v.id("users"),
+    activityType,
+    sourceTable: v.string(),
+    sourceId: v.string(),
+    siteName: v.string(),
+    locationLabel: v.string(),
+    activityLabel: v.string(),
+    gpsLatitude: v.optional(v.number()),
+    gpsLongitude: v.optional(v.number()),
+    gpsValid: v.optional(v.boolean()),
+    distanceMeters: v.optional(v.number()),
+    count: v.number(),
+    occurredAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_siteId_and_occurredAt", ["siteId", "occurredAt"])
+    .index("by_clientId_and_occurredAt", ["clientId", "occurredAt"])
+    .index("by_officerId_and_occurredAt", ["officerId", "occurredAt"])
+    .index("by_activityType_and_occurredAt", ["activityType", "occurredAt"]),
+
   auditLogs: defineTable({
     action: v.string(),
     actorId: v.string(),
@@ -411,6 +494,40 @@ export default defineSchema({
     .index("by_clientId_timestamp", ["clientId", "timestamp"])
     .index("by_actorId_action", ["actorId", "action"])
     .index("by_action_timestamp", ["action", "timestamp"]),
+
+  aiAuditLogs: defineTable({
+    userId: v.id("users"),
+    userRole: v.string(),
+    question: v.string(),
+    intent: v.string(),
+    dataSources: v.array(v.string()),
+    sensitive: v.boolean(),
+    status: v.string(),
+    error: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_createdAt", ["createdAt"]),
+
+  aiRateLimits: defineTable({
+    userId: v.id("users"),
+    windowKey: v.string(),
+    count: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_userId_windowKey", ["userId", "windowKey"]),
+
+  aiGeneratedReports: defineTable({
+    userId: v.id("users"),
+    reportType: v.string(),
+    title: v.string(),
+    content: v.string(),
+    sourceSummary: v.string(),
+    status: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_createdAt", ["createdAt"]),
 
   handovers: defineTable({
     legacyId: v.optional(v.string()),
@@ -437,4 +554,49 @@ export default defineSchema({
     .index("by_toUserId", ["toUserId"])
     .index("by_status", ["status"])
     .index("by_toUserId_status", ["toUserId", "status"]),
+
+  visitorLogs: defineTable({
+    legacyId: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
+    siteId: v.optional(v.id("sites")),
+    officerId: v.id("users"),
+    visitorName: v.string(),
+    visitorPhone: v.string(),
+    hostName: v.string(),
+    purpose: v.string(),
+    vehiclePlate: v.string(),
+    idNumber: v.string(),
+    checkInAt: v.number(),
+    checkOutAt: v.optional(v.number()),
+    status: v.union(v.literal("active"), v.literal("completed")),
+    notes: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_legacyId", ["legacyId"])
+    .index("by_clientId", ["clientId"])
+    .index("by_siteId", ["siteId"])
+    .index("by_officerId", ["officerId"])
+    .index("by_status", ["status"]),
+
+  truckLogs: defineTable({
+    legacyId: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
+    siteId: v.optional(v.id("sites")),
+    officerId: v.id("users"),
+    driverName: v.string(),
+    plateNumber: v.string(),
+    company: v.string(),
+    purpose: v.string(),
+    cargoDescription: v.string(),
+    checkInAt: v.number(),
+    checkOutAt: v.optional(v.number()),
+    status: v.union(v.literal("active"), v.literal("completed")),
+    notes: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_legacyId", ["legacyId"])
+    .index("by_clientId", ["clientId"])
+    .index("by_siteId", ["siteId"])
+    .index("by_officerId", ["officerId"])
+    .index("by_status", ["status"]),
 });

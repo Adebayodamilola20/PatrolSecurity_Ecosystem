@@ -76,6 +76,7 @@ export default function Checkpoints() {
   const [resolvingCurrentLocation, setResolvingCurrentLocation] = useState(false)
   const [locationInfo, setLocationInfo] = useState('')
   const [actionError, setActionError] = useState('')
+  const [geoError, setGeoError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
@@ -286,21 +287,38 @@ export default function Checkpoints() {
 
   const handleUseCurrentLocation = async () => {
     if (!navigator.geolocation) {
-      setAddressError('This browser does not support location access.')
+      setGeoError('Your browser does not support location access. Type an address or paste coordinates instead.')
       return
     }
 
     try {
       setResolvingCurrentLocation(true)
+      setGeoError('')
       setAddressError('')
       setLocationInfo('')
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 15000,
-          maximumAge: 0,
+
+      let position
+      try {
+        position = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 8000,
+            maximumAge: 0,
+          })
         })
-      })
+      } catch (highAccuracyError: any) {
+        if (highAccuracyError?.code === 3) {
+          position = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: false,
+              timeout: 10000,
+              maximumAge: 60000,
+            })
+          })
+        } else {
+          throw highAccuracyError
+        }
+      }
 
       const latitude = String(position.coords.latitude)
       const longitude = String(position.coords.longitude)
@@ -320,15 +338,15 @@ export default function Checkpoints() {
     } catch (error: any) {
       let errorMessage = 'Could not get your current location.'
       if (error?.code === 1) {
-        errorMessage = 'Location permission denied. Click the lock icon in your browser and allow location access.'
+        errorMessage = 'Location permission denied. Click the lock icon in your browser address bar and allow location access, then try again.'
       } else if (error?.code === 2) {
-        errorMessage = 'Location unavailable. Please check your GPS/network connection.'
+        errorMessage = 'Location unavailable. Check your GPS or network connection, or use the address search instead.'
       } else if (error?.code === 3) {
-        errorMessage = 'Location request timed out. Please try again.'
+        errorMessage = 'Location request timed out. Try again or use the address search instead.'
       } else if (error?.message?.includes('secure')) {
-        errorMessage = 'Location requires HTTPS. Use localhost or a secure connection.'
+        errorMessage = 'Location requires a secure connection (HTTPS). Use localhost or connect via HTTPS.'
       }
-      setAddressError(errorMessage)
+      setGeoError(errorMessage)
     } finally {
       setResolvingCurrentLocation(false)
     }
@@ -354,6 +372,7 @@ export default function Checkpoints() {
       setAddressResults([])
       setAddressError('')
       setLocationInfo('')
+      setGeoError('')
       const list = await api.checkpoints.list()
       setCheckpoints(list)
     } catch (error) {
@@ -554,7 +573,24 @@ export default function Checkpoints() {
                 <X className="h-4 w-4" />
               </button>
             </div>
+
+            {geoError ? (
+              <div className="mx-6 mt-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3">
+                <p className="text-sm font-medium text-destructive">Location Error</p>
+                <p className="mt-1 text-xs text-destructive/90">{geoError}</p>
+              </div>
+            ) : null}
+
             <form onSubmit={handleCreate} className="flex min-h-0 flex-1 flex-col">
+              {resolvingCurrentLocation ? (
+                <div className="flex min-h-0 flex-1 items-center justify-center px-6 py-12">
+                  <div className="flex flex-col items-center gap-3">
+                    <span className="h-8 w-8 animate-spin rounded-full border-[3px] border-muted-foreground/25 border-t-primary" />
+                    <p className="text-sm text-muted-foreground">Getting your current location...</p>
+                    <p className="text-xs text-muted-foreground/60">This may take a few seconds. Ensure location access is enabled.</p>
+                  </div>
+                </div>
+              ) : (
               <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4">
               <div>
                 <div className="flex items-center justify-between gap-3">
@@ -668,6 +704,7 @@ export default function Checkpoints() {
                 </div>
               </div>
               </div>
+              )}
               <div className="border-t border-border px-6 py-4">
                 <button
                   type="submit"

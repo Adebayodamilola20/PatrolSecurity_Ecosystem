@@ -1,4 +1,5 @@
 import { internalMutation, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
 
 export const listSubmissions = internalQuery({
@@ -101,6 +102,10 @@ export const submit = internalMutation({
     title: v.string(),
     summary: v.string(),
     details: v.any(),
+    equipmentName: v.optional(v.string()),
+    evidenceUrls: v.optional(v.array(v.string())),
+    gpsLatitude: v.optional(v.number()),
+    gpsLongitude: v.optional(v.number()),
     checkpointId: v.optional(v.id("checkpoints")),
     siteLabel: v.optional(v.string()),
     userId: v.id("users"),
@@ -143,19 +148,43 @@ export const submit = internalMutation({
       title,
     }));
 
-    return await ctx.db.insert("reportSubmissions", {
+    const submittedAt = Date.now();
+    const id = await ctx.db.insert("reportSubmissions", {
       clientId: checkpoint?.clientId ?? user?.clientId,
       siteId: checkpoint?.siteId,
       type: args.type,
       title,
       summary,
       details: args.details,
+      equipmentName: args.equipmentName,
+      evidenceUrls: args.evidenceUrls,
+      gpsLatitude: args.gpsLatitude,
+      gpsLongitude: args.gpsLongitude,
       checkpointId: args.checkpointId,
       siteLabel: args.siteLabel ?? "",
       userId: args.userId,
       status: "submitted",
-      submittedAt: Date.now(),
+      submittedAt,
       deliveryPayload: {},
     });
+    await ctx.runMutation(internal.activity.record, {
+      clientId: checkpoint?.clientId ?? user?.clientId,
+      siteId: checkpoint?.siteId,
+      checkpointId: args.checkpointId,
+      officerId: args.userId,
+      activityType: args.type === "maintenance" ? "maintenance" : "dar",
+      sourceTable: "reportSubmissions",
+      sourceId: id,
+      siteName: args.siteLabel ?? "",
+      locationLabel: checkpoint?.name ?? args.siteLabel ?? "",
+      activityLabel:
+        args.type === "maintenance"
+          ? `Maintenance request: ${title}`
+          : "Daily Activity Report submitted",
+      gpsLatitude: args.gpsLatitude,
+      gpsLongitude: args.gpsLongitude,
+      occurredAt: submittedAt,
+    });
+    return id;
   },
 });

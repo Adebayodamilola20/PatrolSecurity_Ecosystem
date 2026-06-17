@@ -1,4 +1,5 @@
 import { internalMutation, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
 
 export const listAll = internalQuery({
@@ -264,6 +265,7 @@ export const acknowledge = internalMutation({
       .first();
     const order = await ctx.db.get(args.orderId);
     if (!order) throw new Error("Post order not found");
+    const user = await ctx.db.get(args.userId);
     const id = await ctx.db.insert("postOrderCompletions", {
       clientId: order.clientId,
       siteId: order.siteId,
@@ -278,6 +280,28 @@ export const acknowledge = internalMutation({
       reviewStatus: "pending",
       reviewNote: "",
       createdAt: now,
+    });
+    await ctx.runMutation(internal.activity.record, {
+      clientId: order.clientId,
+      siteId: order.siteId,
+      checkpointId: order.checkpointId,
+      officerId: args.userId,
+      activityType: "post_order_ack",
+      sourceTable: "postOrderCompletions",
+      sourceId: id,
+      activityLabel: `Post order acknowledged: ${order.title}`,
+      occurredAt: now,
+    });
+    await ctx.runMutation(internal.audit.record, {
+      action: "post_order.acknowledged",
+      actorId: args.userId,
+      actorRole: user?.role ?? "guard",
+      targetType: "post_order",
+      targetId: args.orderId,
+      details: `Acknowledged post order: ${order.title}`,
+      clientId: order.clientId,
+      siteId: order.siteId,
+      success: true,
     });
     return {
       id,
@@ -326,6 +350,31 @@ export const complete = internalMutation({
       reviewStatus: "pending",
       reviewNote: "",
       createdAt: now,
+    });
+    const _user = await ctx.db.get(args.userId);
+    await ctx.runMutation(internal.activity.record, {
+      clientId: order.clientId,
+      siteId: order.siteId,
+      checkpointId: order.checkpointId,
+      officerId: args.userId,
+      activityType: "post_order_ack",
+      sourceTable: "postOrderCompletions",
+      sourceId: id,
+      gpsLatitude: args.gpsLatitude,
+      gpsLongitude: args.gpsLongitude,
+      activityLabel: `Post order completed: ${order.title}`,
+      occurredAt: now,
+    });
+    await ctx.runMutation(internal.audit.record, {
+      action: "post_order.completed",
+      actorId: args.userId,
+      actorRole: _user?.role ?? "guard",
+      targetType: "post_order",
+      targetId: args.orderId,
+      details: `Completed post order: ${order.title}`,
+      clientId: order.clientId,
+      siteId: order.siteId,
+      success: true,
     });
     return {
       id,

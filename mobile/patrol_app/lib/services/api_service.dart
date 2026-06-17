@@ -265,18 +265,29 @@ class ApiService {
     String? description,
     String? checkpointId,
     String severity = 'low',
+    String category = 'Security Incident',
+    List<File>? photos,
   }) async {
     _ensureHttps();
+    final body = <String, dynamic>{
+      'title': title,
+      'description': description ?? '',
+      'checkpointId': checkpointId,
+      'severity': severity,
+      'category': category,
+    };
+    if (photos != null && photos.isNotEmpty) {
+      final photoBase64 = <String>[];
+      for (final photo in photos.take(5)) {
+        photoBase64.add(base64Encode(await photo.readAsBytes()));
+      }
+      body['photoBase64'] = photoBase64;
+    }
     final res = await _client
         .post(
           Uri.parse('$baseUrl/incidents'),
           headers: await _headers(),
-          body: jsonEncode({
-            'title': title,
-            'description': description ?? '',
-            'checkpointId': checkpointId,
-            'severity': severity,
-          }),
+          body: jsonEncode(body),
         )
         .timeout(_timeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -320,19 +331,28 @@ class ApiService {
     String assetName = '',
     String severity = 'medium',
     String? checkpointId,
+    List<File>? evidence,
   }) async {
     _ensureHttps();
+    final body = <String, dynamic>{
+      'title': title,
+      'issue': issue,
+      'equipment': assetName,
+      'severity': severity,
+      'checkpointId': checkpointId,
+    };
+    if (evidence != null && evidence.isNotEmpty) {
+      final evidenceBase64 = <String>[];
+      for (final item in evidence.take(5)) {
+        evidenceBase64.add(base64Encode(await item.readAsBytes()));
+      }
+      body['evidenceBase64'] = evidenceBase64;
+    }
     final res = await _client
         .post(
           Uri.parse('$baseUrl/reports/maintenance'),
           headers: await _headers(),
-          body: jsonEncode({
-            'title': title,
-            'issue': issue,
-            'assetName': assetName,
-            'severity': severity,
-            'checkpointId': checkpointId,
-          }),
+          body: jsonEncode(body),
         )
         .timeout(_timeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -428,6 +448,48 @@ class ApiService {
     return jsonDecode(res.body);
   }
 
+  static Future<List<dynamic>> getActivitySummary({
+    String? activityType,
+    String? startDate,
+    String? endDate,
+    String? siteId,
+    int limit = 500,
+  }) async {
+    _ensureHttps();
+    final params = <String, String>{'limit': limit.toString()};
+    if (activityType != null) params['activityType'] = activityType;
+    if (startDate != null) params['startDate'] = startDate;
+    if (endDate != null) params['endDate'] = endDate;
+    if (siteId != null) params['siteId'] = siteId;
+    final uri = Uri.parse('$baseUrl/activity-summary')
+        .replace(queryParameters: params);
+    final res = await _client
+        .get(uri, headers: await _headers())
+        .timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to load activity summary');
+    }
+    return jsonDecode(res.body);
+  }
+
+  static Future<Map<String, dynamic>> acknowledgeScanPostOrders({
+    required String scanId,
+    required List<String> postOrderIds,
+  }) async {
+    _ensureHttps();
+    final res = await _client
+        .post(
+          Uri.parse('$baseUrl/scans/$scanId/acknowledge-post-orders'),
+          headers: await _headers(),
+          body: jsonEncode({'postOrderIds': postOrderIds}),
+        )
+        .timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to acknowledge post orders for scan');
+    }
+    return jsonDecode(res.body);
+  }
+
   static Future<List<dynamic>> getPassOnLogs() async {
     _ensureHttps();
     final res = await _client
@@ -506,6 +568,126 @@ class ApiService {
         .timeout(_timeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to acknowledge post order');
+    }
+    return jsonDecode(res.body);
+  }
+
+  static Future<List<dynamic>> getVisitors({String? status}) async {
+    _ensureHttps();
+    final params = <String, String>{};
+    if (status != null) params['status'] = status;
+    final uri = Uri.parse('$baseUrl/visitors').replace(queryParameters: params);
+    final res = await _client
+        .get(uri, headers: await _headers())
+        .timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to load visitor logs');
+    }
+    return jsonDecode(res.body);
+  }
+
+  static Future<Map<String, dynamic>> visitorCheckIn({
+    required String visitorName,
+    String visitorPhone = '',
+    String hostName = '',
+    String purpose = '',
+    String vehiclePlate = '',
+    String idNumber = '',
+    String? siteId,
+    String notes = '',
+  }) async {
+    _ensureHttps();
+    final res = await _client
+        .post(
+          Uri.parse('$baseUrl/visitors'),
+          headers: await _headers(),
+          body: jsonEncode({
+            'visitorName': visitorName,
+            'visitorPhone': visitorPhone,
+            'hostName': hostName,
+            'purpose': purpose,
+            'vehiclePlate': vehiclePlate,
+            'idNumber': idNumber,
+            'siteId': siteId,
+            'notes': notes,
+          }),
+        )
+        .timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to check in visitor');
+    }
+    return jsonDecode(res.body);
+  }
+
+  static Future<Map<String, dynamic>> visitorCheckOut(String id) async {
+    _ensureHttps();
+    final res = await _client
+        .post(
+          Uri.parse('$baseUrl/visitors/$id/check-out'),
+          headers: await _headers(),
+        )
+        .timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to check out visitor');
+    }
+    return jsonDecode(res.body);
+  }
+
+  static Future<List<dynamic>> getTruckLogs({String? status}) async {
+    _ensureHttps();
+    final params = <String, String>{};
+    if (status != null) params['status'] = status;
+    final uri = Uri.parse('$baseUrl/trucks').replace(queryParameters: params);
+    final res = await _client
+        .get(uri, headers: await _headers())
+        .timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to load truck logs');
+    }
+    return jsonDecode(res.body);
+  }
+
+  static Future<Map<String, dynamic>> truckCheckIn({
+    required String driverName,
+    String plateNumber = '',
+    String company = '',
+    String purpose = '',
+    String cargoDescription = '',
+    String? siteId,
+    String notes = '',
+  }) async {
+    _ensureHttps();
+    final res = await _client
+        .post(
+          Uri.parse('$baseUrl/trucks'),
+          headers: await _headers(),
+          body: jsonEncode({
+            'driverName': driverName,
+            'plateNumber': plateNumber,
+            'company': company,
+            'purpose': purpose,
+            'cargoDescription': cargoDescription,
+            'siteId': siteId,
+            'notes': notes,
+          }),
+        )
+        .timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to check in truck');
+    }
+    return jsonDecode(res.body);
+  }
+
+  static Future<Map<String, dynamic>> truckCheckOut(String id) async {
+    _ensureHttps();
+    final res = await _client
+        .post(
+          Uri.parse('$baseUrl/trucks/$id/check-out'),
+          headers: await _headers(),
+        )
+        .timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to check out truck');
     }
     return jsonDecode(res.body);
   }

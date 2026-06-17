@@ -17,6 +17,8 @@ import 'screens/profile_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/patrol_screen.dart';
 import 'screens/workflow_module_screen.dart';
+import 'screens/visitor_check_screen.dart';
+import 'screens/truck_check_screen.dart';
 import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/scan_provider.dart';
@@ -105,7 +107,9 @@ class PatrolApp extends StatelessWidget {
               ),
             );
           case AppRoutes.reports:
-            return _route(const ReportsScreen());
+            return _route(ReportsScreen(
+              initialTab: args?['tab'] as int?,
+            ));
           case AppRoutes.schedule:
             return _route(
               const WorkflowModuleScreen(
@@ -124,31 +128,9 @@ class PatrolApp extends StatelessWidget {
           case AppRoutes.policy:
             return _route(const DutiesScreen());
           case AppRoutes.truckCheck:
-            return _route(
-              const WorkflowModuleScreen(
-                title: 'Truck Check In / Out',
-                icon: Icons.local_shipping_outlined,
-                capabilities: [
-                  'Record inbound and outbound truck movement.',
-                  'Capture driver, plate number, purpose, time, and site.',
-                  'Restrict site accounts to the assigned site.',
-                ],
-                visibleFor: ['Admin', 'Client Account', 'Site Account'],
-              ),
-            );
+            return _route(const TruckCheckScreen());
           case AppRoutes.visitorCheck:
-            return _route(
-              const WorkflowModuleScreen(
-                title: 'Visitor Check In / Out',
-                icon: Icons.badge_outlined,
-                capabilities: [
-                  'Record visitor identity, host, site, and visit purpose.',
-                  'Track check-in and check-out timestamps.',
-                  'Expose visitor history by role-based site scope.',
-                ],
-                visibleFor: ['Admin', 'Client Account', 'Site Account'],
-              ),
-            );
+            return _route(const VisitorCheckScreen());
           case AppRoutes.vacation:
             return _route(
               const WorkflowModuleScreen(

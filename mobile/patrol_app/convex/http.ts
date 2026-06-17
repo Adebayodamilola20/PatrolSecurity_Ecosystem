@@ -11,7 +11,56 @@ import { badRequest, forbidden, notFound, tooManyRequests, unauthorized } from "
 
 const _uid = (s: string): Id<"users"> => s as Id<"users">;
 const _cid = (s: string | null | undefined): Id<"clients"> | undefined => (s ?? undefined) as Id<"clients"> | undefined;
+const _sid = (s: string | null | undefined): Id<"sites"> | undefined => (s ?? undefined) as Id<"sites"> | undefined;
 const _cpid = (s: string | null | undefined): Id<"checkpoints"> | undefined => (s ?? undefined) as Id<"checkpoints"> | undefined;
+
+const ACTIVITY_TYPES = [
+  "clock_in",
+  "clock_out",
+  "patrol_scan",
+  "incident",
+  "maintenance",
+  "dar",
+  "emergency",
+  "pass_on_log_ack",
+  "post_order_ack",
+  "visitor_check_in",
+  "visitor_check_out",
+  "truck_check_in",
+  "truck_check_out",
+] as const;
+
+const INCIDENT_CATEGORIES = [
+  "Security Incident",
+  "Theft",
+  "Fire",
+  "Medical",
+  "Visitor Issue",
+  "Suspicious Activity",
+  "Other",
+] as const;
+
+const EMERGENCY_TYPES = [
+  "Armed Attack",
+  "Medical Emergency",
+  "Fire",
+  "Intrusion",
+  "Other",
+] as const;
+
+const REPORT_TYPES = [
+  "Daily Activity Report",
+  "Patrol Summary Report",
+  "Clock-In / Clock-Out Report",
+  "Attendance Report",
+  "Incident Report",
+  "Emergency Report",
+  "Maintenance Report",
+  "Pass-On Log Report",
+  "Weekly Report",
+  "Monthly Report",
+  "Client Summary Report",
+];
 
 const http = httpRouter();
 
@@ -94,6 +143,42 @@ async function maybeResolveCheckpointId(
   return (await ctx.runQuery(internal.checkpoints.resolveId, {
     id: rawId.trim(),
   })) ?? undefined;
+}
+
+async function requireNoPendingPassOnLogs(ctx: any, user: { convexId: string; role: string }) {
+  if (user.role !== "guard") return null;
+  const pending = await ctx.runQuery(internal.passOnLogs.listPendingForUser, {
+    userId: _uid(user.convexId),
+  });
+  if (pending.length === 0) return null;
+  return forbidden(
+    `Acknowledge ${pending.length} unread pass-on log(s) before continuing`,
+  );
+}
+
+function csvEscape(value: unknown) {
+  const text = String(value ?? "");
+  if (!/[",\n]/.test(text)) return text;
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function buildActivityCsv(rows: Array<Record<string, unknown>>) {
+  const headers = ["Site", "Location", "Activity", "Date", "Time", "Officer", "Count"];
+  const lines = [
+    headers.join(","),
+    ...rows.map((row) =>
+      [
+        row.site,
+        row.location,
+        row.activity,
+        row.date,
+        row.time,
+        row.officer,
+        row.count,
+      ].map(csvEscape).join(","),
+    ),
+  ];
+  return lines.join("\n");
 }
 
 function isExportRole(role: string) {
@@ -249,6 +334,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const pendingPassOn = await requireNoPendingPassOnLogs(ctx, user);
+    if (pendingPassOn) return pendingPassOn;
     const body = await parseJson(request);
     const currentPassword = String(body?.currentPassword ?? "");
     const newPassword = String(body?.newPassword ?? "");
@@ -278,6 +365,44 @@ http.route({
       passwordHash: await bcrypt.hash(newPassword, 10),
     });
     return json({ message: "Password updated successfully" });
+  }),
+});
+
+http.route({
+  pathPrefix: "/scans/",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    const pendingPassOn = await requireNoPendingPassOnLogs(ctx, user);
+    if (pendingPassOn) return pendingPassOn;
+    const id = lastPathPart(request, 1);
+    const action = lastPathPart(request);
+    if (!id || action !== "acknowledge-post-orders") {
+      return notFound("Scan route not found");
+    }
+    const scanId = await ctx.runQuery(internal.scans.resolveId, { id });
+    if (!scanId) return notFound("Scan not found");
+    const body = await parseJson(request);
+    const rawOrderIds = Array.isArray(body?.postOrderIds)
+      ? body.postOrderIds
+      : [];
+    const postOrderIds = [];
+    for (const raw of rawOrderIds) {
+      if (typeof raw !== "string") continue;
+      const orderId = await ctx.runQuery(internal.postOrders.resolveId, {
+        id: raw,
+      });
+      if (orderId) postOrderIds.push(orderId);
+    }
+    return json(
+      await ctx.runMutation(internal.scans.acknowledgePostOrdersForScan, {
+        scanId,
+        userId: _uid(user.convexId),
+        postOrderIds,
+      }),
+      { status: 201 },
+    );
   }),
 });
 
@@ -328,6 +453,108 @@ http.route({
     return json(await ctx.runQuery(internal.checkpoints.listForApi, {
       clientId: user.role === "admin" ? undefined : (_cid(user.clientId)),
     }));
+  }),
+});
+
+http.route({
+  path: "/activity-summary",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    const url = new URL(request.url);
+    const rawActivityType = url.searchParams.get("activityType") ?? undefined;
+    const activityType = ACTIVITY_TYPES.includes(rawActivityType as any)
+      ? (rawActivityType as (typeof ACTIVITY_TYPES)[number])
+      : undefined;
+    const rows = await ctx.runQuery(internal.activity.list, {
+      officerId:
+        user.role === "guard"
+          ? _uid(user.convexId)
+          : ((url.searchParams.get("officerId") ?? undefined) as
+              | Id<"users">
+              | undefined),
+      clientId:
+        user.role === "admin"
+          ? _cid(url.searchParams.get("clientId"))
+          : _cid(user.clientId),
+      siteId: _sid(url.searchParams.get("siteId")),
+      activityType,
+      startDate: url.searchParams.get("startDate")
+        ? Date.parse(url.searchParams.get("startDate")!)
+        : undefined,
+      endDate: url.searchParams.get("endDate")
+        ? Date.parse(url.searchParams.get("endDate")!)
+        : undefined,
+      limit: Number(url.searchParams.get("limit") ?? 500),
+    });
+    return json(rows);
+  }),
+});
+
+http.route({
+  path: "/activity-summary/export",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    if (user.role === "guard") return forbidden("Supervisor access required");
+    const url = new URL(request.url);
+    const format = (url.searchParams.get("format") ?? "csv").toLowerCase();
+    const rawActivityType = url.searchParams.get("activityType") ?? undefined;
+    const activityType = ACTIVITY_TYPES.includes(rawActivityType as any)
+      ? (rawActivityType as (typeof ACTIVITY_TYPES)[number])
+      : undefined;
+    const rows = (await ctx.runQuery(internal.activity.list, {
+      clientId:
+        user.role === "admin"
+          ? _cid(url.searchParams.get("clientId"))
+          : _cid(user.clientId),
+      siteId: _sid(url.searchParams.get("siteId")),
+      officerId: (url.searchParams.get("officerId") ?? undefined) as
+        | Id<"users">
+        | undefined,
+      activityType,
+      startDate: url.searchParams.get("startDate")
+        ? Date.parse(url.searchParams.get("startDate")!)
+        : undefined,
+      endDate: url.searchParams.get("endDate")
+        ? Date.parse(url.searchParams.get("endDate")!)
+        : undefined,
+      limit: 5000,
+    })) as Array<Record<string, unknown>>;
+    const csv = buildActivityCsv(rows);
+    if (format === "excel" || format === "xlsx") {
+      return new Response(csv, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/vnd.ms-excel",
+          "Content-Disposition": "attachment; filename=site-activity-summary.xls",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
+    if (format === "pdf") {
+      const html = `<!doctype html><html><head><title>Site Activity Summary</title></head><body><h1>Site Activity Summary</h1><pre>${csv
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")}</pre></body></html>`;
+      return new Response(html, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/html",
+          "Content-Disposition": "attachment; filename=site-activity-summary.html",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
+    return new Response(csv, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/csv",
+        "Content-Disposition": "attachment; filename=site-activity-summary.csv",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
   }),
 });
 
@@ -387,6 +614,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const pendingPassOn = await requireNoPendingPassOnLogs(ctx, user);
+    if (pendingPassOn) return pendingPassOn;
     const body = await parseJson(request);
     const checkpointId = await maybeResolveCheckpointId(ctx, body?.checkpointId);
     if (!checkpointId) {
@@ -535,7 +764,7 @@ http.route({
       siteLabel: typeof body?.siteLabel === "string" ? body.siteLabel : undefined,
       clockInPhoto: clockInPhotoUrl,
     });
-    await recordAudit(ctx, user, "shift.clock_in", {
+    await recordAudit(ctx, user, "clock_in.created", {
       details: `Clock in at ${body?.siteLabel ?? "unknown site"}`,
     });
     return json(result, { status: 201 });
@@ -558,7 +787,7 @@ http.route({
       latitude: typeof body?.gpsLatitude === "number" ? body.gpsLatitude : undefined,
       longitude: typeof body?.gpsLongitude === "number" ? body.gpsLongitude : undefined,
     });
-    await recordAudit(ctx, user, "shift.clock_out", {
+    await recordAudit(ctx, user, "clock_out.created", {
       details: "Clock out",
     });
     return json(result);
@@ -596,28 +825,48 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const pendingPassOn = await requireNoPendingPassOnLogs(ctx, user);
+    if (pendingPassOn) return pendingPassOn;
     const body = await parseJson(request);
     const title = String(body?.title ?? "").trim();
     if (!title) return badRequest("title is required");
     const checkpointId = await maybeResolveCheckpointId(ctx, body?.checkpointId);
-    return json(
-      {
-        id: await ctx.runMutation(internal.incidents.create, {
-          officerId: _uid(user.convexId),
-          checkpointId,
-          title,
-          description: typeof body?.description === "string" ? body.description : undefined,
-          severity:
-            body?.severity === "low" ||
-            body?.severity === "medium" ||
-            body?.severity === "high" ||
-            body?.severity === "critical"
-              ? body.severity
-              : undefined,
-        }),
-      },
-      { status: 201 },
-    );
+    const category = INCIDENT_CATEGORIES.includes(body?.category)
+      ? body.category
+      : "Security Incident";
+    const photoUrls: string[] = [];
+    const photos = Array.isArray(body?.photoBase64) ? body.photoBase64 : [];
+    for (const photo of photos.slice(0, 5)) {
+      if (typeof photo !== "string" || !photo) continue;
+      const blob = base64ToBlob(photo);
+      const bad = await validateImageBlob(blob);
+      if (bad) return bad;
+      const storageId = await ctx.storage.store(blob);
+      const url = await ctx.storage.getUrl(storageId);
+      if (url) photoUrls.push(url);
+    }
+    const id = await ctx.runMutation(internal.incidents.create, {
+      officerId: _uid(user.convexId),
+      checkpointId,
+      category,
+      title,
+      description: typeof body?.description === "string" ? body.description : undefined,
+      photoUrls,
+      severity:
+        body?.severity === "low" ||
+        body?.severity === "medium" ||
+        body?.severity === "high" ||
+        body?.severity === "critical"
+          ? body.severity
+          : undefined,
+    });
+    await recordAudit(ctx, user, "incident.created", {
+      targetType: "incident",
+      targetId: id as string,
+      details: `Incident created: ${category}`,
+      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+    });
+    return json({ id }, { status: 201 });
   }),
 });
 
@@ -629,6 +878,8 @@ http.route({
     if (!user) return unauthorized();
     const roleErr = requireRole(user, ["guard"]);
     if (roleErr) return roleErr;
+    const pendingPassOn = await requireNoPendingPassOnLogs(ctx, user);
+    if (pendingPassOn) return pendingPassOn;
     const body = await parseJson(request);
     const summary = String(body?.summary ?? "").trim();
     if (!summary) return badRequest("summary is required");
@@ -642,11 +893,13 @@ http.route({
         openIssues: body?.openIssues ?? "",
         shiftWindow: body?.shiftWindow ?? "",
       },
+      gpsLatitude: typeof body?.gpsLatitude === "number" ? body.gpsLatitude : undefined,
+      gpsLongitude: typeof body?.gpsLongitude === "number" ? body.gpsLongitude : undefined,
       checkpointId,
       siteLabel: typeof body?.siteLabel === "string" ? body.siteLabel : "",
       userId: _uid(user.convexId),
     });
-    await recordAudit(ctx, user, "report.submitted", {
+    await recordAudit(ctx, user, "dar.created", {
       targetType: "report",
       targetId: id as string,
       details: "Submitted daily activity report",
@@ -664,6 +917,8 @@ http.route({
     if (!user) return unauthorized();
     const roleErr = requireRole(user, ["guard"]);
     if (roleErr) return roleErr;
+    const pendingPassOn = await requireNoPendingPassOnLogs(ctx, user);
+    if (pendingPassOn) return pendingPassOn;
     const body = await parseJson(request);
     const title = String(body?.title ?? "").trim();
     const issue = String(body?.issue ?? "").trim();
@@ -671,6 +926,19 @@ http.route({
       return badRequest("title and issue are required");
     }
     const checkpointId = await maybeResolveCheckpointId(ctx, body?.checkpointId);
+    const evidenceUrls: string[] = [];
+    const evidence = Array.isArray(body?.evidenceBase64)
+      ? body.evidenceBase64
+      : [];
+    for (const item of evidence.slice(0, 5)) {
+      if (typeof item !== "string" || !item) continue;
+      const blob = base64ToBlob(item);
+      const bad = await validateImageBlob(blob);
+      if (bad) return bad;
+      const storageId = await ctx.storage.store(blob);
+      const url = await ctx.storage.getUrl(storageId);
+      if (url) evidenceUrls.push(url);
+    }
     const id = await ctx.runMutation(internal.reports.submit, {
       type: "maintenance",
       title,
@@ -679,11 +947,15 @@ http.route({
         assetName: body?.assetName ?? "",
         severity: body?.severity ?? "medium",
       },
+      equipmentName: typeof body?.equipment === "string" ? body.equipment : typeof body?.assetName === "string" ? body.assetName : undefined,
+      evidenceUrls,
+      gpsLatitude: typeof body?.gpsLatitude === "number" ? body.gpsLatitude : undefined,
+      gpsLongitude: typeof body?.gpsLongitude === "number" ? body.gpsLongitude : undefined,
       checkpointId,
       siteLabel: typeof body?.siteLabel === "string" ? body.siteLabel : "",
       userId: _uid(user.convexId),
     });
-    await recordAudit(ctx, user, "report.submitted", {
+    await recordAudit(ctx, user, "maintenance.created", {
       targetType: "report",
       targetId: id as string,
       details: `Submitted maintenance report: ${title}`,
@@ -713,7 +985,9 @@ http.route({
     );
     const siteLabel = typeof body?.siteLabel === "string" ? body.siteLabel : "";
     const note = typeof body?.note === "string" ? body.note : "";
-    const category = typeof body?.category === "string" ? body.category : undefined;
+    const category = EMERGENCY_TYPES.includes(body?.category)
+      ? body.category
+      : "Other";
     const location =
       typeof body?.location === "string" && body.location.trim()
         ? body.location
@@ -728,7 +1002,7 @@ http.route({
       note,
       location,
     });
-    await recordAudit(ctx, user, "emergency.triggered", {
+    await recordAudit(ctx, user, "emergency.created", {
       targetType: "emergency_event",
       targetId: event.id as string,
       details: `Emergency triggered at ${location}${category ? ` (${category})` : ""}`,
@@ -1022,6 +1296,123 @@ http.route({
       return json(updated);
     }
     return notFound("Handover route not found");
+  }),
+});
+
+http.route({
+  path: "/visitors",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    const url = new URL(request.url);
+    return json(await ctx.runQuery(internal.visitors.listForApi, {
+      clientId: user.role === "admin" ? _cid(url.searchParams.get("clientId")) : _cid(user.clientId),
+      siteId: _sid(url.searchParams.get("siteId")),
+      officerId: user.role === "guard" ? _uid(user.convexId) : (url.searchParams.get("officerId") as any),
+      status: url.searchParams.get("status") as "active" | "completed" | undefined,
+      limit: Number(url.searchParams.get("limit") ?? 100),
+    }));
+  }),
+});
+
+http.route({
+  path: "/visitors",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    const roleErr = requireRole(user, ["guard"]);
+    if (roleErr) return roleErr;
+    const body = await parseJson(request);
+    const visitorName = String(body?.visitorName ?? "").trim();
+    if (!visitorName) return badRequest("visitorName is required");
+    const result = await ctx.runMutation(internal.visitors.checkIn, {
+      clientId: _cid(user.clientId),
+      siteId: _sid(body?.siteId),
+      officerId: _uid(user.convexId),
+      visitorName,
+      visitorPhone: String(body?.visitorPhone ?? "").trim(),
+      hostName: String(body?.hostName ?? "").trim(),
+      purpose: String(body?.purpose ?? "").trim(),
+      vehiclePlate: String(body?.vehiclePlate ?? "").trim(),
+      idNumber: String(body?.idNumber ?? "").trim(),
+      notes: String(body?.notes ?? "").trim(),
+    });
+    return json(result, { status: 201 });
+  }),
+});
+
+http.route({
+  pathPrefix: "/visitors/",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    const id = lastPathPart(request, 1);
+    const action = lastPathPart(request);
+    if (!id || action !== "check-out") return notFound("Visitor route not found");
+    const logId = await ctx.runQuery(internal.visitors.resolveId, { id });
+    if (!logId) return notFound("Visitor log not found");
+    return json(await ctx.runMutation(internal.visitors.checkOut, { logId, userId: _uid(user.convexId) }));
+  }),
+});
+
+http.route({
+  path: "/trucks",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    const url = new URL(request.url);
+    return json(await ctx.runQuery(internal.truckLogs.listForApi, {
+      clientId: user.role === "admin" ? _cid(url.searchParams.get("clientId")) : _cid(user.clientId),
+      siteId: _sid(url.searchParams.get("siteId")),
+      officerId: user.role === "guard" ? _uid(user.convexId) : (url.searchParams.get("officerId") as any),
+      status: url.searchParams.get("status") as "active" | "completed" | undefined,
+      limit: Number(url.searchParams.get("limit") ?? 100),
+    }));
+  }),
+});
+
+http.route({
+  path: "/trucks",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    const roleErr = requireRole(user, ["guard"]);
+    if (roleErr) return roleErr;
+    const body = await parseJson(request);
+    const driverName = String(body?.driverName ?? "").trim();
+    if (!driverName) return badRequest("driverName is required");
+    const result = await ctx.runMutation(internal.truckLogs.checkIn, {
+      clientId: _cid(user.clientId),
+      siteId: _sid(body?.siteId),
+      officerId: _uid(user.convexId),
+      driverName,
+      plateNumber: String(body?.plateNumber ?? "").trim(),
+      company: String(body?.company ?? "").trim(),
+      purpose: String(body?.purpose ?? "").trim(),
+      cargoDescription: String(body?.cargoDescription ?? "").trim(),
+      notes: String(body?.notes ?? "").trim(),
+    });
+    return json(result, { status: 201 });
+  }),
+});
+
+http.route({
+  pathPrefix: "/trucks/",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    const id = lastPathPart(request, 1);
+    const action = lastPathPart(request);
+    if (!id || action !== "check-out") return notFound("Truck route not found");
+    const logId = await ctx.runQuery(internal.truckLogs.resolveId, { id });
+    if (!logId) return notFound("Truck log not found");
+    return json(await ctx.runMutation(internal.truckLogs.checkOut, { logId, userId: _uid(user.convexId) }));
   }),
 });
 
@@ -1495,6 +1886,61 @@ http.route({ path: "/sites", method: "POST", handler: httpAction(async (ctx, req
     ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
   });
   return json(result, { status: 201 });
+})});
+
+http.route({ path: "/ai/chat", method: "POST", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  const body = await parseJson(request);
+  const message = String(body?.message ?? "").trim();
+  if (!message) return badRequest("message is required");
+  const history = Array.isArray(body?.history) ? body.history : [];
+  try {
+    const result = await ctx.runAction(internal.aiService.chat, {
+      userId: _uid(user.convexId),
+      userRole: user.role,
+      clientId: user.clientId ?? undefined,
+      question: message,
+      history,
+    });
+    return json(result);
+  } catch (error: any) {
+    if (error.status === 429) {
+      return tooManyRequests(error.message);
+    }
+    console.error("[AI_CHAT_ERROR]", error);
+    return json({
+      answer: "I could not reach the AI service right now. Please try again shortly.",
+      intent: "unknown",
+      model: null,
+      assistantUnavailable: true,
+      generatedReportId: null,
+      sources: [],
+    });
+  }
+})});
+
+http.route({ path: "/ai/reports", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  return json(await ctx.runQuery(internal.aiService.listReports, {
+    userId: _uid(user.convexId),
+    userRole: user.role,
+    clientId: _cid(user.clientId),
+  }));
+})});
+
+http.route({ path: "/ai/architecture", method: "GET", handler: httpAction(async (_ctx, _request) => {
+  return json({
+    provider: {
+      name: "NVIDIA NIM Chat Completions",
+      baseUrl: "https://integrate.api.nvidia.com/v1",
+      apiKeyEnv: "NVIDIA_API_KEY",
+      defaultChatModel: process.env.NVIDIA_CHAT_MODEL || "openai/gpt-oss-120b",
+    },
+    liveData: ["shifts", "scans", "checkpoints", "incidents", "passOnLogs", "handovers", "sites", "clients"],
+    reportTypes: REPORT_TYPES,
+  });
 })});
 
 http.route({ pathPrefix: "/sites/", method: "PUT", handler: httpAction(async (ctx, request) => {

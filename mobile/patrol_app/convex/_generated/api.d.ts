@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as activity from "../activity.js";
+import type * as aiService from "../aiService.js";
 import type * as audit from "../audit.js";
 import type * as checkpoints from "../checkpoints.js";
 import type * as clients from "../clients.js";
@@ -40,7 +42,9 @@ import type * as settings from "../settings.js";
 import type * as shifts from "../shifts.js";
 import type * as sites from "../sites.js";
 import type * as tenantBackfill from "../tenantBackfill.js";
+import type * as truckLogs from "../truckLogs.js";
 import type * as users from "../users.js";
+import type * as visitors from "../visitors.js";
 
 import type {
   ApiFromModules,
@@ -49,6 +53,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  activity: typeof activity;
+  aiService: typeof aiService;
   audit: typeof audit;
   checkpoints: typeof checkpoints;
   clients: typeof clients;
@@ -81,7 +87,9 @@ declare const fullApi: ApiFromModules<{
   shifts: typeof shifts;
   sites: typeof sites;
   tenantBackfill: typeof tenantBackfill;
+  truckLogs: typeof truckLogs;
   users: typeof users;
+  visitors: typeof visitors;
 }>;
 
 /**

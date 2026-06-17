@@ -25,6 +25,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
   bool _loading = true;
   bool _submitting = false;
   bool _success = false;
+  bool _acknowledged = false;
   bool _autoSubmitAttempted = false;
   String? _checkpointName;
   double _distance = 0;
@@ -32,8 +33,10 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
   DateTime _timestamp = DateTime.now();
   Checkpoint? _checkpoint;
   String? _errorMessage;
+  String? _scanId;
   final _notesCtrl = TextEditingController();
   bool _postOrdersDialogShown = false;
+  bool _passOnLogDialogShown = false;
 
   @override
   void dispose() {
@@ -61,78 +64,124 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
 
     await showDialog<void>(
       context: context,
-      barrierDismissible: true,
-      builder: (ctx) => AlertDialog(
-        title: Text('Post Orders: ${_checkpointName ?? 'Checkpoint'}'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: orders.map((order) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+      barrierDismissible: false,
+      builder: (ctx) {
+        var acknowledging = false;
+        return StatefulBuilder(
+          builder: (context, setInnerState) => AlertDialog(
+            title: Text('Post Orders: ${_checkpointName ?? 'Checkpoint'}'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: orders.map((order) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: Text(
-                              order.title,
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  order.title,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.text,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                order.priority.toUpperCase(),
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppTheme.flagged,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (order.summary.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              order.summary,
                               style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                color: AppTheme.text,
+                                color: AppTheme.textSecondary,
+                                height: 1.35,
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            order.priority.toUpperCase(),
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: AppTheme.flagged,
+                          ],
+                          if (order.instructions.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              order.instructions,
+                              style: const TextStyle(
+                                color: AppTheme.text,
+                                height: 1.4,
+                              ),
                             ),
-                          ),
+                          ],
+                          if (order != orders.last) const Divider(height: 22),
                         ],
                       ),
-                      if (order.summary.isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          order.summary,
-                          style: const TextStyle(
-                            color: AppTheme.textSecondary,
-                            height: 1.35,
-                          ),
-                        ),
-                      ],
-                      if (order.instructions.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          order.instructions,
-                          style: const TextStyle(
-                            color: AppTheme.text,
-                            height: 1.4,
-                          ),
-                        ),
-                      ],
-                      if (order != orders.last) const Divider(height: 22),
-                    ],
-                  ),
-                );
-              }).toList(),
+                    );
+                  }).toList(),
+                ),
+              ),
             ),
+            actions: [
+              TextButton(
+                onPressed: acknowledging
+                    ? null
+                    : () => Navigator.pop(ctx),
+                child: const Text('Skip'),
+              ),
+              FilledButton(
+                onPressed: acknowledging
+                    ? null
+                    : () async {
+                        setInnerState(() => acknowledging = true);
+                        try {
+                          final orderIds = orders.map((o) => o.id).toList();
+                          await ApiService.acknowledgeScanPostOrders(
+                            scanId: _scanId!,
+                            postOrderIds: orderIds,
+                          );
+                          if (mounted) {
+                            setState(() {
+                              _acknowledged = true;
+                            });
+                            if (ctx.mounted) Navigator.pop(ctx);
+                          }
+                        } catch (e) {
+                          if (ctx.mounted) {
+                            setInnerState(() => acknowledging = false);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Failed to acknowledge: ${e.toString().replaceFirst("Exception: ", "")}',
+                                ),
+                                backgroundColor: AppTheme.flagged,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                child: acknowledging
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Acknowledge & Continue'),
+              ),
+            ],
           ),
-        ),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('I Understand'),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -209,12 +258,6 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
     }
 
     setState(() => _loading = false);
-    final matchingOrders = _matchingOrders(dutyProvider.orders);
-    if (matchingOrders.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _showPostOrdersDialog(matchingOrders);
-      });
-    }
 
     if (gpsLat != null && gpsLng != null && !_autoSubmitAttempted) {
       _autoSubmitAttempted = true;
@@ -280,7 +323,18 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
       _success = ok;
       _errorMessage = ok ? null : scanProvider.error;
       _submitting = false;
+      _scanId = ok ? scanProvider.lastScan?.id : null;
     });
+
+    if (ok && _scanId != null) {
+      final dutyProvider = context.read<DutyProvider>();
+      final matchingOrders = _matchingOrders(dutyProvider.orders)
+          .where((o) => o.requiresAcknowledgement)
+          .toList();
+      if (matchingOrders.isNotEmpty) {
+        await _showPostOrdersDialog(matchingOrders);
+      }
+    }
   }
 
   Future<void> _reportIncident(BuildContext context) async {
@@ -471,6 +525,27 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                     color: AppTheme.verified,
                   ),
                 ),
+                if (_acknowledged) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTheme.verified.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Text(
+                      'Post Orders Acknowledged',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.verified,
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 24),
                 _InfoRow(
                   icon: Icons.location_on,
