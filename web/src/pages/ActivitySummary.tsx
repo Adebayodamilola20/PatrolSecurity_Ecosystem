@@ -91,6 +91,18 @@ export default function ActivitySummary() {
     return map[type] ?? 'bg-gray-400'
   }
 
+  const totalScans = rows.reduce(
+    (sum, row) => sum + (row.activityType === 'patrol_scan' ? Number(row.count || 0) : 0),
+    0,
+  )
+  const totalCount = rows.reduce((sum, row) => sum + Number(row.count || 0), 0)
+  const formatDateTime = (value: string) => {
+    if (!value) return '-'
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return value
+    return date.toLocaleString()
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex items-end justify-between">
@@ -107,12 +119,18 @@ export default function ActivitySummary() {
           >
             <FileSpreadsheet className="h-4 w-4" /> CSV
           </a>
-          <span className="inline-flex items-center gap-2 rounded-lg border border-border bg-muted px-3 py-2 text-sm text-muted-foreground cursor-not-allowed" title="Coming soon">
+          <a
+            href={exportUrl('xlsx')}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm hover:bg-accent"
+          >
             <FileText className="h-4 w-4" /> Excel
-          </span>
-          <span className="inline-flex items-center gap-2 rounded-lg border border-border bg-muted px-3 py-2 text-sm text-muted-foreground cursor-not-allowed" title="Coming soon">
+          </a>
+          <a
+            href={exportUrl('pdf')}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm hover:bg-accent"
+          >
             <Download className="h-4 w-4" /> PDF
-          </span>
+          </a>
         </div>
       </div>
 
@@ -191,32 +209,45 @@ export default function ActivitySummary() {
           className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
           placeholder="End date"
         />
+        <button
+          type="button"
+          onClick={fetchData}
+          className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          Apply Filter
+        </button>
       </div>
 
       <div className="rounded-xl border border-border bg-card">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 text-sm">
+          <div className="font-medium">Activity records</div>
+          <div className="flex items-center gap-4 text-muted-foreground">
+            <span>Scans: <span className="font-semibold text-foreground">{totalScans}</span></span>
+            <span>Total Count: <span className="font-semibold text-foreground">{totalCount}</span></span>
+          </div>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
                 <th className="px-4 py-3 font-medium">Site</th>
                 <th className="px-4 py-3 font-medium">Location</th>
+                <th className="px-4 py-3 font-medium">Scans</th>
+                <th className="px-4 py-3 font-medium">Date/Time</th>
                 <th className="px-4 py-3 font-medium">Activity</th>
-                <th className="px-4 py-3 font-medium">Date</th>
-                <th className="px-4 py-3 font-medium">Time</th>
-                <th className="px-4 py-3 font-medium">Officer</th>
                 <th className="px-4 py-3 font-medium text-right">Count</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
                     Loading...
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
                     No activity records found.
                   </td>
                 </tr>
@@ -225,17 +256,16 @@ export default function ActivitySummary() {
                   <tr key={i} className="border-b border-border/50 hover:bg-accent/30">
                     <td className="px-4 py-3">{row.site || '-'}</td>
                     <td className="px-4 py-3 text-muted-foreground">{row.location || '-'}</td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {row.activityType === 'patrol_scan' ? row.count : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">{formatDateTime(row.time || row.occurredAt)}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <span className={`h-2 w-2 rounded-full ${activityDot(row.activityType)}`} />
                         <span>{row.activity}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">{row.date}</td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {new Date(row.time).toLocaleTimeString()}
-                    </td>
-                    <td className="px-4 py-3">{row.officer || '-'}</td>
                     <td className="px-4 py-3 text-right font-medium">{row.count}</td>
                   </tr>
                 ))

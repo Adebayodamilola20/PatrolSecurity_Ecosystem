@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Camera, CheckCircle2, ClipboardList, Plus, XCircle } from 'lucide-react'
-import { api } from '../services/api'
+import { API_BASE, api } from '../services/api'
 import type { Checkpoint, PostOrder, PostOrderCompletion, User } from '../types'
 import { EmptyState } from '../components/ui/EmptyState'
 import { Skeleton } from '../components/ui/Skeleton'
 import { formatDate } from '../utils/format'
-
-const API_BASE = import.meta.env.VITE_API_URL || '/api/v1'
 
 export default function PostOrders() {
   const [orders, setOrders] = useState<PostOrder[]>([])

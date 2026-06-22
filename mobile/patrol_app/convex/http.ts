@@ -163,20 +163,26 @@ function csvEscape(value: unknown) {
 }
 
 function buildActivityCsv(rows: Array<Record<string, unknown>>) {
-  const headers = ["Site", "Location", "Activity", "Date", "Time", "Officer", "Count"];
+  const headers = ["Site", "Location", "Scans", "Date/Time", "Activity", "Count"];
+  const totalScans = rows.reduce((sum, row) => {
+    return sum + (row.activityType === "patrol_scan" ? Number(row.count ?? 0) : 0);
+  }, 0);
+  const totalCount = rows.reduce((sum, row) => sum + Number(row.count ?? 0), 0);
   const lines = [
     headers.join(","),
     ...rows.map((row) =>
       [
         row.site,
         row.location,
+        row.activityType === "patrol_scan" ? row.count : "",
+        row.occurredAt ?? row.time ?? row.date,
         row.activity,
-        row.date,
-        row.time,
-        row.officer,
         row.count,
       ].map(csvEscape).join(","),
     ),
+    "",
+    ["Scans", totalScans].map(csvEscape).join(","),
+    ["Total Count", totalCount].map(csvEscape).join(","),
   ];
   return lines.join("\n");
 }
