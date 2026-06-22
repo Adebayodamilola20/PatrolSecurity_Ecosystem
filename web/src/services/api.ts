@@ -1,4 +1,4 @@
-const DEFAULT_API_BASE = 'https://resilient-buffalo-226.convex.site/api/v1'
+const DEFAULT_API_BASE = '/api/v1'
 
 function normalizeApiBase(rawUrl: string | undefined) {
   const trimmed = rawUrl?.trim()
@@ -7,9 +7,6 @@ function normalizeApiBase(rawUrl: string | undefined) {
 
   try {
     const url = new URL(candidate)
-    if (url.hostname.endsWith('.onrender.com')) {
-      return DEFAULT_API_BASE
-    }
     if (url.hostname.endsWith('.convex.cloud')) {
       url.hostname = url.hostname.replace(/\.convex\.cloud$/, '.convex.site')
       url.pathname = '/api/v1'

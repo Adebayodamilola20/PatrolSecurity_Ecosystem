@@ -27,6 +27,7 @@ import positionRoutes from './routes/positions.js'
 import clientRoutes from './routes/clients.js'
 import siteRoutes from './routes/sites.js'
 import aiRoutes from './routes/ai.js'
+import activitySummaryRoutes from './routes/activitySummary.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -155,6 +156,7 @@ app.use('/api/v1/positions', positionRoutes)
 app.use('/api/v1/clients', clientRoutes)
 app.use('/api/v1/sites', siteRoutes)
 app.use('/api/v1/ai', aiRoutes)
+app.use('/api/v1/activity-summary', activitySummaryRoutes)
 
 app.get('/api/v1/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
