@@ -230,9 +230,11 @@ class _PatrolScreenState extends State<PatrolScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: () async {
-          await scan.loadScans();
-          await scan.loadCheckpoints();
-          await shift.loadStatus();
+          await Future.wait([
+            scan.loadScans(force: true),
+            scan.loadCheckpoints(force: true),
+            shift.loadStatus(force: true),
+          ]);
           await _refreshStatus();
         },
         child: ListView(

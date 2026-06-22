@@ -17,6 +17,10 @@ class ScanProvider extends ChangeNotifier {
   String? _scansError;
   String? _checkpointsError;
   Scan? _lastScan;
+  Future<void>? _scansLoadFuture;
+  Future<void>? _checkpointsLoadFuture;
+  bool _scansLoadedOnce = false;
+  bool _checkpointsLoadedOnce = false;
 
   List<Scan> get scans => _scans;
   List<Checkpoint> get checkpoints => _checkpoints;
@@ -37,6 +41,8 @@ class ScanProvider extends ChangeNotifier {
     _checkpointsError = null;
     _scansLoading = false;
     _checkpointsLoading = false;
+    _scansLoadedOnce = false;
+    _checkpointsLoadedOnce = false;
     notifyListeners();
   }
 
@@ -48,7 +54,16 @@ class ScanProvider extends ChangeNotifier {
         s.scannedAt.day == now.day;
   }).length;
 
-  Future<void> loadScans() async {
+  Future<void> loadScans({bool force = false}) {
+    if (_scansLoadFuture != null) return _scansLoadFuture!;
+    if (!force && _scansLoadedOnce) return Future.value();
+    _scansLoadFuture = _loadScans().whenComplete(() {
+      _scansLoadFuture = null;
+    });
+    return _scansLoadFuture!;
+  }
+
+  Future<void> _loadScans() async {
     _scansLoading = true;
     _scansError = null;
     notifyListeners();
@@ -56,6 +71,7 @@ class ScanProvider extends ChangeNotifier {
       final data = await ApiService.getScans();
       _scans = data.map((j) => Scan.fromJson(j)).toList();
       _scansError = null;
+      _scansLoadedOnce = true;
     } catch (e) {
       _scansError = e.toString().replaceFirst('Exception: ', '');
     }
@@ -63,13 +79,23 @@ class ScanProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> loadCheckpoints() async {
+  Future<void> loadCheckpoints({bool force = false}) {
+    if (_checkpointsLoadFuture != null) return _checkpointsLoadFuture!;
+    if (!force && _checkpointsLoadedOnce) return Future.value();
+    _checkpointsLoadFuture = _loadCheckpoints().whenComplete(() {
+      _checkpointsLoadFuture = null;
+    });
+    return _checkpointsLoadFuture!;
+  }
+
+  Future<void> _loadCheckpoints() async {
     _checkpointsLoading = true;
     _checkpointsError = null;
     notifyListeners();
     try {
       final data = await ApiService.getCheckpoints();
       _checkpoints = data.map((j) => Checkpoint.fromJson(j)).toList();
+      _checkpointsLoadedOnce = true;
     } catch (e) {
       _checkpointsError = e.toString().replaceFirst('Exception: ', '');
     }

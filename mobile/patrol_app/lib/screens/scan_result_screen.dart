@@ -669,7 +669,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                     textAlign: TextAlign.center,
                     softWrap: true,
                     overflow: TextOverflow.ellipsis,
-                  ),
+                  ), 
                   if (_checkpoint != null)
                     Text(
                       'Code: ${_checkpoint!.code}',
@@ -681,7 +681,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 20),
+            SizedBox(height: 20,),
             Card(
               elevation: 0,
               shape: RoundedRectangleBorder(

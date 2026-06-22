@@ -1,8 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../utils/constants.dart';
+
+dynamic _decodeJsonOnWorker(String source) => jsonDecode(source);
+
+String _base64EncodeOnWorker(Uint8List bytes) => base64Encode(bytes);
 
 class TokenExpiredException implements Exception {
   final String message;
@@ -20,6 +25,21 @@ class ApiService {
   static bool _baseUrlVerified = false;
 
   static void Function()? onUnauthorized;
+
+  static Future<T> _decodeBody<T>(String body) async {
+    final decoded = body.length > 50 * 1024
+        ? await compute(_decodeJsonOnWorker, body)
+        : jsonDecode(body);
+    return decoded as T;
+  }
+
+  static Future<String> _readFileAsBase64(File file) async {
+    final bytes = await file.readAsBytes();
+    if (bytes.lengthInBytes > 128 * 1024) {
+      return compute(_base64EncodeOnWorker, bytes);
+    }
+    return base64Encode(bytes);
+  }
 
   static void _ensureHttps() {
     if (_baseUrlVerified) return;
@@ -106,7 +126,7 @@ class ApiService {
       } catch (_) {}
       throw Exception('Unable to sign in');
     }
-    final data = jsonDecode(res.body);
+    final data = await _decodeBody<Map<String, dynamic>>(res.body);
     await _storage.write(key: 'patrol_token', value: data['token']);
     return data;
   }
@@ -120,7 +140,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to load scans');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<List<dynamic>>(res.body);
   }
 
   static Future<Map<String, dynamic>> submitScan(
@@ -137,7 +157,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to submit scan');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
   static Future<List<dynamic>> getCheckpoints() async {
@@ -148,7 +168,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to load checkpoints');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<List<dynamic>>(res.body);
   }
 
   static Future<Map<String, dynamic>> changePassword(
@@ -169,7 +189,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to change password');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
   static Future<void> logout() async {
@@ -194,7 +214,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to clock in');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
   static Future<Map<String, dynamic>> clockOut({
@@ -215,7 +235,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to clock out');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
   static Future<void> updatePosition({
@@ -257,7 +277,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to get shift status');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
   static Future<Map<String, dynamic>> reportIncident({
@@ -279,7 +299,7 @@ class ApiService {
     if (photos != null && photos.isNotEmpty) {
       final photoBase64 = <String>[];
       for (final photo in photos.take(5)) {
-        photoBase64.add(base64Encode(await photo.readAsBytes()));
+        photoBase64.add(await _readFileAsBase64(photo));
       }
       body['photoBase64'] = photoBase64;
     }
@@ -293,7 +313,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to report incident');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
   static Future<Map<String, dynamic>> submitDailyActivityReport({
@@ -322,7 +342,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to submit daily activity report');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
   static Future<Map<String, dynamic>> submitMaintenanceReport({
@@ -344,7 +364,7 @@ class ApiService {
     if (evidence != null && evidence.isNotEmpty) {
       final evidenceBase64 = <String>[];
       for (final item in evidence.take(5)) {
-        evidenceBase64.add(base64Encode(await item.readAsBytes()));
+        evidenceBase64.add(await _readFileAsBase64(item));
       }
       body['evidenceBase64'] = evidenceBase64;
     }
@@ -358,7 +378,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to submit maintenance report');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
   static Future<Map<String, dynamic>> triggerEmergency({
@@ -385,7 +405,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to trigger emergency alert');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
   static Future<Map<String, dynamic>> submitPassOnLog({
@@ -414,7 +434,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to create pass-on log');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
   static Future<Map<String, dynamic>> requestDailyTourExport({
@@ -431,7 +451,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to request daily tour export');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
   static Future<List<dynamic>> getDailyTourExports() async {
@@ -445,7 +465,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to load export archive');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<List<dynamic>>(res.body);
   }
 
   static Future<List<dynamic>> getActivitySummary({
@@ -461,15 +481,16 @@ class ApiService {
     if (startDate != null) params['startDate'] = startDate;
     if (endDate != null) params['endDate'] = endDate;
     if (siteId != null) params['siteId'] = siteId;
-    final uri = Uri.parse('$baseUrl/activity-summary')
-        .replace(queryParameters: params);
+    final uri = Uri.parse(
+      '$baseUrl/activity-summary',
+    ).replace(queryParameters: params);
     final res = await _client
         .get(uri, headers: await _headers())
         .timeout(_timeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to load activity summary');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<List<dynamic>>(res.body);
   }
 
   static Future<Map<String, dynamic>> acknowledgeScanPostOrders({
@@ -487,7 +508,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to acknowledge post orders for scan');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
   static Future<List<dynamic>> getPassOnLogs() async {
@@ -498,7 +519,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to load pass-on logs');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<List<dynamic>>(res.body);
   }
 
   static Future<Map<String, dynamic>> checkPendingAcknowledgements() async {
@@ -512,7 +533,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       return {'hasPending': false, 'count': 0};
     }
-    return jsonDecode(res.body);
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
   static Future<List<dynamic>> getPendingPassOnLogs() async {
@@ -526,7 +547,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to load pending pass-on logs');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<List<dynamic>>(res.body);
   }
 
   static Future<Map<String, dynamic>> acknowledgePassOnLog(
@@ -544,7 +565,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to acknowledge pass-on log');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
   static Future<List<dynamic>> getPostOrders() async {
@@ -555,7 +576,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to load post orders');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<List<dynamic>>(res.body);
   }
 
   static Future<Map<String, dynamic>> acknowledgePostOrder(String id) async {
@@ -569,7 +590,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to acknowledge post order');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
   static Future<List<dynamic>> getVisitors({String? status}) async {
@@ -583,7 +604,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to load visitor logs');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<List<dynamic>>(res.body);
   }
 
   static Future<Map<String, dynamic>> visitorCheckIn({
@@ -616,7 +637,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to check in visitor');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
   static Future<Map<String, dynamic>> visitorCheckOut(String id) async {
@@ -630,7 +651,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to check out visitor');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
   static Future<List<dynamic>> getTruckLogs({String? status}) async {
@@ -644,7 +665,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to load truck logs');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<List<dynamic>>(res.body);
   }
 
   static Future<Map<String, dynamic>> truckCheckIn({
@@ -675,7 +696,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to check in truck');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
   static Future<Map<String, dynamic>> truckCheckOut(String id) async {
@@ -689,7 +710,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to check out truck');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
   static Future<Map<String, dynamic>> completePostOrder({
@@ -700,7 +721,7 @@ class ApiService {
     double? gpsLongitude,
   }) async {
     _ensureHttps();
-    final bytes = await photo.readAsBytes();
+    final photoBase64 = await _readFileAsBase64(photo);
     final res = await _client
         .post(
           Uri.parse('$baseUrl/post-orders/$orderId/complete'),
@@ -709,7 +730,7 @@ class ApiService {
             'proofNote': proofNote,
             'gpsLatitude': gpsLatitude,
             'gpsLongitude': gpsLongitude,
-            'photoBase64': base64Encode(bytes),
+            'photoBase64': photoBase64,
             'photoName': photo.uri.pathSegments.isNotEmpty
                 ? photo.uri.pathSegments.last
                 : 'proof.jpg',
@@ -719,7 +740,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to complete post order');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
   static Future<List<dynamic>> getPendingHandovers() async {
@@ -730,7 +751,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to load pending handovers');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<List<dynamic>>(res.body);
   }
 
   static Future<Map<String, dynamic>> createHandover({
@@ -745,7 +766,7 @@ class ApiService {
     String? photoBase64;
     String? photoName;
     if (photo != null) {
-      photoBase64 = base64Encode(await photo.readAsBytes());
+      photoBase64 = await _readFileAsBase64(photo);
       photoName = photo.uri.pathSegments.isNotEmpty
           ? photo.uri.pathSegments.last
           : 'handover.jpg';
@@ -769,7 +790,7 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to send handover');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
   static Future<Map<String, dynamic>> acceptHandover(
@@ -787,6 +808,6 @@ class ApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to accept handover');
     }
-    return jsonDecode(res.body);
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 }

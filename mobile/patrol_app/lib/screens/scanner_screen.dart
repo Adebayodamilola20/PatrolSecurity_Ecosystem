@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
@@ -52,14 +54,12 @@ class _ScannerScreenState extends State<ScannerScreen> {
       return;
     }
 
-    await Future.delayed(const Duration(milliseconds: 800));
-    if (!mounted) return;
-
     setState(() {
       _blockedMessage = null;
       _checkingAccess = false;
       _ready = true;
     });
+    unawaited(LocationService.getCurrentLocation());
   }
 
   void _onDetect(BarcodeCapture capture) async {

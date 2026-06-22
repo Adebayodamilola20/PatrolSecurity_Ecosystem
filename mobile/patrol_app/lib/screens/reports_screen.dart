@@ -693,6 +693,8 @@ class _IncidentTabState extends State<_IncidentTab> {
     final picked = await _picker.pickImage(
       source: ImageSource.camera,
       imageQuality: 80,
+      maxWidth: 1600,
+      maxHeight: 1600,
     );
     if (picked != null) {
       setState(() => _photos.add(picked));
@@ -873,6 +875,8 @@ class _MaintenanceTabState extends State<_MaintenanceTab> {
     final picked = await _picker.pickImage(
       source: ImageSource.camera,
       imageQuality: 80,
+      maxWidth: 1600,
+      maxHeight: 1600,
     );
     if (picked != null) {
       setState(() => _evidence.add(picked));

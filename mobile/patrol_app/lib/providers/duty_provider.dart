@@ -13,6 +13,8 @@ class DutyProvider extends ChangeNotifier {
   bool _submitting = false;
   String? _error;
   int _pendingAcknowledgementCount = 0;
+  Future<void>? _loadFuture;
+  bool _loadedOnce = false;
 
   List<PostOrder> get orders => _orders;
   List<Handover> get pendingHandovers => _pendingHandovers;
@@ -33,10 +35,20 @@ class DutyProvider extends ChangeNotifier {
     _submitting = false;
     _error = null;
     _pendingAcknowledgementCount = 0;
+    _loadedOnce = false;
     notifyListeners();
   }
 
-  Future<void> load() async {
+  Future<void> load({bool force = false}) {
+    if (_loadFuture != null) return _loadFuture!;
+    if (!force && _loadedOnce) return Future.value();
+    _loadFuture = _load().whenComplete(() {
+      _loadFuture = null;
+    });
+    return _loadFuture!;
+  }
+
+  Future<void> _load() async {
     _loading = true;
     notifyListeners();
 
@@ -58,6 +70,7 @@ class DutyProvider extends ChangeNotifier {
     _pendingAcknowledgementCount = _pendingPassOnLogs.length;
 
     _error = null;
+    _loadedOnce = true;
     _loading = false;
     notifyListeners();
   }
@@ -79,7 +92,7 @@ class DutyProvider extends ChangeNotifier {
     notifyListeners();
     try {
       await ApiService.acknowledgePostOrder(orderId);
-      await load();
+      await load(force: true);
       return true;
     } catch (e) {
       _error = e.toString().replaceFirst('Exception: ', '');
@@ -96,7 +109,7 @@ class DutyProvider extends ChangeNotifier {
     notifyListeners();
     try {
       await ApiService.acknowledgePassOnLog(logId, note: note);
-      await load();
+      await load(force: true);
       return true;
     } catch (e) {
       _error = e.toString().replaceFirst('Exception: ', '');
@@ -124,7 +137,7 @@ class DutyProvider extends ChangeNotifier {
         gpsLatitude: location.isSuccess ? location.latitude : null,
         gpsLongitude: location.isSuccess ? location.longitude : null,
       );
-      await load();
+      await load(force: true);
       return true;
     } catch (e) {
       _error = e.toString().replaceFirst('Exception: ', '');
@@ -155,7 +168,7 @@ class DutyProvider extends ChangeNotifier {
         checkpointId: checkpointId,
         photo: photo,
       );
-      await load();
+      await load(force: true);
       return true;
     } catch (e) {
       _error = e.toString().replaceFirst('Exception: ', '');
@@ -172,7 +185,7 @@ class DutyProvider extends ChangeNotifier {
     notifyListeners();
     try {
       await ApiService.acceptHandover(id, acceptedNote: acceptedNote);
-      await load();
+      await load(force: true);
       return true;
     } catch (e) {
       _error = e.toString().replaceFirst('Exception: ', '');

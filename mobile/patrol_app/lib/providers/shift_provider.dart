@@ -18,6 +18,8 @@ class ShiftProvider extends ChangeNotifier {
   Timer? _positionTimer;
   bool _positionTracking = false;
   bool _sendingPosition = false;
+  Future<void>? _statusLoadFuture;
+  DateTime? _statusLoadedAt;
 
   bool get onDuty => _onDuty;
   bool get loading => _loading;
@@ -43,6 +45,7 @@ class ShiftProvider extends ChangeNotifier {
     _clockInDistanceMeters = null;
     _clockOutGpsValid = null;
     _clockOutDistanceMeters = null;
+    _statusLoadedAt = null;
     notifyListeners();
   }
 
@@ -79,16 +82,35 @@ class ShiftProvider extends ChangeNotifier {
         : null;
     _siteLabel = (data['siteLabel'] ?? shift?['siteLabel'])?.toString();
     _clockInGpsValid = data['clockInGpsValid'] ?? shift?['clockInGpsValid'];
-    _clockInDistanceMeters = (data['clockInDistanceMeters'] ?? shift?['clockInDistanceMeters'])?.toDouble();
+    _clockInDistanceMeters =
+        (data['clockInDistanceMeters'] ?? shift?['clockInDistanceMeters'])
+            ?.toDouble();
     _clockOutGpsValid = data['clockOutGpsValid'] ?? shift?['clockOutGpsValid'];
-    _clockOutDistanceMeters = (data['clockOutDistanceMeters'] ?? shift?['clockOutDistanceMeters'])?.toDouble();
+    _clockOutDistanceMeters =
+        (data['clockOutDistanceMeters'] ?? shift?['clockOutDistanceMeters'])
+            ?.toDouble();
   }
 
-  Future<void> loadStatus() async {
+  Future<void> loadStatus({bool force = false}) {
+    if (_statusLoadFuture != null) return _statusLoadFuture!;
+    final loadedAt = _statusLoadedAt;
+    if (!force &&
+        loadedAt != null &&
+        DateTime.now().difference(loadedAt) < const Duration(seconds: 20)) {
+      return Future.value();
+    }
+    _statusLoadFuture = _loadStatus().whenComplete(() {
+      _statusLoadFuture = null;
+    });
+    return _statusLoadFuture!;
+  }
+
+  Future<void> _loadStatus() async {
     try {
       final data = await ApiService.getShiftStatus();
       _error = null;
       _applyShiftPayload(data);
+      _statusLoadedAt = DateTime.now();
       if (_onDuty && !_positionTracking) {
         _startPositionTracking();
       } else if (!_onDuty && _positionTracking) {
@@ -144,13 +166,15 @@ class ShiftProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final location = await LocationService.getCurrentLocation();
+      final location = await LocationService.getCurrentLocation(
+        allowCached: false,
+      );
       final data = await ApiService.clockIn(
         latitude: location.isSuccess ? location.latitude : null,
         longitude: location.isSuccess ? location.longitude : null,
       );
       _applyShiftPayload(data);
-      await loadStatus();
+      await loadStatus(force: true);
       _startPositionTracking();
       _loading = false;
       notifyListeners();
@@ -169,13 +193,15 @@ class ShiftProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final location = await LocationService.getCurrentLocation();
+      final location = await LocationService.getCurrentLocation(
+        allowCached: false,
+      );
       final data = await ApiService.clockOut(
         latitude: location.isSuccess ? location.latitude : null,
         longitude: location.isSuccess ? location.longitude : null,
       );
       _applyShiftPayload(data);
-      await loadStatus();
+      await loadStatus(force: true);
       _stopPositionTracking();
       _loading = false;
       notifyListeners();

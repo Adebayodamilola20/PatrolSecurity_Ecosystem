@@ -38,10 +38,12 @@ class _LoginScreenState extends State<LoginScreen> {
     final ok = await auth.login(_emailCtrl.text.trim(), _passCtrl.text);
     if (!mounted) return;
     if (ok) {
-      await scan.loadScans();
-      await scan.loadCheckpoints();
-      await shift.loadStatus();
-      await duty.load();
+      await Future.wait([
+        scan.loadScans(force: true),
+        scan.loadCheckpoints(force: true),
+        shift.loadStatus(force: true),
+        duty.load(force: true),
+      ]);
       if (!mounted) return;
       navigator.pushReplacementNamed(AppRoutes.home);
     }

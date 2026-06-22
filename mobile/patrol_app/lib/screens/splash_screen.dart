@@ -21,8 +21,7 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _init() async {
-    await Future.delayed(const Duration(seconds: 2));
-    if (!mounted) return;
+    final minimumSplash = Future.delayed(const Duration(milliseconds: 700));
 
     final auth = context.read<AuthProvider>();
     final scan = context.read<ScanProvider>();
@@ -33,13 +32,19 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (!mounted) return;
     if (restored) {
-      await scan.loadScans();
-      await scan.loadCheckpoints();
-      await shift.loadStatus();
-      await duty.load();
+      await Future.wait([
+        scan.loadScans(),
+        scan.loadCheckpoints(),
+        scan.loadPendingScans(),
+        shift.loadStatus(),
+        duty.load(),
+        minimumSplash,
+      ]);
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, AppRoutes.home);
     } else {
+      await minimumSplash;
+      if (!mounted) return;
       Navigator.pushReplacementNamed(context, AppRoutes.login);
     }
   }

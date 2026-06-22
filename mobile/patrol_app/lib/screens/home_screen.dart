@@ -75,7 +75,10 @@ class _HomeScreenState extends State<HomeScreen> {
             return AlertDialog(
               title: Row(
                 children: [
-                  const Icon(Icons.receipt_long_outlined, color: AppTheme.primary),
+                  const Icon(
+                    Icons.receipt_long_outlined,
+                    color: AppTheme.primary,
+                  ),
                   const SizedBox(width: 8),
                   Text('Pass-On Log (${currentIndex + 1}/${logs.length})'),
                 ],
@@ -93,7 +96,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         decoration: BoxDecoration(
                           color: AppTheme.primary.withValues(alpha: 0.06),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppTheme.primary.withValues(alpha: 0.15)),
+                          border: Border.all(
+                            color: AppTheme.primary.withValues(alpha: 0.15),
+                          ),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -109,9 +114,14 @@ class _HomeScreenState extends State<HomeScreen> {
                             if ((log['priority'] ?? '').isNotEmpty) ...[
                               const SizedBox(height: 4),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: AppTheme.flagged.withValues(alpha: 0.12),
+                                  color: AppTheme.flagged.withValues(
+                                    alpha: 0.12,
+                                  ),
                                   borderRadius: BorderRadius.circular(999),
                                 ),
                                 child: Text(
@@ -138,7 +148,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        log['instruction'] ?? log['description'] ?? 'No details',
+                        log['instruction'] ??
+                            log['description'] ??
+                            'No details',
                         style: const TextStyle(
                           color: AppTheme.text,
                           height: 1.5,
@@ -209,7 +221,11 @@ class _HomeScreenState extends State<HomeScreen> {
                           height: 20,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : Text(isLast ? 'Acknowledge & Continue' : 'Acknowledge & Next'),
+                      : Text(
+                          isLast
+                              ? 'Acknowledge & Continue'
+                              : 'Acknowledge & Next',
+                        ),
                 ),
               ],
             );
@@ -799,359 +815,362 @@ class _DashboardTab extends StatelessWidget {
     final role = roleForUser(auth.user);
 
     return RefreshIndicator(
-        onRefresh: () async {
-          await scan.loadScans();
-          await scan.loadCheckpoints();
-          await shift.loadStatus();
-          await duty.load();
-        },
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Text(
-              'Good ${_greeting()}, ${auth.user?.name ?? 'Officer'}',
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.text,
-              ),
-              softWrap: true,
-              overflow: TextOverflow.ellipsis,
-              maxLines: 2,
+      onRefresh: () async {
+        await Future.wait([
+          scan.loadScans(force: true),
+          scan.loadCheckpoints(force: true),
+          shift.loadStatus(force: true),
+          duty.load(force: true),
+        ]);
+      },
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text(
+            'Good ${_greeting()}, ${auth.user?.name ?? 'Officer'}',
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: AppTheme.text,
             ),
-            const SizedBox(height: 4),
-            if (shift.onDuty) ...[
+            softWrap: true,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 2,
+          ),
+          const SizedBox(height: 4),
+          if (shift.onDuty) ...[
+            Text(
+              '${_formatHour(shift.clockInTime)} - ${_formatHour(shift.scheduledEnd)}',
+              style: const TextStyle(
+                fontSize: 15,
+                color: AppTheme.text,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if ((shift.siteLabel ?? '').isNotEmpty)
               Text(
-                '${_formatHour(shift.clockInTime)} - ${_formatHour(shift.scheduledEnd)}',
+                shift.siteLabel!,
                 style: const TextStyle(
-                  fontSize: 15,
-                  color: AppTheme.text,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  color: AppTheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+                softWrap: true,
+                overflow: TextOverflow.ellipsis,
+              ),
+            const SizedBox(height: 8),
+          ],
+          Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: shift.onDuty
+                      ? AppTheme.verified
+                      : AppTheme.textSecondary,
                 ),
               ),
-              if ((shift.siteLabel ?? '').isNotEmpty)
+              const SizedBox(width: 6),
+              Text(
+                shift.onDuty ? 'On Duty' : 'Off Duty',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: shift.onDuty
+                      ? AppTheme.verified
+                      : AppTheme.textSecondary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              if (shift.clockInTime != null) ...[
+                const SizedBox(width: 12),
                 Text(
-                  shift.siteLabel!,
+                  'Since ${shift.clockInTime!.hour.toString().padLeft(2, '0')}:${shift.clockInTime!.minute.toString().padLeft(2, '0')}',
                   style: const TextStyle(
-                    fontSize: 13,
-                    color: AppTheme.primary,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                    color: AppTheme.textSecondary,
                   ),
-                  softWrap: true,
-                  overflow: TextOverflow.ellipsis,
                 ),
-              const SizedBox(height: 8),
+              ],
             ],
-            Row(
-              children: [
-                Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: shift.onDuty
-                        ? AppTheme.verified
-                        : AppTheme.textSecondary,
+          ),
+          const SizedBox(height: 20),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Icon(
+                    role == AccountRole.admin
+                        ? Icons.admin_panel_settings_outlined
+                        : role == AccountRole.client
+                        ? Icons.business_outlined
+                        : Icons.location_city_outlined,
+                    color: AppTheme.primary,
                   ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  shift.onDuty ? 'On Duty' : 'Off Duty',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: shift.onDuty
-                        ? AppTheme.verified
-                        : AppTheme.textSecondary,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                if (shift.clockInTime != null) ...[
                   const SizedBox(width: 12),
-                  Text(
-                    'Since ${shift.clockInTime!.hour.toString().padLeft(2, '0')}:${shift.clockInTime!.minute.toString().padLeft(2, '0')}',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textSecondary,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          role.label,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: AppTheme.text,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          role.scopeLabel,
+                          style: const TextStyle(color: AppTheme.textSecondary),
+                        ),
+                      ],
                     ),
                   ),
                 ],
-              ],
+              ),
             ),
-            const SizedBox(height: 20),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _StatCard(
+                  label: 'Scans Today',
+                  value: '${scan.todayScans}',
+                  icon: Icons.qr_code,
+                  color: AppTheme.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _StatCard(
+                  label: 'Post Orders',
+                  value: '${duty.orders.length}',
+                  icon: Icons.assignment_late_outlined,
+                  color: const Color(0xFF3B82F6),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            height: 56,
+            child: ElevatedButton.icon(
+              onPressed: canSubmitPatrol(auth.user)
+                  ? () => context
+                        .findAncestorStateOfType<_HomeScreenState>()
+                        ?._openScannerOrExplain(context)
+                  : () => Navigator.pushNamed(context, AppRoutes.patrol),
+              icon: const Icon(Icons.qr_code_scanner, size: 24),
+              label: Text(
+                canSubmitPatrol(auth.user)
+                    ? 'Scan QR Code'
+                    : 'View Patrol Tour',
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _EmergencyHoldButton(
+            onConfirmed: () async {
+              final cat = await _showEmergencyCategorySheet(context);
+              if (cat != null && cat.trim().isNotEmpty && context.mounted) {
+                await _triggerEmergency(context, category: cat);
+              }
+            },
+          ),
+          const SizedBox(height: 12),
+          Column(
+            children: [
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  onPressed: shift.loading
+                      ? null
+                      : () async {
+                          final wasOnDuty = shift.onDuty;
+                          final ok = wasOnDuty
+                              ? await shift.clockOut()
+                              : await shift.clockIn();
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  ok
+                                      ? (wasOnDuty
+                                            ? 'Clocked out successfully'
+                                            : 'Clocked in successfully')
+                                      : (shift.error ??
+                                            'Action failed. Check your connection and try again.'),
+                                ),
+                                backgroundColor: ok
+                                    ? (wasOnDuty
+                                          ? AppTheme.textSecondary
+                                          : AppTheme.verified)
+                                    : AppTheme.error,
+                              ),
+                            );
+                          }
+                        },
+                  icon: Icon(
+                    shift.onDuty ? Icons.logout : Icons.login,
+                    size: 20,
+                  ),
+                  label: Text(
+                    shift.loading
+                        ? 'Processing...'
+                        : shift.onDuty
+                        ? 'Clock Out'
+                        : 'Clock In',
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: shift.onDuty
+                        ? Colors.orange
+                        : AppTheme.verified,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              if (shift.onDuty && shift.clockInGpsValid != null) ...[
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      role == AccountRole.admin
-                          ? Icons.admin_panel_settings_outlined
-                          : role == AccountRole.client
-                          ? Icons.business_outlined
-                          : Icons.location_city_outlined,
-                      color: AppTheme.primary,
+                      shift.clockInGpsValid!
+                          ? Icons.check_circle
+                          : Icons.warning_amber,
+                      size: 14,
+                      color: shift.clockInGpsValid!
+                          ? AppTheme.verified
+                          : AppTheme.flagged,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            role.label,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              color: AppTheme.text,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            role.scopeLabel,
-                            style: const TextStyle(
-                              color: AppTheme.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _StatCard(
-                    label: 'Scans Today',
-                    value: '${scan.todayScans}',
-                    icon: Icons.qr_code,
-                    color: AppTheme.primary,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _StatCard(
-                    label: 'Post Orders',
-                    value: '${duty.orders.length}',
-                    icon: Icons.assignment_late_outlined,
-                    color: const Color(0xFF3B82F6),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: ElevatedButton.icon(
-                onPressed: canSubmitPatrol(auth.user)
-                    ? () => context
-                          .findAncestorStateOfType<_HomeScreenState>()
-                          ?._openScannerOrExplain(context)
-                    : () => Navigator.pushNamed(context, AppRoutes.patrol),
-                icon: const Icon(Icons.qr_code_scanner, size: 24),
-                label: Text(
-                  canSubmitPatrol(auth.user)
-                      ? 'Scan QR Code'
-                      : 'View Patrol Tour',
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  textStyle: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _EmergencyHoldButton(
-              onConfirmed: () async {
-                final cat = await _showEmergencyCategorySheet(context);
-                if (cat != null && cat.trim().isNotEmpty && context.mounted) {
-                  await _triggerEmergency(context, category: cat);
-                }
-              },
-            ),
-            const SizedBox(height: 12),
-            Column(
-              children: [
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton.icon(
-                    onPressed: shift.loading
-                        ? null
-                        : () async {
-                            final wasOnDuty = shift.onDuty;
-                            final ok = wasOnDuty
-                                ? await shift.clockOut()
-                                : await shift.clockIn();
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    ok
-                                        ? (wasOnDuty
-                                              ? 'Clocked out successfully'
-                                              : 'Clocked in successfully')
-                                        : (shift.error ??
-                                              'Action failed. Check your connection and try again.'),
-                                  ),
-                                  backgroundColor: ok
-                                      ? (wasOnDuty
-                                            ? AppTheme.textSecondary
-                                            : AppTheme.verified)
-                                      : AppTheme.error,
-                                ),
-                              );
-                            }
-                          },
-                    icon: Icon(shift.onDuty ? Icons.logout : Icons.login, size: 20),
-                    label: Text(
-                      shift.loading
-                          ? 'Processing...'
-                          : shift.onDuty
-                          ? 'Clock Out'
-                          : 'Clock In',
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: shift.onDuty
-                          ? Colors.orange
-                          : AppTheme.verified,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      textStyle: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-                if (shift.onDuty && shift.clockInGpsValid != null) ...[
-                  const SizedBox(height: 6),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        shift.clockInGpsValid!
-                            ? Icons.check_circle
-                            : Icons.warning_amber,
-                        size: 14,
+                    const SizedBox(width: 4),
+                    Text(
+                      shift.clockInGpsValid!
+                          ? 'Geofence verified'
+                          : shift.clockInDistanceMeters != null
+                          ? '${shift.clockInDistanceMeters!.toStringAsFixed(0)}m from checkpoint'
+                          : 'Outside geofence',
+                      style: TextStyle(
+                        fontSize: 11,
                         color: shift.clockInGpsValid!
                             ? AppTheme.verified
                             : AppTheme.flagged,
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        shift.clockInGpsValid!
-                            ? 'Geofence verified'
-                            : shift.clockInDistanceMeters != null
-                                ? '${shift.clockInDistanceMeters!.toStringAsFixed(0)}m from checkpoint'
-                                : 'Outside geofence',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: shift.clockInGpsValid!
-                              ? AppTheme.verified
-                              : AppTheme.flagged,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                _QuickAction(
-                  icon: Icons.description_outlined,
-                  label: 'Reports',
-                  onTap: () => Navigator.pushNamed(context, AppRoutes.reports),
-                ),
-                const SizedBox(width: 12),
-                _QuickAction(
-                  icon: Icons.assignment_turned_in_outlined,
-                  label: 'Duties',
-                  onTap: () => Navigator.pushNamed(context, AppRoutes.duties),
-                ),
-                const SizedBox(width: 12),
-                _QuickAction(
-                  icon: Icons.history,
-                  label: 'History',
-                  onTap: () => Navigator.pushNamed(context, AppRoutes.history),
+                    ),
+                  ],
                 ),
               ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                _QuickAction(
-                  icon: Icons.location_on_outlined,
-                  label: 'Checkpoints',
-                  onTap: () =>
-                      Navigator.pushNamed(context, AppRoutes.checkpoints),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              _QuickAction(
+                icon: Icons.description_outlined,
+                label: 'Reports',
+                onTap: () => Navigator.pushNamed(context, AppRoutes.reports),
+              ),
+              const SizedBox(width: 12),
+              _QuickAction(
+                icon: Icons.assignment_turned_in_outlined,
+                label: 'Duties',
+                onTap: () => Navigator.pushNamed(context, AppRoutes.duties),
+              ),
+              const SizedBox(width: 12),
+              _QuickAction(
+                icon: Icons.history,
+                label: 'History',
+                onTap: () => Navigator.pushNamed(context, AppRoutes.history),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _QuickAction(
+                icon: Icons.location_on_outlined,
+                label: 'Checkpoints',
+                onTap: () =>
+                    Navigator.pushNamed(context, AppRoutes.checkpoints),
+              ),
+              const SizedBox(width: 12),
+              _QuickAction(
+                icon: Icons.sos_outlined,
+                label: 'Emergency',
+                onTap: () => _confirmEmergencyAction(context),
+              ),
+              const SizedBox(width: 12),
+              _QuickAction(
+                icon: Icons.person_outline,
+                label: 'Profile',
+                onTap: () => Navigator.pushNamed(context, AppRoutes.profile),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Recent Activity',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+              ),
+              TextButton(
+                onPressed: () =>
+                    Navigator.pushNamed(context, AppRoutes.history),
+                child: const Text('View All'),
+              ),
+            ],
+          ),
+          if (scan.scans.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text(
+                  'No scans yet. Start patrolling!',
+                  style: TextStyle(color: AppTheme.textSecondary),
                 ),
-                const SizedBox(width: 12),
-                _QuickAction(
-                  icon: Icons.sos_outlined,
-                  label: 'Emergency',
-                  onTap: () => _confirmEmergencyAction(context),
-                ),
-                const SizedBox(width: 12),
-                _QuickAction(
-                  icon: Icons.person_outline,
-                  label: 'Profile',
-                  onTap: () => Navigator.pushNamed(context, AppRoutes.profile),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Recent Activity',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
-                ),
-                TextButton(
-                  onPressed: () =>
-                      Navigator.pushNamed(context, AppRoutes.history),
-                  child: const Text('View All'),
-                ),
-              ],
-            ),
-            if (scan.scans.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                child: Center(
-                  child: Text(
-                    'No scans yet. Start patrolling!',
-                    style: TextStyle(color: AppTheme.textSecondary),
-                  ),
-                ),
-              )
-            else
-              ...scan.scans
-                  .take(5)
-                  .map(
-                    (s) => ScanTile(
-                      scan: s,
-                      onTap: () => Navigator.pushNamed(
-                        context,
-                        AppRoutes.scanDetail,
-                        arguments: {'scanId': s.id},
-                      ),
+              ),
+            )
+          else
+            ...scan.scans
+                .take(5)
+                .map(
+                  (s) => ScanTile(
+                    scan: s,
+                    onTap: () => Navigator.pushNamed(
+                      context,
+                      AppRoutes.scanDetail,
+                      arguments: {'scanId': s.id},
                     ),
                   ),
-          ],
-        ),
+                ),
+        ],
+      ),
     );
   }
 

@@ -35,8 +35,36 @@ class SafeLocationResult {
 
 class LocationService {
   static const double _maxAccuracyMeters = 100.0;
+  static const Duration _maxCachedLocationAge = Duration(seconds: 8);
+  static SafeLocationResult? _lastGoodLocation;
+  static Future<SafeLocationResult>? _locationRequest;
 
-  static Future<SafeLocationResult> getCurrentLocation() async {
+  static Future<SafeLocationResult> getCurrentLocation({
+    bool allowCached = true,
+  }) {
+    final cached = _lastGoodLocation;
+    if (allowCached &&
+        cached != null &&
+        DateTime.now().difference(cached.capturedAt) <= _maxCachedLocationAge) {
+      return Future.value(cached);
+    }
+    final activeRequest = _locationRequest;
+    if (activeRequest != null) return activeRequest;
+
+    _locationRequest = _resolveCurrentLocation()
+        .then((location) {
+          if (location.isSuccess) {
+            _lastGoodLocation = location;
+          }
+          return location;
+        })
+        .whenComplete(() {
+          _locationRequest = null;
+        });
+    return _locationRequest!;
+  }
+
+  static Future<SafeLocationResult> _resolveCurrentLocation() async {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       return SafeLocationResult(

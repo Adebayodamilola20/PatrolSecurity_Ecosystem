@@ -40,7 +40,7 @@ class CheckpointsScreen extends StatelessWidget {
               ),
             )
           : RefreshIndicator(
-              onRefresh: () => scan.loadCheckpoints(),
+              onRefresh: () => scan.loadCheckpoints(force: true),
               child: ListView.builder(
                 padding: const EdgeInsets.all(16),
                 itemCount: scan.checkpoints.length,

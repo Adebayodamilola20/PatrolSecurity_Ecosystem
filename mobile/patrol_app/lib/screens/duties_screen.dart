@@ -63,6 +63,8 @@ class _DutiesScreenState extends State<DutiesScreen> {
                     final picked = await _picker.pickImage(
                       source: ImageSource.camera,
                       imageQuality: 80,
+                      maxWidth: 1600,
+                      maxHeight: 1600,
                     );
                     if (picked != null) setModalState(() => photo = picked);
                   },
@@ -156,6 +158,8 @@ class _DutiesScreenState extends State<DutiesScreen> {
                     final picked = await _picker.pickImage(
                       source: ImageSource.camera,
                       imageQuality: 80,
+                      maxWidth: 1600,
+                      maxHeight: 1600,
                     );
                     if (picked != null) setModalState(() => photo = picked);
                   },

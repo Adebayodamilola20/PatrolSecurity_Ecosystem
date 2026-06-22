@@ -34,6 +34,32 @@ interface AddressSuggestion {
   prefillName?: boolean
 }
 
+function getBrowserLocation(
+  options: PositionOptions,
+): Promise<GeolocationPosition> {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, options)
+  })
+}
+
+function isPositionUnavailable(error: unknown) {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as GeolocationPositionError).code === 2
+  )
+}
+
+function isPositionTimeout(error: unknown) {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as GeolocationPositionError).code === 3
+  )
+}
+
 function getStatus(cp: Checkpoint): string {
   if (!cp.active) return 'deactivated'
   if (cp.lastScan) {
@@ -290,6 +316,10 @@ export default function Checkpoints() {
       setGeoError('Your browser does not support location access. Type an address or paste coordinates instead.')
       return
     }
+    if (!window.isSecureContext) {
+      setGeoError('Location requires a secure connection. Open the web app on HTTPS or localhost, then try again.')
+      return
+    }
 
     try {
       setResolvingCurrentLocation(true)
@@ -297,24 +327,54 @@ export default function Checkpoints() {
       setAddressError('')
       setLocationInfo('')
 
-      let position
+      if ('permissions' in navigator) {
+        try {
+          const permission = await navigator.permissions.query({
+            name: 'geolocation',
+          } as PermissionDescriptor)
+          if (permission.state === 'denied') {
+            throw Object.assign(
+              new Error('Geolocation permission is blocked.'),
+              { code: 1 },
+            )
+          }
+        } catch (permissionError: any) {
+          if (permissionError?.code === 1) throw permissionError
+        }
+      }
+
+      let position: GeolocationPosition
       try {
-        position = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, {
-            enableHighAccuracy: true,
-            timeout: 8000,
-            maximumAge: 0,
-          })
+        position = await getBrowserLocation({
+          enableHighAccuracy: true,
+          timeout: 12000,
+          maximumAge: 5000,
         })
       } catch (highAccuracyError: any) {
-        if (highAccuracyError?.code === 3) {
-          position = await new Promise<GeolocationPosition>((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, {
+        if (
+          isPositionTimeout(highAccuracyError) ||
+          isPositionUnavailable(highAccuracyError)
+        ) {
+          try {
+            position = await getBrowserLocation({
               enableHighAccuracy: false,
-              timeout: 10000,
-              maximumAge: 60000,
+              timeout: 15000,
+              maximumAge: 120000,
             })
-          })
+          } catch (fallbackError: any) {
+            if (
+              isPositionTimeout(fallbackError) ||
+              isPositionUnavailable(fallbackError)
+            ) {
+              position = await getBrowserLocation({
+                enableHighAccuracy: false,
+                timeout: 5000,
+                maximumAge: 10 * 60 * 1000,
+              })
+            } else {
+              throw fallbackError
+            }
+          }
         } else {
           throw highAccuracyError
         }
@@ -340,9 +400,9 @@ export default function Checkpoints() {
       if (error?.code === 1) {
         errorMessage = 'Location permission denied. Click the lock icon in your browser address bar and allow location access, then try again.'
       } else if (error?.code === 2) {
-        errorMessage = 'Location unavailable. Check your GPS or network connection, or use the address search instead.'
+        errorMessage = 'Location is still unavailable after retrying. Turn on device Location Services, allow browser location access, or paste latitude,longitude into the address box.'
       } else if (error?.code === 3) {
-        errorMessage = 'Location request timed out. Try again or use the address search instead.'
+        errorMessage = 'Location request timed out after retrying. Move closer to a window, check your network, or paste latitude,longitude into the address box.'
       } else if (error?.message?.includes('secure')) {
         errorMessage = 'Location requires a secure connection (HTTPS). Use localhost or connect via HTTPS.'
       }

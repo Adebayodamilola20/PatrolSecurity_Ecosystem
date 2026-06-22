@@ -41,7 +41,7 @@ class HistoryScreen extends StatelessWidget {
               ),
             )
           : RefreshIndicator(
-              onRefresh: () => scan.loadScans(),
+              onRefresh: () => scan.loadScans(force: true),
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 itemCount: scan.scans.length,
