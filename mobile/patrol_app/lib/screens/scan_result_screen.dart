@@ -38,6 +38,9 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
   bool _postOrdersDialogShown = false;
   bool _passOnLogDialogShown = false;
 
+  bool get _locationServiceDisabled =>
+      _errorMessage?.toLowerCase().contains('location is turned off') ?? false;
+
   @override
   void dispose() {
     _notesCtrl.dispose();
@@ -134,9 +137,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
             ),
             actions: [
               TextButton(
-                onPressed: acknowledging
-                    ? null
-                    : () => Navigator.pop(ctx),
+                onPressed: acknowledging ? null : () => Navigator.pop(ctx),
                 child: const Text('Skip'),
               ),
               FilledButton(
@@ -250,10 +251,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
         checkpoint.latitude,
         checkpoint.longitude,
       );
-      final effectiveRadius = math.min(
-        checkpoint.radiusMeters,
-        strictScanRadiusMeters,
-      );
+      final effectiveRadius = checkpoint.radiusMeters;
       _gpsValid = _distance <= effectiveRadius;
     }
 
@@ -287,6 +285,12 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
       AppRoutes.scanResult,
       arguments: {'scanData': updatedData},
     );
+  }
+
+  Future<void> _openLocationFixSettings() {
+    return _locationServiceDisabled
+        ? Geolocator.openLocationSettings()
+        : Geolocator.openAppSettings();
   }
 
   Future<void> _verify() async {
@@ -328,9 +332,9 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
 
     if (ok && _scanId != null) {
       final dutyProvider = context.read<DutyProvider>();
-      final matchingOrders = _matchingOrders(dutyProvider.orders)
-          .where((o) => o.requiresAcknowledgement)
-          .toList();
+      final matchingOrders = _matchingOrders(
+        dutyProvider.orders,
+      ).where((o) => o.requiresAcknowledgement).toList();
       if (matchingOrders.isNotEmpty) {
         await _showPostOrdersDialog(matchingOrders);
       }
@@ -669,7 +673,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                     textAlign: TextAlign.center,
                     softWrap: true,
                     overflow: TextOverflow.ellipsis,
-                  ), 
+                  ),
                   if (_checkpoint != null)
                     Text(
                       'Code: ${_checkpoint!.code}',
@@ -681,7 +685,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                 ],
               ),
             ),
-            SizedBox(height: 20,),
+            SizedBox(height: 20),
             Card(
               elevation: 0,
               shape: RoundedRectangleBorder(
@@ -741,7 +745,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                                   ? 'Location Required'
                                   : _gpsValid
                                   ? 'Within Range'
-                                  : 'Outside ${strictScanRadiusMeters.toStringAsFixed(0)}m Limit',
+                                  : 'Outside ${_checkpoint?.radiusMeters.toStringAsFixed(0) ?? strictScanRadiusMeters.toStringAsFixed(0)}m Limit',
                               style: TextStyle(
                                 color: widget.scanData?['gpsLatitude'] == null
                                     ? Colors.orange
@@ -927,9 +931,17 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: Geolocator.openAppSettings,
-                      icon: const Icon(Icons.settings),
-                      label: const Text('App Settings'),
+                      onPressed: _openLocationFixSettings,
+                      icon: Icon(
+                        _locationServiceDisabled
+                            ? Icons.location_on_outlined
+                            : Icons.settings,
+                      ),
+                      label: Text(
+                        _locationServiceDisabled
+                            ? 'Location Settings'
+                            : 'App Settings',
+                      ),
                     ),
                   ),
                 ],
