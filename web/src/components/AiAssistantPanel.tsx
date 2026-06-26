@@ -65,6 +65,9 @@ export default function AiAssistantPanel({ mode = 'drawer', open = true, onClose
         .slice(-8)
         .map(({ role, content }) => ({ role, content }))
       const res = await api.ai.chat({ message: trimmed, history })
+      if (res.generatedReportId && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ai:report-saved', { detail: { id: res.generatedReportId } }))
+      }
       setMessages((current) => [
         ...current,
         {

@@ -9,6 +9,7 @@
  */
 
 import type * as activity from "../activity.js";
+import type * as ai from "../ai.js";
 import type * as aiService from "../aiService.js";
 import type * as audit from "../audit.js";
 import type * as checkpoints from "../checkpoints.js";
@@ -54,6 +55,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   activity: typeof activity;
+  ai: typeof ai;
   aiService: typeof aiService;
   audit: typeof audit;
   checkpoints: typeof checkpoints;

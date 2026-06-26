@@ -46,6 +46,9 @@ function safeJson(value) {
 
 function inferIntent(question) {
   const q = question.toLowerCase()
+  if (/\b(how many|number of|count|total)\b.*\b(location|locations|checkpoint|checkpoints|site|sites)\b|\b(location|locations|checkpoint|checkpoints|site|sites)\b.*\b(how many|number|count|total)\b/.test(q)) return 'location_count'
+  if (/\b(phone|email|contact|details|profile)\b/.test(q)) return 'guard_details'
+  if (/\b(on duty|active guard|active guards|currently active|clocked in|clock-in|who is currently|officers?|personnel|guards?|staff|how many)\b/.test(q)) return 'roster'
   if (/\b(report|dar|summary|email|client update|monthly|weekly)\b/.test(q)) return 'report'
   if (/\b(policy|sop|procedure|training|post order|instruction|template)\b/.test(q)) return 'knowledge'
   if (/\b(clock|timesheet|hours|late|overtime|attendance|on duty|clocked)\b/.test(q)) return 'timesheet'
@@ -54,6 +57,18 @@ function inferIntent(question) {
   if (/\b(pass.?on|handover|handoff)\b/.test(q)) return 'handover'
   if (/\b(alert|risk|emergency|inactivity|suspicious)\b/.test(q)) return 'risk'
   return 'operations'
+}
+
+function isRosterQuestion(intent) {
+  return intent === 'roster'
+}
+
+function isGuardDetailsQuestion(intent) {
+  return intent === 'guard_details'
+}
+
+function isLocationCountQuestion(intent) {
+  return intent === 'location_count'
 }
 
 function roleScope(user, aliases = {}) {
@@ -131,6 +146,242 @@ function normalizeRows(rows) {
 function includeContactDetails(user, targetUserId) {
   const role = normalizeRole(user?.role)
   return role === 'admin' || role === 'main_account' || role === 'supervisor' || user.id === targetUserId
+}
+
+function formatTime(value) {
+  if (!value) return 'time not recorded'
+  return new Date(value).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+async function getRosterSnapshot(user) {
+  const role = normalizeRole(user?.role)
+  const sinceToday = startOfToday()
+
+  let guardsSql = `
+    SELECT u.id, u.name, u.email, u.phone, u.role, u.active, u.clientId
+    FROM users u
+    WHERE u.role = 'guard'
+  `
+  const guardParams = []
+  if (role === 'main_account') {
+    guardsSql += ' AND u.clientId = ?'
+    guardParams.push(user.clientId)
+  } else if (role === 'guard') {
+    guardsSql += ' AND u.id = ?'
+    guardParams.push(user.id)
+  } else if (role === 'supervisor') {
+    guardsSql += ` AND u.id IN (
+      SELECT usa.userId FROM user_site_assignments usa
+      WHERE usa.siteId IN (
+        SELECT supervisorSites.siteId FROM user_site_assignments supervisorSites WHERE supervisorSites.userId = ?
+      )
+    )`
+    guardParams.push(user.id)
+  }
+
+  const guards = normalizeRows(await db.all(`${guardsSql} ORDER BY u.name ASC LIMIT 500`, guardParams))
+  const guardIds = new Set(guards.map((guard) => guard.id))
+
+  const assignments = normalizeRows(await db.all(`
+    SELECT usa.userId, usa.siteId, s.name as siteName, s.location as siteLocation, s.active as siteActive
+    FROM user_site_assignments usa
+    JOIN sites s ON usa.siteId = s.id
+    WHERE usa.userId IN (${guards.length ? guards.map(() => '?').join(',') : "''"})
+  `, guards.map((guard) => guard.id)))
+
+  const activeShifts = normalizeRows(await db.all(`
+    SELECT sh.id, sh.userId, sh.clockIn, sh.clockOut, sh.status, sh.siteLabel,
+      sh.siteLabel as shiftSiteLabel
+    FROM shifts sh
+    WHERE sh.status = 'active'
+      AND sh.userId IN (${guards.length ? guards.map(() => '?').join(',') : "''"})
+    ORDER BY sh.clockIn DESC
+    LIMIT 300
+  `, guards.map((guard) => guard.id)))
+
+  const todayScans = normalizeRows(await db.all(`
+    SELECT s.id, s.officerId, s.scannedAt, s.gpsValid, s.distanceMeters,
+      c.name as checkpointName, c.siteId, st.name as siteName
+    FROM scans s
+    JOIN checkpoints c ON s.checkpointId = c.id
+    LEFT JOIN sites st ON c.siteId = st.id
+    WHERE s.scannedAt >= ?
+      AND s.officerId IN (${guards.length ? guards.map(() => '?').join(',') : "''"})
+    ORDER BY s.scannedAt DESC
+    LIMIT 500
+  `, [sinceToday, ...guards.map((guard) => guard.id)]))
+
+  const guardSummaries = guards.map((guard) => {
+    const guardAssignments = assignments.filter((assignment) => assignment.userid === guard.id)
+    const activeShift = activeShifts.find((shift) => shift.userid === guard.id)
+    const lastScan = todayScans.find((scan) => scan.officerid === guard.id)
+    const shiftSite = activeShift?.siteslabel || activeShift?.sitelabel || ''
+    const assignedSite = guardAssignments[0]
+    return {
+      id: guard.id,
+      name: guard.name,
+      activeProfile: !!guard.active,
+      phone: includeContactDetails(user, guard.id) ? guard.phone : null,
+      email: includeContactDetails(user, guard.id) ? guard.email : null,
+      assignedSites: guardAssignments.map((assignment) => ({
+        id: assignment.siteid,
+        name: assignment.sitename || 'Unknown site',
+        location: assignment.sitelocation || '',
+        active: !!assignment.siteactive,
+      })),
+      assignedSiteCount: guardAssignments.length,
+      currentlyClockedIn: !!activeShift,
+      currentlyOnDuty: !!activeShift && !!guard.active,
+      currentShift: activeShift ? {
+        id: activeShift.id,
+        clockIn: activeShift.clockin,
+        clockOut: activeShift.clockout || null,
+        status: activeShift.status,
+        siteName: shiftSite || assignedSite?.sitename || 'Unknown site',
+      } : null,
+      patrolScansToday: todayScans.filter((scan) => scan.officerid === guard.id).length,
+      lastActivity: lastScan ? {
+        type: 'patrol_scan',
+        at: lastScan.scannedat,
+        checkpointName: lastScan.checkpointname || '',
+        siteName: lastScan.sitename || '',
+        gpsValid: !!lastScan.gpsvalid,
+        distanceMeters: lastScan.distancemeters ?? null,
+      } : activeShift ? {
+        type: 'clock_in',
+        at: activeShift.clockin,
+      } : null,
+    }
+  })
+
+  return {
+    checkedAt: isoNow(),
+    counts: {
+      totalGuardsRegistered: guards.length,
+      activeGuardProfiles: guards.filter((guard) => !!guard.active).length,
+      guardsAssignedToSites: guardSummaries.filter((guard) => guard.assignedSiteCount > 0).length,
+      guardsCurrentlyClockedIn: guardSummaries.filter((guard) => guard.currentlyClockedIn).length,
+      guardsCurrentlyOnDuty: guardSummaries.filter((guard) => guard.currentlyOnDuty).length,
+      guardsWithPatrolScansToday: guardSummaries.filter((guard) => guard.patrolScansToday > 0).length,
+      activeShiftRecords: activeShifts.length,
+      patrolScansToday: todayScans.length,
+    },
+    guards: guardSummaries,
+    activeGuards: guardSummaries.filter((guard) => guard.currentlyOnDuty),
+    dataValidation: {
+      tablesChecked: ['users', 'shifts', 'user_site_assignments', 'sites', 'scans'],
+      missingData: [
+        ...(guards.length === 0 ? ['No guard records matched the current user access scope.'] : []),
+        ...guardSummaries
+          .filter((guard) => guard.currentlyOnDuty && guard.currentShift?.siteName === 'Unknown site')
+          .map((guard) => `${guard.name} has an active shift but no resolved site assignment.`),
+      ],
+    },
+  }
+}
+
+function buildRosterAnswer(snapshot) {
+  const counts = snapshot.counts
+  const lines = [
+    `There are ${counts.totalGuardsRegistered} guards registered in the system, ${counts.guardsAssignedToSites} assigned to at least one site, and ${counts.guardsCurrentlyOnDuty} currently active/on duty.`,
+    `${counts.guardsWithPatrolScansToday} guard${counts.guardsWithPatrolScansToday === 1 ? ' has' : 's have'} patrol scans recorded today.`,
+  ]
+
+  if (snapshot.activeGuards.length) {
+    lines.push('')
+    lines.push('Currently on duty:')
+    for (const guard of snapshot.activeGuards) {
+      const shift = guard.currentShift
+      const last = guard.lastActivity
+      lines.push(`- ${guard.name} — ${shift?.siteName || 'Unknown site'}; clocked in ${formatTime(shift?.clockIn)}; status: ${shift?.status || 'active'}; last activity: ${
+        last?.type === 'patrol_scan'
+          ? `patrol scan at ${formatTime(last.at)}${last.checkpointName ? ` (${last.checkpointName})` : ''}${last.gpsValid === false ? ' (GPS flagged)' : ''}`
+          : `clock-in at ${formatTime(last?.at || shift?.clockIn)}`
+      }.`)
+    }
+  } else {
+    lines.push('')
+    lines.push('I checked guard profiles, active shift records, site assignments, and today’s patrol scans. I did not find an active shift for any scoped guard.')
+  }
+
+  if (snapshot.dataValidation.missingData.length) {
+    lines.push('')
+    lines.push(`Data note: ${snapshot.dataValidation.missingData.join(' ')}`)
+  }
+
+  return lines.join('\n')
+}
+
+function buildGuardDetailsAnswer(snapshot, question) {
+  const q = question.toLowerCase()
+  const matched =
+    snapshot.guards.find((guard) => q.includes(String(guard.name || '').toLowerCase())) ||
+    (snapshot.activeGuards.length === 1 ? snapshot.activeGuards[0] : null)
+
+  if (!matched) {
+    return 'I could not identify which guard you mean from the verified records. Please give me the guard name.'
+  }
+
+  const shift = matched.currentShift
+  const assignedSites = matched.assignedSites.length
+    ? matched.assignedSites.map((site) => site.name).join(', ')
+    : 'No resolved site assignment'
+
+  return [
+    matched.name,
+    `Phone: ${matched.phone || 'not recorded'}`,
+    `Email: ${matched.email || 'not recorded'}`,
+    `Current status: ${matched.currentlyOnDuty ? 'active/on duty' : matched.activeProfile ? 'active profile, not on duty' : 'inactive profile'}`,
+    `Assigned site: ${shift?.siteName || assignedSites}`,
+    `Clock-in: ${shift?.clockIn ? formatTime(shift.clockIn) : 'not currently clocked in'}`,
+  ].join('\n')
+}
+
+async function getLocationSnapshot(user) {
+  const role = normalizeRole(user?.role)
+  const conditions = []
+  const params = []
+  if (role === 'main_account') {
+    conditions.push('c.clientId = ?')
+    params.push(user.clientId)
+  } else if (role === 'supervisor' || role === 'guard') {
+    conditions.push('c.siteId IN (SELECT siteId FROM user_site_assignments WHERE userId = ?)')
+    params.push(user.id)
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  const checkpoints = normalizeRows(await db.all(`
+    SELECT c.id, c.name, c.code, c.active, c.siteId, s.name as siteName
+    FROM checkpoints c
+    LEFT JOIN sites s ON c.siteId = s.id
+    ${where}
+    ORDER BY c.name ASC
+    LIMIT 1000
+  `, params))
+  const sites = normalizeRows(await db.all(`
+    SELECT s.id, s.name, s.location, s.active
+    FROM sites s
+    ${role === 'main_account' ? 'WHERE s.clientId = ?' : role === 'supervisor' || role === 'guard' ? 'WHERE s.id IN (SELECT siteId FROM user_site_assignments WHERE userId = ?)' : ''}
+    ORDER BY s.name ASC
+    LIMIT 1000
+  `, role === 'main_account' ? [user.clientId] : role === 'supervisor' || role === 'guard' ? [user.id] : []))
+  return { checkpoints, sites }
+}
+
+function buildLocationCountAnswer(snapshot) {
+  const checkpoints = snapshot.checkpoints || []
+  const sites = snapshot.sites || []
+  const active = checkpoints.filter((checkpoint) => !!checkpoint.active).length
+  return [
+    `There are ${checkpoints.length} checkpoints in the system right now.`,
+    `${active} are active and ${checkpoints.length - active} are inactive.`,
+    `There are ${sites.length} locations/sites in scope.`,
+    checkpoints.length ? `Checkpoints: ${checkpoints.slice(0, 8).map((checkpoint) => checkpoint.sitename ? `${checkpoint.name} (${checkpoint.sitename})` : checkpoint.name).join(', ')}${checkpoints.length > 8 ? ', ...' : ''}` : 'No checkpoint records matched your access scope.',
+  ].join('\n')
 }
 
 async function enforceAiRateLimit(userId) {
@@ -369,6 +620,7 @@ Never invent patrol scans, guard names, clock-in times, incident reports, GPS da
 If the verified data does not answer the question, say exactly what is missing and ask for a narrower date, guard, site, or report type.
 Respect access control. The caller role is ${normalizeRole(user.role)}. Do not expose phone numbers or emails unless they are present in the verified data.
 Keep answers concise, natural, and operationally useful. Mention timestamps, site names, checkpoint names, GPS/geofence status, and unresolved risks when available.
+Do not use markdown tables, ### headings, **bold**, or long formatting unless the user explicitly asks for a report.
 For reports, use a polished report format with clear sections, verified totals, and a short operational summary.`
 }
 
@@ -401,6 +653,54 @@ router.post('/chat', async (req, res) => {
       getOperationalContext(req.user, intent),
       retrieveKnowledge(question, req.user),
     ])
+
+    if (isRosterQuestion(intent) || isGuardDetailsQuestion(intent)) {
+      const rosterSnapshot = await getRosterSnapshot(req.user)
+      const answer = isGuardDetailsQuestion(intent)
+        ? buildGuardDetailsAnswer(rosterSnapshot, question)
+        : buildRosterAnswer(rosterSnapshot)
+      const rosterSources = ['users', 'shifts', 'user_site_assignments', 'sites', 'scans']
+      await audit({
+        user: req.user,
+        question,
+        intent,
+        dataSources: rosterSources,
+        sensitive,
+        status: 'completed',
+      })
+      return res.json({
+        answer,
+        intent,
+        model: null,
+        assistantUnavailable: false,
+        generatedReportId: null,
+        sources: rosterSources,
+        counts: rosterSnapshot.counts,
+        validation: rosterSnapshot.dataValidation,
+      })
+    }
+
+    if (isLocationCountQuestion(intent)) {
+      const locationSnapshot = await getLocationSnapshot(req.user)
+      const answer = buildLocationCountAnswer(locationSnapshot)
+      const locationSources = ['sites', 'checkpoints']
+      await audit({
+        user: req.user,
+        question,
+        intent,
+        dataSources: locationSources,
+        sensitive,
+        status: 'completed',
+      })
+      return res.json({
+        answer,
+        intent,
+        model: null,
+        assistantUnavailable: false,
+        generatedReportId: null,
+        sources: locationSources,
+      })
+    }
 
     const messages = [
       { role: 'system', content: buildSystemPrompt(req.user) },
