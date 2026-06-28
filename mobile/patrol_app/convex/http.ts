@@ -570,10 +570,16 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const url = new URL(request.url);
+    const checkpointId = await maybeResolveCheckpointId(
+      ctx,
+      url.searchParams.get("checkpoint") ?? url.searchParams.get("checkpointId"),
+    );
     return json(
       await ctx.runQuery(internal.scans.listForApi, {
         officerId: user.role === "guard" ? _uid(user.convexId) : undefined,
         clientId: user.role === "admin" ? undefined : (_cid(user.clientId)),
+        checkpointId,
         limit: 1000,
       }),
     );

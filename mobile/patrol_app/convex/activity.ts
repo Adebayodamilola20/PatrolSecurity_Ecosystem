@@ -65,6 +65,132 @@ export const record = internalMutation({
   },
 });
 
+// One-off backfill: existing scans/shifts predate the activity-event recording,
+// so siteActivityEvents is empty. Regenerate events from historical data.
+// Idempotent: skips events that already exist (keyed by sourceTable+sourceId+type).
+export const backfill = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const existing = await ctx.db.query("siteActivityEvents").collect();
+    const seen = new Set(
+      existing.map((e) => `${e.sourceTable}:${e.sourceId}:${e.activityType}`),
+    );
+
+    const users = await ctx.db.query("users").collect();
+    const userById = new Map(users.map((u) => [u._id, u]));
+    const checkpoints = await ctx.db.query("checkpoints").collect();
+    const checkpointById = new Map(checkpoints.map((c) => [c._id, c]));
+
+    let created = 0;
+    const insert = async (event: {
+      sourceTable: string;
+      sourceId: string;
+      activityType: any;
+      officerId: any;
+      clientId?: any;
+      siteId?: any;
+      checkpointId?: any;
+      siteName?: string;
+      locationLabel?: string;
+      activityLabel: string;
+      gpsLatitude?: number;
+      gpsLongitude?: number;
+      gpsValid?: boolean;
+      distanceMeters?: number;
+      occurredAt: number;
+    }) => {
+      const key = `${event.sourceTable}:${event.sourceId}:${event.activityType}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      const now = Date.now();
+      await ctx.db.insert("siteActivityEvents", {
+        clientId: event.clientId,
+        siteId: event.siteId,
+        checkpointId: event.checkpointId,
+        officerId: event.officerId,
+        activityType: event.activityType,
+        sourceTable: event.sourceTable,
+        sourceId: event.sourceId,
+        siteName: event.siteName ?? "",
+        locationLabel: event.locationLabel ?? "",
+        activityLabel: event.activityLabel,
+        gpsLatitude: event.gpsLatitude,
+        gpsLongitude: event.gpsLongitude,
+        gpsValid: event.gpsValid,
+        distanceMeters: event.distanceMeters,
+        count: 1,
+        occurredAt: event.occurredAt,
+        createdAt: now,
+      });
+      created++;
+    };
+
+    // Scans -> patrol_scan
+    const scans = await ctx.db.query("scans").collect();
+    for (const scan of scans) {
+      const checkpoint = checkpointById.get(scan.checkpointId);
+      const officer = userById.get(scan.officerId);
+      await insert({
+        sourceTable: "scans",
+        sourceId: scan._id,
+        activityType: "patrol_scan",
+        officerId: scan.officerId,
+        clientId: checkpoint?.clientId ?? officer?.clientId,
+        siteId: checkpoint?.siteId,
+        checkpointId: scan.checkpointId,
+        locationLabel: checkpoint?.name ?? "",
+        activityLabel: `Patrol scan: ${checkpoint?.name ?? "checkpoint"}`,
+        gpsLatitude: scan.gpsLatitude,
+        gpsLongitude: scan.gpsLongitude,
+        gpsValid: scan.gpsValid,
+        distanceMeters: scan.distanceMeters,
+        occurredAt: scan.scannedAt ?? scan._creationTime,
+      });
+    }
+
+    // Shifts -> clock_in (+ clock_out if completed)
+    const shifts = await ctx.db.query("shifts").collect();
+    for (const shift of shifts) {
+      const officer = userById.get(shift.userId);
+      const clientId = shift.clientId ?? officer?.clientId;
+      await insert({
+        sourceTable: "shifts",
+        sourceId: shift._id,
+        activityType: "clock_in",
+        officerId: shift.userId,
+        clientId,
+        siteId: shift.siteId,
+        siteName: shift.siteLabel ?? "",
+        activityLabel: "Clock-in",
+        gpsLatitude: shift.clockInLatitude,
+        gpsLongitude: shift.clockInLongitude,
+        gpsValid: shift.clockInGpsValid,
+        distanceMeters: shift.clockInDistanceMeters,
+        occurredAt: shift.clockIn ?? shift._creationTime,
+      });
+      if (shift.clockOut) {
+        await insert({
+          sourceTable: "shifts",
+          sourceId: shift._id,
+          activityType: "clock_out",
+          officerId: shift.userId,
+          clientId,
+          siteId: shift.siteId,
+          siteName: shift.siteLabel ?? "",
+          activityLabel: "Clock-out",
+          gpsLatitude: shift.clockOutLatitude,
+          gpsLongitude: shift.clockOutLongitude,
+          gpsValid: shift.clockOutGpsValid,
+          distanceMeters: shift.clockOutDistanceMeters,
+          occurredAt: shift.clockOut,
+        });
+      }
+    }
+
+    return { created, total: seen.size };
+  },
+});
+
 export const list = internalQuery({
   args: {
     officerId: v.optional(v.id("users")),

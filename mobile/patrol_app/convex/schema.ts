@@ -522,7 +522,8 @@ export default defineSchema({
     reportType: v.string(),
     title: v.string(),
     content: v.string(),
-    sourceSummary: v.string(),
+    // Loosened from v.string(): existing deployment data stores an object here.
+    sourceSummary: v.any(),
     status: v.string(),
     createdAt: v.number(),
   })

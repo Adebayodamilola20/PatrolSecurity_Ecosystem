@@ -45,20 +45,34 @@ export const list = internalQuery({
 export const listForApi = internalQuery({
   args: {
     officerId: v.optional(v.id("users")),
+    checkpointId: v.optional(v.id("checkpoints")),
     limit: v.optional(v.number()),
     clientId: v.optional(v.id("clients")),
   },
   handler: async (ctx, args) => {
-    const query = args.officerId
-      ? ctx.db.query("scans").withIndex("by_officerId_scannedAt", (q) =>
-          q.eq("officerId", args.officerId!),
+    const query = args.checkpointId
+      ? ctx.db.query("scans").withIndex("by_checkpointId_scannedAt", (q) =>
+          q.eq("checkpointId", args.checkpointId!),
         )
-      : args.clientId
-        ? ctx.db.query("scans").withIndex("by_clientId", (q) =>
-            q.eq("clientId", args.clientId!),
+      : args.officerId
+        ? ctx.db.query("scans").withIndex("by_officerId_scannedAt", (q) =>
+            q.eq("officerId", args.officerId!),
           )
-        : ctx.db.query("scans");
+        : args.clientId
+          ? ctx.db.query("scans").withIndex("by_clientId", (q) =>
+              q.eq("clientId", args.clientId!),
+            )
+          : ctx.db.query("scans");
     let scans = await query.order("desc").take(args.limit ?? 100);
+
+    // When a non-officer index was used, still enforce officer scope (guards).
+    if (args.officerId) {
+      scans = scans.filter((scan) => scan.officerId === args.officerId);
+    }
+
+    if (args.checkpointId) {
+      scans = scans.filter((scan) => scan.checkpointId === args.checkpointId);
+    }
 
     if (args.clientId) {
       const clientCheckpoints = await ctx.db.query("checkpoints").collect();

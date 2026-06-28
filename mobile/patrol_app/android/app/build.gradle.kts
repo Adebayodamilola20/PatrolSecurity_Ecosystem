@@ -62,8 +62,14 @@ android {
 
     buildTypes {
         release {
-            if (hasReleaseSigning) {
-                signingConfig = signingConfigs.getByName("release")
+            // Use the real release keystore when present; otherwise fall back to the
+            // debug key so `flutter build apk --release` still produces a SIGNED,
+            // installable APK. An unsigned release APK fails to install on Android
+            // with INSTALL_PARSE_FAILED_NO_CERTIFICATES ("App not installed").
+            signingConfig = if (hasReleaseSigning) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
             }
             // Enable ProGuard/R8 for code shrinking
             isMinifyEnabled = true
