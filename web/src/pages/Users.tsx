@@ -36,18 +36,21 @@ export default function Users() {
     return matchSearch && matchRole && matchDuty
   })
 
-  const load = () => {
-    setLoading(true)
+  // `silent` refreshes update the data without flashing the loading skeleton,
+  // so background polling/websocket updates don't make the page look like it's
+  // reloading itself. Only the first load and explicit actions show the skeleton.
+  const load = (silent = false) => {
+    if (!silent) setLoading(true)
     api.users.list().then((users) => {
       setOfficers(users.filter((u: User) => u.role === 'guard' || u.role === 'supervisor' || u.role === 'main_account'))
-    }).catch((err) => { console.error('Failed to load users:', err) }).finally(() => setLoading(false))
+    }).catch((err) => { console.error('Failed to load users:', err) }).finally(() => { if (!silent) setLoading(false) })
   }
 
   useEffect(() => {
     load()
-    const interval = setInterval(load, 5000)
+    const interval = setInterval(() => load(true), 15000)
     const unsub = subscribeToShiftUpdates(() => {
-      load()
+      load(true)
     })
     return () => {
       clearInterval(interval)
