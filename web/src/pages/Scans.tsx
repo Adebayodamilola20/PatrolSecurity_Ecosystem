@@ -14,6 +14,30 @@ function dayBounds(d: Date) {
   }
 }
 
+// Resolve the chosen date filter into the selected day (or null for "all").
+function selectedDay(filter: DateFilter, customDate: string): Date | null {
+  if (filter === 'today') return new Date()
+  if (filter === 'yesterday') {
+    const d = new Date()
+    d.setDate(d.getDate() - 1)
+    return d
+  }
+  if (filter === 'custom' && customDate) {
+    const [yy, mm, dd] = customDate.split('-').map(Number)
+    if (yy && mm && dd) return new Date(yy, mm - 1, dd)
+  }
+  return null
+}
+
+// ISO start/end params sent to the backend so the FULL history is queried by
+// date, not just the most-recent rows already loaded.
+function rangeParams(filter: DateFilter, customDate: string): Record<string, string> {
+  const d = selectedDay(filter, customDate)
+  if (!d) return {}
+  const { start, end } = dayBounds(d)
+  return { startDate: new Date(start).toISOString(), endDate: new Date(end).toISOString() }
+}
+
 function inDateRange(iso: string, filter: DateFilter, customDate: string): boolean {
   if (filter === 'all') return true
   const t = Date.parse(iso)
@@ -46,9 +70,11 @@ export default function Scans() {
   const [customDate, setCustomDate] = useState('')
   useScanWebSocket()
 
+  // Refetch from the backend by date range so the full history is searchable,
+  // not only the most-recent scans already in the store.
   useEffect(() => {
-    fetchScans()
-  }, [])
+    fetchScans(rangeParams(dateFilter, customDate))
+  }, [dateFilter, customDate, fetchScans])
 
   // Build the guard list from the scans actually in the history.
   const guards = useMemo(() => {

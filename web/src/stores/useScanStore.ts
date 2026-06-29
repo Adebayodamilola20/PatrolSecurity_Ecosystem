@@ -11,7 +11,7 @@ interface ScanStore {
   addScan: (scan: Scan) => void
   setScans: (scans: Scan[]) => void
   setStats: (stats: DashboardStats) => void
-  fetchScans: () => Promise<void>
+  fetchScans: (params?: Record<string, string>) => Promise<void>
   fetchStats: () => Promise<void>
 }
 
@@ -24,7 +24,7 @@ const defaultStats: DashboardStats = {
   flaggedScans: 0,
 }
 
-export const useScanStore = create<ScanStore>((set, get) => ({
+export const useScanStore = create<ScanStore>((set) => ({
   scans: [],
   stats: defaultStats,
   loading: false,
@@ -53,12 +53,10 @@ export const useScanStore = create<ScanStore>((set, get) => ({
   setScans: (scans) => set({ scans }),
   setStats: (stats) => set({ stats }),
 
-  fetchScans: async () => {
-    // Prevent overlapping fetches that would toggle the loading flag repeatedly.
-    if (get().loading) return;
+  fetchScans: async (params?: Record<string, string>) => {
     set({ loading: true })
     try {
-      const scans = await api.scans.list()
+      const scans = await api.scans.list(params)
       set({ scans, loading: false })
     } catch {
       set({ loading: false })

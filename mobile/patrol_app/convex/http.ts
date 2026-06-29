@@ -587,11 +587,17 @@ http.route({
     if (checkpointFilterRequested && !checkpointId) {
       return json([]);
     }
+    const startDateRaw = url.searchParams.get("startDate") ?? url.searchParams.get("start");
+    const endDateRaw = url.searchParams.get("endDate") ?? url.searchParams.get("end");
+    const startDate = startDateRaw ? new Date(startDateRaw).getTime() : undefined;
+    const endDate = endDateRaw ? new Date(endDateRaw).getTime() : undefined;
     return json(
       await ctx.runQuery(internal.scans.listForApi, {
         officerId: user.role === "guard" ? _uid(user.convexId) : undefined,
         clientId: user.role === "admin" ? undefined : (_cid(user.clientId)),
         checkpointId,
+        startDate: startDate != null && !Number.isNaN(startDate) ? startDate : undefined,
+        endDate: endDate != null && !Number.isNaN(endDate) ? endDate : undefined,
         limit: 1000,
       }),
     );

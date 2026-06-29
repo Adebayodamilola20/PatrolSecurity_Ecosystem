@@ -48,21 +48,38 @@ export const listForApi = internalQuery({
     checkpointId: v.optional(v.id("checkpoints")),
     limit: v.optional(v.number()),
     clientId: v.optional(v.id("clients")),
+    // Optional scannedAt range (epoch ms) so the full history can be filtered
+    // by date instead of only the most-recent `limit` rows.
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const hasRange = args.startDate != null || args.endDate != null;
+    // Narrow an index range builder to the requested scannedAt window.
+    const withScannedAt = (q: any) => {
+      let r = q;
+      if (args.startDate != null) r = r.gte("scannedAt", args.startDate);
+      if (args.endDate != null) r = r.lte("scannedAt", args.endDate);
+      return r;
+    };
+
     const query = args.checkpointId
       ? ctx.db.query("scans").withIndex("by_checkpointId_scannedAt", (q) =>
-          q.eq("checkpointId", args.checkpointId!),
+          withScannedAt(q.eq("checkpointId", args.checkpointId!)),
         )
       : args.officerId
         ? ctx.db.query("scans").withIndex("by_officerId_scannedAt", (q) =>
-            q.eq("officerId", args.officerId!),
+            withScannedAt(q.eq("officerId", args.officerId!)),
           )
-        : args.clientId
-          ? ctx.db.query("scans").withIndex("by_clientId", (q) =>
-              q.eq("clientId", args.clientId!),
-            )
-          : ctx.db.query("scans");
+        : hasRange
+          ? // For client-scoped or global reads, a scannedAt range index keeps
+            // the date window exact (the client filter below still applies).
+            ctx.db.query("scans").withIndex("by_scannedAt", (q) => withScannedAt(q))
+          : args.clientId
+            ? ctx.db.query("scans").withIndex("by_clientId", (q) =>
+                q.eq("clientId", args.clientId!),
+              )
+            : ctx.db.query("scans");
     let scans = await query.order("desc").take(args.limit ?? 100);
 
     // When a non-officer index was used, still enforce officer scope (guards).
