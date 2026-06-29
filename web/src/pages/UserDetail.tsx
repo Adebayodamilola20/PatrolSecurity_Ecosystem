@@ -6,10 +6,39 @@ import { subscribeToScans, subscribeToShiftUpdates } from '../services/websocket
 import { Skeleton } from '../components/ui/Skeleton'
 import { formatDate, formatDuration, formatLateStatus } from '../utils/format'
 
+type DateFilter = 'all' | 'today' | 'yesterday' | 'custom'
+
+function dayBounds(d: Date) {
+  return {
+    start: new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime(),
+    end: new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime(),
+  }
+}
+
+// True when the given ISO timestamp falls within the chosen date filter.
+function inRange(iso: string | null | undefined, filter: DateFilter, customDate: string): boolean {
+  if (filter === 'all') return true
+  if (!iso) return false
+  const t = Date.parse(iso)
+  if (Number.isNaN(t)) return false
+  let day: Date | null = null
+  if (filter === 'today') day = new Date()
+  else if (filter === 'yesterday') { day = new Date(); day.setDate(day.getDate() - 1) }
+  else if (filter === 'custom' && customDate) {
+    const [yy, mm, dd] = customDate.split('-').map(Number)
+    if (yy && mm && dd) day = new Date(yy, mm - 1, dd)
+  }
+  if (!day) return true
+  const { start, end } = dayBounds(day)
+  return t >= start && t <= end
+}
+
 export default function UserDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [user, setUser] = useState<any>(null)
+  const [dateFilter, setDateFilter] = useState<DateFilter>('all')
+  const [customDate, setCustomDate] = useState('')
 
   useEffect(() => {
     if (!id) return
@@ -42,6 +71,9 @@ export default function UserDetail() {
       </div>
     )
   }
+
+  const filteredShifts = (user.shifts || []).filter((s: any) => inRange(s.clockIn, dateFilter, customDate))
+  const filteredScans = (user.scans || []).filter((s: any) => inRange(s.scannedAt, dateFilter, customDate))
 
   return (
     <div className="space-y-5">
@@ -85,13 +117,41 @@ export default function UserDetail() {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-xs text-muted-foreground mr-1">Filter shifts &amp; scans:</span>
+        {([['all', 'All'], ['today', 'Today'], ['yesterday', 'Yesterday']] as const).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => { setDateFilter(key); setCustomDate('') }}
+            className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+              dateFilter === key
+                ? 'border-primary bg-primary/10 text-primary font-medium'
+                : 'border-border bg-card text-muted-foreground hover:bg-accent'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+        <input
+          type="date"
+          value={customDate}
+          onChange={(e) => { setCustomDate(e.target.value); setDateFilter(e.target.value ? 'custom' : 'all') }}
+          className={`rounded-lg border bg-card px-3 py-1.5 text-sm ${
+            dateFilter === 'custom' ? 'border-primary text-primary' : 'border-border text-muted-foreground'
+          }`}
+        />
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="rounded-xl border border-border bg-card p-5">
           <h2 className="font-semibold">Recent Shifts</h2>
           <div className="mt-4 space-y-3">
-            {(user.shifts || []).length === 0 ? (
-              <div className="text-sm text-muted-foreground">No shifts yet.</div>
-            ) : user.shifts.map((shift: any) => {
+            {filteredShifts.length === 0 ? (
+              <div className="text-sm text-muted-foreground">
+                {(user.shifts || []).length === 0 ? 'No shifts yet.' : 'No shifts match this filter.'}
+              </div>
+            ) : filteredShifts.map((shift: any) => {
               const late = formatLateStatus(shift.scheduledStart, shift.clockIn)
               return (
                 <div key={shift.id} className="rounded-lg border border-border/60 bg-background/40 p-3 text-sm">
@@ -120,9 +180,11 @@ export default function UserDetail() {
         <div className="rounded-xl border border-border bg-card p-5">
           <h2 className="font-semibold">Recent Scans</h2>
           <div className="mt-4 space-y-3">
-            {(user.scans || []).length === 0 ? (
-              <div className="text-sm text-muted-foreground">No scans yet.</div>
-            ) : user.scans.map((scan: any) => (
+            {filteredScans.length === 0 ? (
+              <div className="text-sm text-muted-foreground">
+                {(user.scans || []).length === 0 ? 'No scans yet.' : 'No scans match this filter.'}
+              </div>
+            ) : filteredScans.map((scan: any) => (
               <button
                 key={scan.id}
                 onClick={() => navigate(`/scans/${scan.id}`)}
