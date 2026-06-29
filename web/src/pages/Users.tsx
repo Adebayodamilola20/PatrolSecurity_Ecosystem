@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Phone, Mail, MoreHorizontal, Plus, X, UsersIcon, Clock3 } from 'lucide-react'
+import { Phone, Mail, MoreHorizontal, Plus, X, UsersIcon, Clock3, Search } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
 import { subscribeToShiftUpdates } from '../services/websocket'
@@ -20,6 +20,21 @@ export default function Users() {
   const [formError, setFormError] = useState('')
   const canManage = useCanManageUsers()
   const isMainAccount = useIsMainAccount()
+  const [search, setSearch] = useState('')
+  const [roleFilter, setRoleFilter] = useState<'all' | 'guard' | 'supervisor' | 'main_account'>('all')
+  const [dutyFilter, setDutyFilter] = useState<'all' | 'on' | 'off'>('all')
+
+  const filteredOfficers = officers.filter((o) => {
+    const q = search.trim().toLowerCase()
+    const matchSearch =
+      !q ||
+      o.name.toLowerCase().includes(q) ||
+      (o.email ?? '').toLowerCase().includes(q) ||
+      (o.phone ?? '').toLowerCase().includes(q)
+    const matchRole = roleFilter === 'all' || o.role === roleFilter
+    const matchDuty = dutyFilter === 'all' || (dutyFilter === 'on' ? o.onDuty : !o.onDuty)
+    return matchSearch && matchRole && matchDuty
+  })
 
   const load = () => {
     setLoading(true)
@@ -176,8 +191,45 @@ export default function Users() {
           }
         />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {officers.map((o) => (
+        <>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by name, email or phone..."
+                className="w-full rounded-lg border border-border bg-background pl-9 pr-3 py-2 text-sm"
+              />
+            </div>
+            <select
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value as typeof roleFilter)}
+              className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
+            >
+              <option value="all">All roles</option>
+              <option value="guard">Guard</option>
+              <option value="supervisor">Supervisor</option>
+              <option value="main_account">Main Account</option>
+            </select>
+            <select
+              value={dutyFilter}
+              onChange={(e) => setDutyFilter(e.target.value as typeof dutyFilter)}
+              className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
+            >
+              <option value="all">All status</option>
+              <option value="on">Clocked In</option>
+              <option value="off">Clocked Out</option>
+            </select>
+          </div>
+
+          {filteredOfficers.length === 0 ? (
+            <div className="rounded-xl border border-border bg-card p-8 text-sm text-muted-foreground text-center">
+              No personnel match your filters.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredOfficers.map((o) => (
             <button
               key={o.id}
               onClick={() => navigate(`/users/${o.id}`)}
@@ -227,8 +279,10 @@ export default function Users() {
                 </button>
               </div>
             </button>
-          ))}
-        </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   )

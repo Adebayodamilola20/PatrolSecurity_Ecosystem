@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { AlertTriangle, AlertCircle, Info, Clock, ShieldAlert, User2, MapPin, RefreshCw, Mail } from 'lucide-react'
+import { AlertTriangle, AlertCircle, Info, Clock, ShieldAlert, User2, MapPin, RefreshCw, Mail, Search } from 'lucide-react'
 import { api } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
 import type { Incident, MissedPatrol } from '../types'
@@ -29,6 +29,10 @@ export default function Alerts() {
   const [loading, setLoading] = useState(true)
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
+  const [severityFilter, setSeverityFilter] = useState<'all' | 'critical' | 'high' | 'medium' | 'low'>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'investigating' | 'resolved'>('all')
+  const [typeFilter, setTypeFilter] = useState<'all' | 'incidents' | 'missed'>('all')
 
   if (userRole === 'guard') {
     return <Navigate to="/" replace />
@@ -75,6 +79,30 @@ export default function Alerts() {
     } catch {}
   }
 
+  const q = search.trim().toLowerCase()
+  const filteredIncidents = incidents.filter((inc) => {
+    const matchSearch =
+      !q ||
+      (inc.title ?? '').toLowerCase().includes(q) ||
+      (inc.officerName ?? '').toLowerCase().includes(q) ||
+      (inc.checkpointName ?? '').toLowerCase().includes(q)
+    const matchSeverity = severityFilter === 'all' || inc.severity === severityFilter
+    const matchStatus = statusFilter === 'all' || inc.status === statusFilter
+    const matchType = typeFilter === 'all' || typeFilter === 'incidents'
+    return matchSearch && matchSeverity && matchStatus && matchType
+  })
+  const filteredMissed = missedPatrols.filter((mp) => {
+    const matchSearch =
+      !q ||
+      (mp.checkpointName ?? '').toLowerCase().includes(q) ||
+      (mp.siteName ?? '').toLowerCase().includes(q)
+    const matchType = typeFilter === 'all' || typeFilter === 'missed'
+    // Severity is incident-only; missed patrols only show when severity isn't narrowed.
+    const matchSeverity = severityFilter === 'all'
+    const matchStatus = statusFilter === 'all' || statusFilter === 'open'
+    return matchSearch && matchType && matchSeverity && matchStatus
+  })
+
   return (
     <div className="space-y-5">
       <div>
@@ -94,6 +122,48 @@ export default function Alerts() {
         </div>
       </div>
 
+      <div className="flex flex-col sm:flex-row flex-wrap gap-2">
+        <div className="relative flex-1 min-w-[180px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search title, officer or checkpoint..."
+            className="w-full rounded-lg border border-border bg-background pl-9 pr-3 py-2 text-sm"
+          />
+        </div>
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value as typeof typeFilter)}
+          className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
+        >
+          <option value="all">All types</option>
+          <option value="incidents">Incidents</option>
+          <option value="missed">Missed patrols</option>
+        </select>
+        <select
+          value={severityFilter}
+          onChange={(e) => setSeverityFilter(e.target.value as typeof severityFilter)}
+          className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
+        >
+          <option value="all">All severity</option>
+          <option value="critical">Critical</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+          className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
+        >
+          <option value="all">All status</option>
+          <option value="open">Open</option>
+          <option value="investigating">Investigating</option>
+          <option value="resolved">Resolved</option>
+        </select>
+      </div>
+
       {error && (
         <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
           {error}
@@ -104,9 +174,9 @@ export default function Alerts() {
         <div className="rounded-xl border border-border bg-card p-8 text-center text-muted-foreground">
           Loading alerts...
         </div>
-      ) : (missedPatrols.length > 0 || incidents.length > 0) ? (
+      ) : (filteredMissed.length > 0 || filteredIncidents.length > 0) ? (
         <div className="space-y-3">
-          {missedPatrols.map((mp, i) => {
+          {filteredMissed.map((mp, i) => {
             const Icon = ShieldAlert
             const type = mp.type || (mp.lastScanAt || mp.lastScan ? 'overdue' : 'never_scanned')
             const color = severityColor[type]
@@ -140,7 +210,7 @@ export default function Alerts() {
               </div>
             )
           })}
-          {incidents.map((inc) => {
+          {filteredIncidents.map((inc) => {
             const Icon = severityIcon[inc.severity] || Info
             const color = severityColor[inc.severity]
             return (
@@ -191,7 +261,9 @@ export default function Alerts() {
         </div>
       ) : (
         <div className="rounded-xl border border-border bg-card p-8 text-center text-muted-foreground">
-          No alerts at this time
+          {incidents.length > 0 || missedPatrols.length > 0
+            ? 'No alerts match your filters.'
+            : 'No alerts at this time'}
         </div>
       )}
     </div>

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { api } from '../services/api'
-import { Download, Filter, FileSpreadsheet, FileText, Users, Building2, MapPin } from 'lucide-react'
+import { Download, Filter, FileSpreadsheet, FileText, Users, MapPin } from 'lucide-react'
 
 const ACTIVITY_TYPES = [
   { value: '', label: 'All Activities' },
@@ -24,12 +24,10 @@ export default function ActivitySummary() {
   const [loading, setLoading] = useState(true)
   const [activityType, setActivityType] = useState('')
   const [officerId, setOfficerId] = useState('')
-  const [clientId, setClientId] = useState('')
   const [siteId, setSiteId] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [officers, setOfficers] = useState<any[]>([])
-  const [clients, setClients] = useState<any[]>([])
   const [sites, setSites] = useState<any[]>([])
 
   const fetchData = useCallback(async () => {
@@ -38,7 +36,6 @@ export default function ActivitySummary() {
       const params: Record<string, string> = {}
       if (activityType) params.activityType = activityType
       if (officerId) params.officerId = officerId
-      if (clientId) params.clientId = clientId
       if (siteId) params.siteId = siteId
       if (startDate) params.startDate = startDate
       if (endDate) params.endDate = endDate
@@ -49,7 +46,7 @@ export default function ActivitySummary() {
     } finally {
       setLoading(false)
     }
-  }, [activityType, officerId, clientId, siteId, startDate, endDate])
+  }, [activityType, officerId, siteId, startDate, endDate])
 
   useEffect(() => {
     fetchData()
@@ -57,7 +54,6 @@ export default function ActivitySummary() {
 
   useEffect(() => {
     api.users.list().then(setOfficers).catch(() => {})
-    api.clients.list().then(setClients).catch(() => {})
     api.sites.list().then(setSites).catch(() => {})
   }, [])
 
@@ -65,7 +61,6 @@ export default function ActivitySummary() {
     const params: Record<string, string> = { format }
     if (activityType) params.activityType = activityType
     if (officerId) params.officerId = officerId
-    if (clientId) params.clientId = clientId
     if (siteId) params.siteId = siteId
     if (startDate) params.startDate = startDate
     if (endDate) params.endDate = endDate
@@ -161,21 +156,6 @@ export default function ActivitySummary() {
             {officers.map((o: any) => (
               <option key={o.id || o._id} value={o.id || o._id}>
                 {o.name || o.email}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex items-center gap-1">
-          <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-          <select
-            value={clientId}
-            onChange={(e) => setClientId(e.target.value)}
-            className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
-          >
-            <option value="">All Clients</option>
-            {clients.map((c: any) => (
-              <option key={c.id || c._id} value={c.id || c._id}>
-                {c.name || c.companyName || c.email}
               </option>
             ))}
           </select>

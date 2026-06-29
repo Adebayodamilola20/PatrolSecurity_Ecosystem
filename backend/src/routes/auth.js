@@ -70,6 +70,12 @@ router.post('/login', async (req, res) => {
   if (clientType === 'mobile' && normalizedRole !== 'guard') {
     return res.status(403).json({ message: 'Mobile access is restricted to guard accounts' })
   }
+  // The staff web dashboard is for staff only. Client accounts (main_account)
+  // are being moved to a separate client portal, so they can no longer sign in
+  // here. Any non-mobile login attempt by a client is rejected.
+  if (clientType !== 'mobile' && normalizedRole === 'main_account') {
+    return res.status(403).json({ message: 'Client accounts no longer have access to the staff dashboard. A separate client portal is coming soon.' })
+  }
 
   const safeUser = await buildSafeUser(user)
   const token = generateToken({ ...user, siteIds: safeUser.siteIds })

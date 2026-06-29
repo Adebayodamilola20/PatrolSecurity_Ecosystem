@@ -315,6 +315,11 @@ http.route({
     if (clientType === "mobile" && user.role !== "guard") {
       return forbidden("Mobile access is restricted to guard accounts");
     }
+    // The staff web dashboard is for staff only. Client accounts (main_account)
+    // are moving to a separate client portal, so they can no longer sign in here.
+    if (clientType !== "mobile" && user.role === "main_account") {
+      return forbidden("Client accounts no longer have access to the staff dashboard. A separate client portal is coming soon.");
+    }
 
     const safeUser = await ctx.runQuery(internal.users.getSafeProfile, { userId: user._id });
     const token = await signPatrolToken({
@@ -571,10 +576,17 @@ http.route({
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
     const url = new URL(request.url);
-    const checkpointId = await maybeResolveCheckpointId(
-      ctx,
-      url.searchParams.get("checkpoint") ?? url.searchParams.get("checkpointId"),
-    );
+    const rawCheckpoint =
+      url.searchParams.get("checkpoint") ?? url.searchParams.get("checkpointId");
+    const checkpointFilterRequested =
+      typeof rawCheckpoint === "string" && rawCheckpoint.trim().length > 0;
+    const checkpointId = await maybeResolveCheckpointId(ctx, rawCheckpoint);
+    // A checkpoint filter was requested but could not be resolved to a real
+    // checkpoint. Return no scans instead of falling back to every scan in the
+    // system (which made unrelated guards appear at a brand-new checkpoint).
+    if (checkpointFilterRequested && !checkpointId) {
+      return json([]);
+    }
     return json(
       await ctx.runQuery(internal.scans.listForApi, {
         officerId: user.role === "guard" ? _uid(user.convexId) : undefined,

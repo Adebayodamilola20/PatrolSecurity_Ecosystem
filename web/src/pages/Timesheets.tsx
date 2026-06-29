@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { User, MapPin, Camera, CheckCircle, XCircle, Clock } from 'lucide-react'
 import { api } from '../services/api'
 import { Skeleton } from '../components/ui/Skeleton'
@@ -8,6 +8,33 @@ import { formatDuration } from '../utils/format'
 import { subscribeToScans, subscribeToShiftUpdates } from '../services/websocket'
 
 const API_BASE = ''
+
+type DateFilter = 'all' | 'today' | 'yesterday' | 'custom'
+
+// Build an ISO start/end range (local-day boundaries) for the chosen date
+// filter. The backend /timesheets route already filters on these via the
+// `start` and `end` query params.
+function computeRange(dateFilter: DateFilter, customDate: string): { start?: string; end?: string } {
+  const dayRange = (d: Date) => ({
+    start: new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).toISOString(),
+    end: new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).toISOString(),
+  })
+  if (dateFilter === 'today') return dayRange(new Date())
+  if (dateFilter === 'yesterday') {
+    const y = new Date()
+    y.setDate(y.getDate() - 1)
+    return dayRange(y)
+  }
+  if (dateFilter === 'custom' && customDate) {
+    const [yy, mm, dd] = customDate.split('-').map(Number)
+    if (yy && mm && dd) return dayRange(new Date(yy, mm - 1, dd))
+  }
+  return {}
+}
+
+function mapsLink(lat?: number | null, lng?: number | null): string | null {
+  return lat != null && lng != null ? `https://www.google.com/maps?q=${lat},${lng}` : null
+}
 
 function normalizeTimesheet(row: any, index = 0) {
   const scans = Array.isArray(row?.scans) ? row.scans : []
@@ -41,6 +68,8 @@ export default function Timesheets() {
   const [summary, setSummary] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [officerFilter, setOfficerFilter] = useState('')
+  const [dateFilter, setDateFilter] = useState<DateFilter>('all')
+  const [customDate, setCustomDate] = useState('')
   const [error, setError] = useState('')
 
   const fallbackTimesheetsFromShifts = async () => {
@@ -69,14 +98,21 @@ export default function Timesheets() {
     }))
   }
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     setError('')
     let nextError = ''
 
+    const range = computeRange(dateFilter, customDate)
+    // The live backend (Convex) reads startDate/endDate; the legacy Express
+    // backend reads start/end. Send both so the filter works either way.
+    const listParams: Record<string, string> = {}
+    if (range.start) { listParams.startDate = range.start; listParams.start = range.start }
+    if (range.end) { listParams.endDate = range.end; listParams.end = range.end }
+
     try {
       const [timesheetResult, summaryResult] = await Promise.allSettled([
-        api.timesheets.list(),
+        api.timesheets.list(listParams),
         api.timesheets.summary(),
       ])
 
@@ -115,7 +151,7 @@ export default function Timesheets() {
       setError(nextError)
       setLoading(false)
     }
-  }
+  }, [dateFilter, customDate])
 
   useEffect(() => {
     void load()
@@ -137,7 +173,7 @@ export default function Timesheets() {
       unsubScans()
       window.removeEventListener('app:retry', handleRetry)
     }
-  }, [])
+  }, [load])
 
   const filtered = officerFilter
     ? timesheets.filter(t => (t.userName || '').toLowerCase().includes(officerFilter.toLowerCase()))
@@ -200,13 +236,37 @@ export default function Timesheets() {
         </div>
       )}
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <input
           value={officerFilter}
           onChange={e => setOfficerFilter(e.target.value)}
           placeholder="Filter by officer name..."
           className="rounded-lg border border-border bg-background px-3 py-2 text-sm flex-1 max-w-xs"
         />
+        <div className="flex flex-wrap items-center gap-1.5">
+          {([['all', 'All'], ['today', 'Today'], ['yesterday', 'Yesterday']] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => { setDateFilter(key); setCustomDate('') }}
+              className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+                dateFilter === key
+                  ? 'border-primary bg-primary/10 text-primary font-medium'
+                  : 'border-border bg-background text-muted-foreground hover:bg-accent'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+          <input
+            type="date"
+            value={customDate}
+            onChange={e => { setCustomDate(e.target.value); setDateFilter(e.target.value ? 'custom' : 'all') }}
+            className={`rounded-lg border bg-background px-3 py-1.5 text-sm ${
+              dateFilter === 'custom' ? 'border-primary text-primary' : 'border-border text-muted-foreground'
+            }`}
+          />
+        </div>
       </div>
 
       <div className="space-y-3">
@@ -245,10 +305,6 @@ export default function Timesheets() {
         ) : (
           filtered.map((t) => {
             const scans = Array.isArray(t.scans) ? t.scans : []
-            const scanCount = typeof t.scanCount === 'number' ? t.scanCount : scans.length
-            const verifiedScans = typeof t.verifiedScans === 'number'
-              ? t.verifiedScans
-              : scans.filter((scan: any) => scan?.gpsValid).length
             const photoUrl = t.clockInPhoto ? `${API_BASE}${t.clockInPhoto}` : null
             const displayDuration = t.duration && t.duration !== '—'
               ? t.duration
@@ -275,29 +331,58 @@ export default function Timesheets() {
                       <div>
                         <div className="text-muted-foreground">Clock In</div>
                         <div className="text-sm font-medium">{t.clockIn ? new Date(t.clockIn).toLocaleString() : '-'}</div>
-                        {t.clockInLatitude && (
-                          <div className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
-                            <MapPin className="h-3 w-3" /> {t.clockInLatitude.toFixed(4)}, {t.clockInLongitude?.toFixed(4)}
-                          </div>
+                        {mapsLink(t.clockInLatitude, t.clockInLongitude) ? (
+                          <a
+                            href={mapsLink(t.clockInLatitude, t.clockInLongitude)!}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[10px] text-info hover:underline flex items-center gap-1 mt-0.5"
+                          >
+                            <MapPin className="h-3 w-3" /> {t.clockInLatitude.toFixed(5)}, {t.clockInLongitude.toFixed(5)}
+                          </a>
+                        ) : (
+                          <div className="text-[10px] text-muted-foreground/60 mt-0.5">No location captured</div>
                         )}
                       </div>
                       <div>
                         <div className="text-muted-foreground">Clock Out</div>
                         <div className="text-sm font-medium">{t.clockOut ? new Date(t.clockOut).toLocaleString() : 'In Progress'}</div>
+                        {mapsLink(t.clockOutLatitude, t.clockOutLongitude) ? (
+                          <a
+                            href={mapsLink(t.clockOutLatitude, t.clockOutLongitude)!}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[10px] text-info hover:underline flex items-center gap-1 mt-0.5"
+                          >
+                            <MapPin className="h-3 w-3" /> {t.clockOutLatitude.toFixed(5)}, {t.clockOutLongitude.toFixed(5)}
+                          </a>
+                        ) : (
+                          <div className="text-[10px] text-muted-foreground/60 mt-0.5">{t.clockOut ? 'No location captured' : '—'}</div>
+                        )}
                       </div>
                       <div>
                         <div className="text-muted-foreground">Duration</div>
                         <div className="text-sm font-medium">{displayDuration}</div>
                       </div>
                       <div>
-                        <div className="text-muted-foreground">Scans</div>
-                        <div className="text-sm font-medium flex items-center gap-2">
-                          <span>{scanCount} total</span>
-                          <span className="text-success">{verifiedScans} verified</span>
-                          <span className={scanCount - verifiedScans > 0 ? 'text-destructive' : 'text-muted-foreground'}>
-                            {scanCount - verifiedScans} flagged
-                          </span>
-                        </div>
+                        <div className="text-muted-foreground">Scanned Location{scans.length === 1 ? '' : 's'}</div>
+                        {scans.length === 0 ? (
+                          <div className="text-sm font-medium text-muted-foreground/70">No scans recorded</div>
+                        ) : (
+                          <div className="mt-0.5 space-y-1">
+                            {scans.map((scan: any) => (
+                              <div key={scan.id} className="flex items-center gap-1.5">
+                                {scan.gpsValid
+                                  ? <CheckCircle className="h-3.5 w-3.5 text-success shrink-0" />
+                                  : <XCircle className="h-3.5 w-3.5 text-destructive shrink-0" />}
+                                <span className="text-sm font-medium truncate">{scan.checkpointName || scan.checkpointCode || 'Checkpoint'}</span>
+                                <span className={`text-[10px] font-semibold ${scan.gpsValid ? 'text-success' : 'text-destructive'}`}>
+                                  {scan.gpsValid ? 'Verified' : 'Unverified'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

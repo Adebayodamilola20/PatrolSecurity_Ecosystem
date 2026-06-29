@@ -29,6 +29,13 @@ interface AuthStore {
   updateProfile: (data: Partial<AuthUser>) => void
 }
 
+// Client accounts (main_account) have been moved off the staff web dashboard.
+// This guards against a client whose token is still valid (issued before the
+// change) from lingering in the staff app on reload.
+function isClientRole(role?: string | null): boolean {
+  return (role ?? '').trim().toLowerCase().replace(/[-_\s]+/g, '_') === 'main_account'
+}
+
 function loadFromStorage(): { token: string | null; user: AuthUser | null } {
   const token = localStorage.getItem('patrol_token')
   const raw = localStorage.getItem('patrol_user')
@@ -63,6 +70,13 @@ export const useAuthStore = create<AuthStore>((set) => ({
     set({ loading: true })
     try {
       const res = await api.auth.me()
+      if (isClientRole(res.user?.role)) {
+        disconnectSocket()
+        localStorage.removeItem('patrol_token')
+        localStorage.removeItem('patrol_user')
+        set({ user: null, token: null, isAuthenticated: false, loading: false })
+        return
+      }
       localStorage.setItem('patrol_user', JSON.stringify(res.user))
       connectSocket(token)
       set({ user: res.user, token, isAuthenticated: true, loading: false })
@@ -77,6 +91,9 @@ export const useAuthStore = create<AuthStore>((set) => ({
   login: async (email: string, password: string) => {
     const res = await api.auth.login(email, password)
     const { token, user } = res
+    if (isClientRole(user?.role)) {
+      throw new Error('Client accounts no longer have access to the staff dashboard.')
+    }
     set({ user, token, isAuthenticated: true, loading: false })
     localStorage.setItem('patrol_token', token)
     localStorage.setItem('patrol_user', JSON.stringify(user))

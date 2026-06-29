@@ -249,7 +249,10 @@ router.post('/', async (req, res) => {
               Math.sin(dLon / 2) ** 2
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
     distanceMeters = Math.round(R * c)
-    const effectiveRadius = Math.min(checkpoint.radiusMeters, 10)
+    // Use the exact geofence radius configured for this checkpoint. (Previously
+    // this was capped at Math.min(radius, 10), which ignored any larger radius
+    // an admin set and silently forced a 10m fence.)
+    const effectiveRadius = checkpoint.radiusMeters
     gpsValid = distanceMeters <= effectiveRadius
     if (!gpsValid) {
       await createIncident(

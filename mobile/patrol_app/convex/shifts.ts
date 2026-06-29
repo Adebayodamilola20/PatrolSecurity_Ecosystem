@@ -153,16 +153,32 @@ export const listAll = internalQuery({
       );
     }
     const users = await ctx.db.query("users").collect();
-    return shifts.map((s) => ({
-      id: s.legacyId ?? s._id,
-      userId: s.userId,
-      userName: users.find((u) => u._id === s.userId)?.name ?? "",
-      clockIn: new Date(s.clockIn).toISOString(),
-      clockOut: s.clockOut ? new Date(s.clockOut).toISOString() : null,
-      status: s.status,
-      siteLabel: s.siteLabel,
-      createdAt: new Date(s.createdAt).toISOString(),
-    }));
+    return shifts.map((s) => {
+      const u = users.find((u) => u._id === s.userId);
+      return {
+        id: s.legacyId ?? s._id,
+        userId: s.userId,
+        userName: u?.name ?? "",
+        userEmail: u?.email ?? "",
+        userPhone: u?.phone ?? "",
+        clockIn: new Date(s.clockIn).toISOString(),
+        clockOut: s.clockOut ? new Date(s.clockOut).toISOString() : null,
+        status: s.status,
+        siteLabel: s.siteLabel,
+        clockInPhoto: s.clockInPhoto ?? "",
+        // Real GPS data captured at clock-in / clock-out so the web can show
+        // the exact location (and whether it was inside the geofence).
+        clockInLatitude: s.clockInLatitude ?? null,
+        clockInLongitude: s.clockInLongitude ?? null,
+        clockInGpsValid: s.clockInGpsValid ?? null,
+        clockInDistanceMeters: s.clockInDistanceMeters ?? null,
+        clockOutLatitude: s.clockOutLatitude ?? null,
+        clockOutLongitude: s.clockOutLongitude ?? null,
+        clockOutGpsValid: s.clockOutGpsValid ?? null,
+        clockOutDistanceMeters: s.clockOutDistanceMeters ?? null,
+        createdAt: new Date(s.createdAt).toISOString(),
+      };
+    });
   },
 });
 
