@@ -1,20 +1,63 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Download, QrCode, Search } from 'lucide-react'
+import { Download, QrCode, Search, User2 } from 'lucide-react'
 import { useScanStore, useScanWebSocket } from '../stores/useScanStore'
 import { TableSkeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
+
+type DateFilter = 'all' | 'today' | 'yesterday' | 'custom'
+
+function dayBounds(d: Date) {
+  return {
+    start: new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime(),
+    end: new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime(),
+  }
+}
+
+function inDateRange(iso: string, filter: DateFilter, customDate: string): boolean {
+  if (filter === 'all') return true
+  const t = Date.parse(iso)
+  if (Number.isNaN(t)) return false
+  if (filter === 'today') {
+    const { start, end } = dayBounds(new Date())
+    return t >= start && t <= end
+  }
+  if (filter === 'yesterday') {
+    const d = new Date()
+    d.setDate(d.getDate() - 1)
+    const { start, end } = dayBounds(d)
+    return t >= start && t <= end
+  }
+  // custom
+  if (!customDate) return true
+  const [yy, mm, dd] = customDate.split('-').map(Number)
+  if (!yy || !mm || !dd) return true
+  const { start, end } = dayBounds(new Date(yy, mm - 1, dd))
+  return t >= start && t <= end
+}
 
 export default function Scans() {
   const { scans, loading, fetchScans } = useScanStore()
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'all' | 'verified' | 'flagged'>('all')
+  const [guard, setGuard] = useState('all')
+  const [dateFilter, setDateFilter] = useState<DateFilter>('all')
+  const [customDate, setCustomDate] = useState('')
   useScanWebSocket()
 
   useEffect(() => {
     fetchScans()
   }, [])
+
+  // Build the guard list from the scans actually in the history.
+  const guards = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const s of scans) {
+      if (s.officerId && !map.has(s.officerId)) map.set(s.officerId, s.officerName || s.officerId)
+    }
+    return Array.from(map, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
+  }, [scans])
 
   const filteredScans = useMemo(() => {
     return scans.filter((s) => {
@@ -27,9 +70,11 @@ export default function Scans() {
       const matchesStatus =
         status === 'all' ||
         (status === 'verified' ? s.gpsValid : !s.gpsValid)
-      return matchesQuery && matchesStatus
+      const matchesGuard = guard === 'all' || s.officerId === guard
+      const matchesDate = inDateRange(s.scannedAt, dateFilter, customDate)
+      return matchesQuery && matchesStatus && matchesGuard && matchesDate
     })
-  }, [scans, query, status])
+  }, [scans, query, status, guard, dateFilter, customDate])
 
   return (
     <div className="space-y-5">
@@ -48,30 +93,70 @@ export default function Scans() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 md:flex-row md:items-center">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by officer, checkpoint, code, or scan ID"
-            className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-3 text-sm"
-          />
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by officer, checkpoint, code, or scan ID"
+              className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-3 text-sm"
+            />
+          </div>
+          <div className="relative">
+            <User2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            <select
+              value={guard}
+              onChange={(e) => setGuard(e.target.value)}
+              className="rounded-lg border border-border bg-card py-2 pl-9 pr-3 text-sm min-w-[170px]"
+            >
+              <option value="all">All guards</option>
+              {guards.map((g) => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-2">
+            {(['all', 'verified', 'flagged'] as const).map((item) => (
+              <button
+                key={item}
+                onClick={() => setStatus(item)}
+                className={`rounded-lg px-3 py-2 text-sm font-medium ${
+                  status === item
+                    ? 'bg-primary text-primary-foreground'
+                    : 'border border-border bg-card text-muted-foreground hover:bg-accent'
+                }`}
+              >
+                {item === 'all' ? 'All' : item[0].toUpperCase() + item.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex gap-2">
-          {(['all', 'verified', 'flagged'] as const).map((item) => (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-muted-foreground mr-1">Date:</span>
+          {([['all', 'All'], ['today', 'Today'], ['yesterday', 'Yesterday']] as const).map(([key, label]) => (
             <button
-              key={item}
-              onClick={() => setStatus(item)}
-              className={`rounded-lg px-3 py-2 text-sm font-medium ${
-                status === item
-                  ? 'bg-primary text-primary-foreground'
-                  : 'border border-border bg-card text-muted-foreground hover:bg-accent'
+              key={key}
+              type="button"
+              onClick={() => { setDateFilter(key); setCustomDate('') }}
+              className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+                dateFilter === key
+                  ? 'border-primary bg-primary/10 text-primary font-medium'
+                  : 'border-border bg-card text-muted-foreground hover:bg-accent'
               }`}
             >
-              {item === 'all' ? 'All' : item[0].toUpperCase() + item.slice(1)}
+              {label}
             </button>
           ))}
+          <input
+            type="date"
+            value={customDate}
+            onChange={(e) => { setCustomDate(e.target.value); setDateFilter(e.target.value ? 'custom' : 'all') }}
+            className={`rounded-lg border bg-card px-3 py-1.5 text-sm ${
+              dateFilter === 'custom' ? 'border-primary text-primary' : 'border-border text-muted-foreground'
+            }`}
+          />
         </div>
       </div>
 
