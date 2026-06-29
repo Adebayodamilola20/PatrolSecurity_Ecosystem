@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'utils/theme.dart';
 import 'utils/routes.dart';
 import 'utils/constants.dart';
@@ -29,8 +30,17 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Lock to portrait. The screens are designed for portrait, so rotating a
+  // phone/tablet to landscape previously triggered RenderFlex "overflow"
+  // stripes. Restricting orientation prevents the landscape layout (and the
+  // overflow) from ever rendering.
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
 
   if (!baseUrl.startsWith('https://')) {
     throw Exception(
