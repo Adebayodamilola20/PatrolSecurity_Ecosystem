@@ -11,10 +11,12 @@
       ],
       "edits": true
     },
-    "gemini": {
+    "antigravity": {
       "role": "Architecture review / research",
       "cmd": [
-        "gemini",
+        "agy",
+        "--add-dir",
+        "{project}",
         "-p",
         "{prompt}"
       ],

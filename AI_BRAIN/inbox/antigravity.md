@@ -1,19 +1,12 @@
-# 📥 Inbox — Opencode
 
-Tasks and messages **for Opencode**. Read this on startup. Newest on top.
+<!-- TASK:20260630-114555:done -->
+## [2026-06-30 11:45] Smoke test: reply in one short sentence that you are online as the arc…
+**Role:** Architecture review / research
 
-> Format: `## [YYYY-MM-DD] from <agent>` then the ask + links to [[Current_Task]].
-
----
-
-<!-- TASK:20260630-043607:done -->
-## [2026-06-30 04:36] Build client web portal (web-client/): tenant-scoped read-only site fo…
-**Role:** Refactor / second opinion
-
-You are **Opencode** on a multi-AI team led by Claude Code. Role: Refactor / second opinion.
+You are **Antigravity** on a multi-AI team led by Claude Code. Role: Architecture review / research.
 
 MAIN TASK FROM THE USER:
-Build client web portal (web-client/): tenant-scoped read-only site for clients (role=main_account) to view ONLY their own guards, scans, checkpoints, reports. Codex: design backend /api/v1/client/* endpoints + a single shared tenant-filter helper (clientId from session, never trusted from request) and tests for cross-tenant isolation. OpenCode: review the web-client scaffold for security/leak risks and stack consistency with web/.
+Smoke test: reply in one short sentence that you are online as the architecture/research seat.
 
 YOUR JOB:
 - Focus only on your role above.
@@ -24,16 +17,16 @@ YOUR JOB:
   FILES TO CHANGE: <paths or "none">
   NEXT STEPS: <bullets>
 
-<!-- /TASK:20260630-043607 -->
+<!-- /TASK:20260630-114555 -->
 
-<!-- TASK:20260630-112026:done -->
-## [2026-06-30 11:20] Friendly check-in from Claude (lead): How are you doing today? Reply i…
-**Role:** Refactor / second opinion
+<!-- TASK:20260630-115020:done -->
+## [2026-06-30 11:50] Scope check: name the AI_BRAIN dashboard file path you see and confirm…
+**Role:** Architecture review / research
 
-You are **Opencode** on a multi-AI team led by Claude Code. Role: Refactor / second opinion.
+You are **Antigravity** on a multi-AI team led by Claude Code. Role: Architecture review / research.
 
 MAIN TASK FROM THE USER:
-Friendly check-in from Claude (lead): How are you doing today? Reply in your own terminal with a short hello and your current status/availability.
+Scope check: name the AI_BRAIN dashboard file path you see and confirm one sentence.
 
 YOUR JOB:
 - Focus only on your role above.
@@ -44,13 +37,13 @@ YOUR JOB:
   FILES TO CHANGE: <paths or "none">
   NEXT STEPS: <bullets>
 
-<!-- /TASK:20260630-112026 -->
+<!-- /TASK:20260630-115020 -->
 
 <!-- TASK:20260630-115222:done -->
 ## [2026-06-30 11:52] Quick team check-in: reply in your own CLI with one short line about h…
-**Role:** Refactor / second opinion
+**Role:** Architecture review / research
 
-You are **Opencode** on a multi-AI team led by Claude Code. Role: Refactor / second opinion.
+You are **Antigravity** on a multi-AI team led by Claude Code. Role: Architecture review / research.
 
 MAIN TASK FROM THE USER:
 Quick team check-in: reply in your own CLI with one short line about how you're doing today — no code, just a friendly status.
@@ -68,9 +61,9 @@ YOUR JOB:
 
 <!-- TASK:20260630-115508:done -->
 ## [2026-06-30 11:55] Team check-in: in one short paragraph, tell the team how you're doing …
-**Role:** Refactor / second opinion
+**Role:** Architecture review / research
 
-You are **Opencode** on a multi-AI team led by Claude Code. Role: Refactor / second opinion.
+You are **Antigravity** on a multi-AI team led by Claude Code. Role: Architecture review / research.
 
 MAIN TASK FROM THE USER:
 Team check-in: in one short paragraph, tell the team how you're doing today and your current status/availability.
@@ -88,9 +81,9 @@ YOUR JOB:
 
 <!-- TASK:20260630-120228:done -->
 ## [2026-06-30 12:02] Team check-in: reply in one short line in your own CLI to confirm you'…
-**Role:** Refactor / second opinion
+**Role:** Architecture review / research
 
-You are **Opencode** on a multi-AI team led by Claude Code. Role: Refactor / second opinion.
+You are **Antigravity** on a multi-AI team led by Claude Code. Role: Architecture review / research.
 
 MAIN TASK FROM THE USER:
 Team check-in: reply in one short line in your own CLI to confirm you're alive and listening
