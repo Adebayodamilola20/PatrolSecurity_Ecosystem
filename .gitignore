@@ -17,3 +17,7 @@ android/*/upload.jks
 android/key.properties
 key.properties
 *.jks
+
+# Firebase / Google services secrets — never commit (contains API keys)
+**/google-services.json
+**/GoogleService-Info.plist

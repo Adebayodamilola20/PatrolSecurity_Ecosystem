@@ -1,0 +1,107 @@
+{
+  "collapse-filter": false,
+  "search": "",
+  "showTags": true,
+  "showAttachments": false,
+  "hideUnresolved": false,
+  "showOrphans": true,
+  "collapse-color-groups": false,
+  "colorGroups": [
+    {
+      "query": "path:00_Dashboard  ",
+      "color": {
+        "a": 1,
+        "rgb": 8147680
+      }
+    },
+    {
+      "query": "path:01_Project_Context  ",
+      "color": {
+        "a": 1,
+        "rgb": 14701145
+      }
+    },
+    {
+      "query": "path:02_Decisions  ",
+      "color": {
+        "a": 1,
+        "rgb": 1634865
+      }
+    },
+    {
+      "query": "path:04_Agents  ",
+      "color": {
+        "a": 1,
+        "rgb": 1841372
+      }
+    },
+    {
+      "query": "path:03_Bugs  ",
+      "color": {
+        "a": 1,
+        "rgb": 5431473
+      }
+    },
+    {
+      "query": "path:05_Logs  ",
+      "color": {
+        "a": 1,
+        "rgb": 1028095
+      }
+    },
+    {
+      "query": "path:06_Handoffs  ",
+      "color": {
+        "a": 1,
+        "rgb": 1048495
+      }
+    },
+    {
+      "query": "path:07_Tasks  ",
+      "color": {
+        "a": 1,
+        "rgb": 396546
+      }
+    },
+    {
+      "query": "path:08_Prompts  ",
+      "color": {
+        "a": 1,
+        "rgb": 65390
+      }
+    },
+    {
+      "query": "path:inbox  ",
+      "color": {
+        "a": 1,
+        "rgb": 16711680
+      }
+    },
+    {
+      "query": "path:outbox  ",
+      "color": {
+        "a": 1,
+        "rgb": 14725458
+      }
+    },
+    {
+      "query": "path:09_Neurons  ",
+      "color": {
+        "a": 1,
+        "rgb": 10399487
+      }
+    }
+  ],
+  "collapse-display": true,
+  "showArrow": false,
+  "textFadeMultiplier": -1.7,
+  "nodeSizeMultiplier": 0.806076388888889,
+  "lineSizeMultiplier": 1.53767361111111,
+  "collapse-forces": false,
+  "centerStrength": 0.539583333333333,
+  "repelStrength": 16.4270833333333,
+  "linkStrength": 1,
+  "linkDistance": 500,
+  "scale": 0.9547980988007344,
+  "close": true
+}

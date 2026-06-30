@@ -1,0 +1,51 @@
+{
+  "poll_seconds": 3,
+  "timeout_seconds": 900,
+  "agents": {
+    "claude": {
+      "role": "Lead engineer / implementation",
+      "cmd": [
+        "claude",
+        "-p",
+        "{prompt}"
+      ],
+      "edits": true
+    },
+    "gemini": {
+      "role": "Architecture review / research",
+      "cmd": [
+        "gemini",
+        "-p",
+        "{prompt}"
+      ],
+      "edits": false
+    },
+    "codex": {
+      "role": "Tests / bug finding",
+      "cmd": [
+        "codex",
+        "exec",
+        "{prompt}"
+      ],
+      "edits": false
+    },
+    "opencode": {
+      "role": "Refactor / second opinion",
+      "cmd": [
+        "opencode",
+        "run",
+        "{prompt}"
+      ],
+      "edits": false
+    },
+    "kilo": {
+      "role": "Git / GitHub push",
+      "cmd": [
+        "kilo",
+        "run",
+        "{prompt}"
+      ],
+      "edits": false
+    }
+  }
+}

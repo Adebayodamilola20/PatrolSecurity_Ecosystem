@@ -315,10 +315,14 @@ http.route({
     if (clientType === "mobile" && user.role !== "guard") {
       return forbidden("Mobile access is restricted to guard accounts");
     }
+    // The client portal (web-client) is for client (main_account) accounts only.
+    if (clientType === "client" && user.role !== "main_account") {
+      return forbidden("The client portal is for client accounts only.");
+    }
     // The staff web dashboard is for staff only. Client accounts (main_account)
-    // are moving to a separate client portal, so they can no longer sign in here.
-    if (clientType !== "mobile" && user.role === "main_account") {
-      return forbidden("Client accounts no longer have access to the staff dashboard. A separate client portal is coming soon.");
+    // now sign in through the separate client portal, not here.
+    if (clientType !== "mobile" && clientType !== "client" && user.role === "main_account") {
+      return forbidden("Client accounts no longer have access to the staff dashboard. Please use the client portal.");
     }
 
     const safeUser = await ctx.runQuery(internal.users.getSafeProfile, { userId: user._id });
@@ -424,6 +428,25 @@ http.route({
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
     return json(await ctx.runQuery(internal.settings.list, {}));
+  }),
+});
+
+// Active emergency/SOS events raised by guards (a guard in trouble at their
+// location). Used by the web Alerts page so staff can see and respond.
+http.route({
+  path: "/emergency/active",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    if (user.role === "guard") return forbidden("Supervisor access required");
+    const url = new URL(request.url);
+    return json(
+      await ctx.runQuery(internal.emergency.listActive, {
+        clientId: user.role === "admin" ? undefined : (_cid(user.clientId)),
+        limit: Number(url.searchParams.get("limit") ?? 100),
+      }),
+    );
   }),
 });
 
