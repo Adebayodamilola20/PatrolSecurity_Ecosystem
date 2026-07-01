@@ -5,10 +5,7 @@ export function getJwtSecret() {
   const secret = process.env.JWT_SECRET?.trim()
   if (!secret) {
     throw new Error('JWT_SECRET environment variable is required')
-  }
-  if (secret.length < 32) {
-    throw new Error('JWT_SECRET must be at least 32 characters long')
-  }
+ 
   return secret
 }
 
@@ -67,4 +64,4 @@ export function mainAccountOnly(req, res, next) {
     return res.status(403).json({ message: 'Main Account access required' })
   }
   next()
-}
+}}
