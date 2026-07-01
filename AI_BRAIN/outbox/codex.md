@@ -5020,3 +5020,89 @@ NEXT STEPS:
 _files changed: none_
 
 ---
+
+## [2026-06-30 13:48] task 20260630-134736 — Tests / bug finding
+
+OpenAI Codex v0.136.0
+--------
+workdir: /Users/macmini/PatrolSecurity_Ecosystem
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: none
+reasoning summaries: none
+session id: 019f1a49-a59a-71b0-873d-b1fb4165904f
+--------
+user
+You are **Codex** on a multi-AI team led by Claude Code. Role: Tests / bug finding.
+
+MAIN TASK FROM THE USER:
+Quick team check-in: reply in your own CLI with one short line on how you're doing right now
+
+YOUR JOB:
+- Focus only on your role above.
+- First skim AI_BRAIN/00_Dashboard/Current_Task.md for context.
+- DO NOT modify any files. Output review/tests/suggestions as text only.
+- Be concise. End your reply with these three headers exactly:
+  SUMMARY: <2-3 lines>
+  FILES TO CHANGE: <paths or "none">
+  NEXT STEPS: <bullets>
+
+codex
+I’ll read the current task context only, then respond without touching files.
+exec
+/bin/zsh -lc "sed -n '1,160p' AI_BRAIN/00_Dashboard/Current_Task.md" in /Users/macmini/PatrolSecurity_Ecosystem
+ succeeded in 0ms:
+# 🎯 Current Task
+
+> **Every agent reads this file first.** Keep it to one active focus.
+
+## Active Focus
+- **Plan a new Client Web portal** — a separate, client-facing site where each client
+  (the company that hires our guards) logs in and views **only their own** guards,
+  scans, patrol activity, and reports. The existing `web/` app is the internal
+  supervisor/admin dashboard; this is a new, scoped, mostly read-only experience.
+- **Right now we are gathering suggestions**, not building yet. Each AI gives ideas
+  in its own CLI → see [[Client_Web_Suggestions]]. **Gemini is excluded this round.**
+
+## Acceptance Criteria
+- [ ] Codex, OpenCode, Antigravity each add a suggestion block to [[Client_Web_Suggestions]]
+- [ ] Claude has logged its own suggestions there
+- [ ] Kilo Code has pushed current pending changes to GitHub (see [[Push_To_Kilo]])
+- [ ] We pick an approach and write it into [[Decision_Log]] before any code
+
+## Context / Constraints
+- Live backend = Convex; deploy with `npx convex deploy` (see [[Architecture]]).
+- Don't touch `/backend/` (legacy).
+- Reuse the existing `web/` stack: React 19 + Vite + Tailwind v4 + Zustand + react-router 7.
+- **Multi-tenant isolation is the hard requirement**: a client must never see another
+  client's guards or data.
+
+## Owner
+- Lead agent: [[Claude_Code]]
+
+## Related
+- [[Roadmap]] · [[Todo]] · [[Decision_Log]] · [[Bug_Tracker]]
+
+_Last updated: 2026-06-30_
+
+codex
+Codex checking in: ready and idle on tests/bug finding, with tenant isolation as the main risk to validate.
+
+SUMMARY: Context skimmed. No files modified.
+FILES TO CHANGE: none
+NEXT STEPS:
+- Await Claude’s next testing or review assignment.
+tokens used
+4,292
+Codex checking in: ready and idle on tests/bug finding, with tenant isolation as the main risk to validate.
+
+SUMMARY: Context skimmed. No files modified.
+FILES TO CHANGE: none
+NEXT STEPS:
+- Await Claude’s next testing or review assignment.
+
+_files changed: none_
+
+---
