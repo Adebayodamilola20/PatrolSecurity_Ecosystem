@@ -13,6 +13,8 @@ const _uid = (s: string): Id<"users"> => s as Id<"users">;
 const _cid = (s: string | null | undefined): Id<"clients"> | undefined => (s ?? undefined) as Id<"clients"> | undefined;
 const _sid = (s: string | null | undefined): Id<"sites"> | undefined => (s ?? undefined) as Id<"sites"> | undefined;
 const _cpid = (s: string | null | undefined): Id<"checkpoints"> | undefined => (s ?? undefined) as Id<"checkpoints"> | undefined;
+const _sid = (s: string): Id<"sites"> => s as Id<"sites">;
+const internalAny = internal as any;
 
 const ACTIVITY_TYPES = [
   "clock_in",
@@ -203,6 +205,300 @@ function csvList(value: string | null) {
     .filter(Boolean);
 }
 
+function inferAiIntent(question: string) {
+  const q = question.toLowerCase();
+  if (/\b(how many|number of|count|total)\b.*\b(location|locations|checkpoint|checkpoints|site|sites)\b|\b(location|locations|checkpoint|checkpoints|site|sites)\b.*\b(how many|number|count|total)\b/.test(q)) return "location_count";
+  if (/\b(phone|email|contact|details|profile)\b/.test(q)) return "guard_details";
+  if (/\b(last|latest|recent)\b.*\b(scan|patrol|checkpoint)\b|\b(scan|patrol|checkpoint)\b.*\b(today)\b/.test(q)) return "last_scan";
+  if (/\b(pass.?on|handover|handoff)\b/.test(q)) return "pass_on_logs";
+  if (/\b(on duty|active guard|active guards|currently active|clocked in|clock-in|who is currently|who's currently)\b/.test(q)) {
+    return "on_duty";
+  }
+  if (/\b(report|summary|daily|weekly|monthly|client update|email)\b/.test(q)) return "report";
+  if (/\b(policy|sop|procedure|training|post order|instruction)\b/.test(q)) return "knowledge";
+  if (/\b(scan|patrol|checkpoint|missed)\b/.test(q)) return "patrol";
+  if (/\b(geofence|gps|location|radius|outside)\b/.test(q)) return "geofence";
+  if (/\b(pass.?on|handover|handoff)\b/.test(q)) return "handover";
+  if (/\b(alert|risk|emergency|inactivity|suspicious)\b/.test(q)) return "risk";
+  return "operations";
+}
+
+function formatAiTime(value: string | null) {
+  if (!value) return "time not recorded";
+  return new Date(value).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function buildOnDutyAnswer(snapshot: any) {
+  const counts = snapshot.counts ?? {};
+  const activeGuards = Array.isArray(snapshot.activeGuards) ? snapshot.activeGuards : [];
+  const missingData = snapshot.dataValidation?.missingData ?? [];
+  const registered = counts.totalGuardsRegistered ?? 0;
+  const onDuty = counts.guardsCurrentlyOnDuty ?? 0;
+  const assigned = counts.guardsAssignedToSites ?? 0;
+  const scannedToday = counts.guardsWithPatrolScansToday ?? 0;
+
+  const lines = [
+    `There are ${registered} guards registered in the system, ${assigned} assigned to at least one site, and ${onDuty} currently active/on duty.`,
+    `${scannedToday} guard${scannedToday === 1 ? " has" : "s have"} patrol scans recorded today.`,
+  ];
+
+  if (activeGuards.length > 0) {
+    lines.push("");
+    lines.push("Currently on duty:");
+    for (const guard of activeGuards) {
+      const shift = guard.currentShift;
+      const lastActivity = guard.lastActivity;
+      lines.push(
+        `- ${guard.name} — ${shift?.siteName ?? "site not resolved"}; clocked in ${formatAiTime(shift?.clockIn ?? null)}; status: ${shift?.status ?? "active"}; last activity: ${
+          lastActivity?.type === "patrol_scan"
+            ? `patrol scan at ${formatAiTime(lastActivity.at)}${lastActivity.gpsValid === false ? " (GPS flagged)" : ""}`
+            : `clock-in at ${formatAiTime(lastActivity?.at ?? shift?.clockIn ?? null)}`
+        }.`,
+      );
+    }
+  } else {
+    lines.push("");
+    lines.push("I checked guard profiles, active shift records, site assignments, and today's patrol scans. I did not find any guard with an active shift in the current access scope.");
+  }
+
+  if (missingData.length > 0) {
+    lines.push("");
+    lines.push(`Data note: ${missingData.join(" ")}`);
+  }
+
+  return lines.join("\n");
+}
+
+function buildGuardDetailsAnswer(snapshot: any, question: string) {
+  const q = question.toLowerCase();
+  const guards = Array.isArray(snapshot.guards) ? snapshot.guards : [];
+  const activeGuards = Array.isArray(snapshot.activeGuards) ? snapshot.activeGuards : [];
+  const matched =
+    guards.find((guard: any) => q.includes(String(guard.name ?? "").toLowerCase())) ??
+    (activeGuards.length === 1 ? activeGuards[0] : null);
+
+  if (!matched) {
+    return "I could not identify which guard you mean from the verified records. Please give me the guard name.";
+  }
+
+  const shift = matched.currentShift;
+  const assignedSites = Array.isArray(matched.assignedSites) && matched.assignedSites.length
+    ? matched.assignedSites.map((site: any) => site.name).join(", ")
+    : "No resolved site assignment";
+
+  return [
+    `${matched.name}`,
+    `Phone: ${matched.phone || "not recorded"}`,
+    `Email: ${matched.email || "not recorded"}`,
+    `Current status: ${matched.currentlyOnDuty ? "active/on duty" : matched.activeProfile ? "active profile, not on duty" : "inactive profile"}`,
+    `Assigned site: ${shift?.siteName || assignedSites}`,
+    `Clock-in: ${shift?.clockIn ? formatAiTime(shift.clockIn) : "not currently clocked in"}`,
+  ].join("\n");
+}
+
+function buildLastScanAnswer(snapshot: any) {
+  const scans = Array.isArray(snapshot.recentScans) ? snapshot.recentScans : [];
+  const today = new Date().toISOString().slice(0, 10);
+  const todayScans = scans.filter((scan: any) => String(scan.scannedAt ?? "").startsWith(today));
+  const latest = todayScans[0];
+  if (!latest) {
+    return "No patrol scans are recorded for today in the verified scan table.";
+  }
+  return [
+    `Latest scan today: ${latest.officerName || "Unknown officer"} at ${formatAiTime(latest.scannedAt)}.`,
+    `Site: ${latest.siteName || "site not resolved"}.`,
+    `GPS: ${latest.gpsValid ? "verified" : "flagged"}${latest.distanceMeters != null ? `, ${latest.distanceMeters}m from checkpoint` : ""}.`,
+  ].join("\n");
+}
+
+function buildPassOnLogsAnswer(snapshot: any) {
+  const logs = Array.isArray(snapshot.passOnLogs) ? snapshot.passOnLogs : [];
+  if (!logs.length) {
+    return "No active pass-on logs are recorded in the verified pass-on log table.";
+  }
+  const lines = [`There are ${logs.length} active pass-on log${logs.length === 1 ? "" : "s"}.`];
+  for (const log of logs.slice(0, 5)) {
+    lines.push(`- ${log.title}: ${log.instruction}${log.siteLabel ? ` (${log.siteLabel})` : ""}`);
+  }
+  return lines.join("\n");
+}
+
+function buildLocationCountAnswer(snapshot: any) {
+  const counts = snapshot.counts ?? {};
+  const sites = Array.isArray(snapshot.sites) ? snapshot.sites : [];
+  const checkpoints = Array.isArray(snapshot.checkpoints) ? snapshot.checkpoints : [];
+  const lines = [
+    `There are ${counts.totalCheckpoints ?? checkpoints.length} checkpoints in the system right now.`,
+    `${counts.activeCheckpoints ?? checkpoints.filter((checkpoint: any) => checkpoint.active).length} are active and ${counts.inactiveCheckpoints ?? checkpoints.filter((checkpoint: any) => !checkpoint.active).length} are inactive.`,
+    `There are ${counts.scopedSites ?? sites.length} locations/sites in scope.`,
+  ];
+  if (checkpoints.length) {
+    lines.push(`Checkpoints: ${checkpoints.slice(0, 8).map((checkpoint: any) => checkpoint.siteName ? `${checkpoint.name} (${checkpoint.siteName})` : checkpoint.name).join(", ")}${checkpoints.length > 8 ? ", ..." : ""}`);
+  }
+  return lines.join("\n");
+}
+
+function findReportFocus(snapshot: any, question: string) {
+  const q = question.toLowerCase();
+  const guards = Array.isArray(snapshot.guards) ? snapshot.guards : [];
+  const sites = Array.isArray(snapshot.sites) ? snapshot.sites : [];
+  const matchedGuard = guards.find((guard: any) => q.includes(String(guard.name ?? "").toLowerCase()));
+  const matchedSite =
+    (Array.isArray(snapshot.questionMatches?.sites) ? snapshot.questionMatches.sites[0] : null) ??
+    sites.find((site: any) => q.includes(String(site.name ?? "").toLowerCase()));
+  return { matchedGuard, matchedSite };
+}
+
+function buildOperationalReport(snapshot: any, question: string) {
+  const { matchedGuard, matchedSite } = findReportFocus(snapshot, question);
+  const counts = snapshot.counts ?? {};
+  const reportSubject = matchedGuard?.name ?? matchedSite?.name ?? "Operational Activity";
+  const generatedAt = new Date(snapshot.checkedAt ?? Date.now()).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  const relatedScans = (snapshot.recentScans ?? []).filter((scan: any) => {
+    if (matchedGuard && scan.officerName !== matchedGuard.name) return false;
+    if (matchedSite && scan.siteId !== matchedSite.convexId && scan.siteName !== matchedSite.name) return false;
+    return true;
+  });
+  const relatedShifts = (snapshot.recentShifts ?? []).filter((shift: any) => {
+    if (matchedGuard && shift.guardName !== matchedGuard.name) return false;
+    if (matchedSite && shift.siteId !== matchedSite.convexId && shift.siteName !== matchedSite.name) return false;
+    return true;
+  });
+  const relatedIncidents = (snapshot.incidents ?? []).filter((incident: any) => {
+    if (!matchedSite) return true;
+    return incident.siteId === matchedSite.convexId;
+  });
+  const relatedPassOnLogs = (snapshot.passOnLogs ?? []).filter((log: any) => {
+    if (!matchedSite) return true;
+    return log.siteId === matchedSite.convexId || String(log.siteLabel ?? "").toLowerCase().includes(String(matchedSite.name ?? "").toLowerCase());
+  });
+
+  const lines = [
+    `Operational Report: ${reportSubject}`,
+    `Generated: ${generatedAt}`,
+    "",
+    "Summary",
+    `This report was prepared from verified live system records for ${reportSubject}.`,
+    `Registered guards in scope: ${counts.totalGuardsRegistered ?? 0}. Currently on duty: ${counts.guardsCurrentlyOnDuty ?? 0}. Patrol scans today: ${counts.patrolScansToday ?? 0}.`,
+    "",
+    "Subject Details",
+  ];
+
+  if (matchedGuard) {
+    const shift = matchedGuard.currentShift;
+    const sites = matchedGuard.assignedSites?.length
+      ? matchedGuard.assignedSites.map((site: any) => site.name).join(", ")
+      : "No resolved site assignment";
+    lines.push(`Guard: ${matchedGuard.name}`);
+    lines.push(`Status: ${matchedGuard.currentlyOnDuty ? "Active/on duty" : matchedGuard.activeProfile ? "Active profile, not on duty" : "Inactive profile"}`);
+    lines.push(`Assigned site: ${shift?.siteName || sites}`);
+    lines.push(`Clock-in: ${shift?.clockIn ? formatAiTime(shift.clockIn) : "Not currently clocked in"}`);
+  } else if (matchedSite) {
+    lines.push(`Site: ${matchedSite.name}`);
+    lines.push(`Location: ${matchedSite.location || "No location text recorded"}`);
+    lines.push(`Site status: ${matchedSite.active ? "Active" : "Inactive"}`);
+  } else {
+    lines.push("No specific guard or site was confidently matched from the request.");
+  }
+
+  lines.push("");
+  lines.push("Recent Shift Activity");
+  if (relatedShifts.length) {
+    for (const shift of relatedShifts.slice(0, 10)) {
+      lines.push(`- ${shift.guardName || "Unknown guard"} at ${shift.siteName || "site not resolved"}: ${shift.status}, clock-in ${formatAiTime(shift.clockIn)}, clock-out ${shift.clockOut ? formatAiTime(shift.clockOut) : "not recorded"}.`);
+    }
+  } else {
+    lines.push("- No matching shift records found in the verified snapshot.");
+  }
+
+  lines.push("");
+  lines.push("Patrol Scan Activity");
+  if (relatedScans.length) {
+    for (const scan of relatedScans.slice(0, 12)) {
+      lines.push(`- ${formatAiTime(scan.scannedAt)}: ${scan.officerName || "Unknown officer"} scanned ${scan.siteName || "site not resolved"}; GPS ${scan.gpsValid ? "verified" : "flagged"}${scan.distanceMeters != null ? ` (${scan.distanceMeters}m)` : ""}.`);
+    }
+  } else {
+    lines.push("- No matching patrol scans found in the verified snapshot.");
+  }
+
+  lines.push("");
+  lines.push("Incidents and Pass-On Notes");
+  if (relatedIncidents.length) {
+    for (const incident of relatedIncidents.slice(0, 5)) {
+      lines.push(`- Incident: ${incident.title} (${incident.severity}, ${incident.status}) reported ${formatAiTime(incident.reportedAt)}.`);
+    }
+  } else {
+    lines.push("- No matching open incidents found.");
+  }
+  if (relatedPassOnLogs.length) {
+    for (const log of relatedPassOnLogs.slice(0, 5)) {
+      lines.push(`- Pass-on: ${log.title}: ${log.instruction}`);
+    }
+  } else {
+    lines.push("- No matching active pass-on logs found.");
+  }
+
+  lines.push("");
+  lines.push("Data Notes");
+  const missing = snapshot.dataValidation?.missingData ?? [];
+  lines.push(missing.length ? missing.join(" ") : "No additional data gaps were flagged in the checked records.");
+
+  return lines.join("\n");
+}
+
+async function callNvidiaChat(messages: Array<{ role: string; content: string }>) {
+  const key = process.env.NVIDIA_API_KEY?.trim();
+  if (!key) {
+    return {
+      unavailable: true,
+      content: "The AI assistant is not available because NVIDIA_API_KEY is not configured on the Convex dev backend.",
+      model: process.env.NVIDIA_CHAT_MODEL || "openai/gpt-oss-120b",
+    };
+  }
+
+  const baseUrl = process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1";
+  const model = process.env.NVIDIA_CHAT_MODEL || "openai/gpt-oss-120b";
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature: 1,
+      top_p: 1,
+      max_tokens: 4096,
+      stream: false,
+    }),
+  });
+
+  if (!response.ok) {
+    const details = await response.text().catch(() => "");
+    throw new Error(`NVIDIA chat API error ${response.status}${details ? `: ${details.slice(0, 240)}` : ""}`);
+  }
+
+  const data = await response.json();
+  return {
+    unavailable: false,
+    content: data?.choices?.[0]?.message?.content ?? "",
+    model: data?.model ?? model,
+  };
+}
+
 async function recordAudit(
   ctx: any,
   user: { convexId: string; role: string; clientId?: string | null },
@@ -237,6 +533,310 @@ http.route({
       provider: "convex",
     }),
   ),
+});
+
+http.route({
+  path: "/ai/chat",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+
+    const body = await parseJson(request);
+    const question = String(body?.message ?? "").trim();
+    if (!question) return badRequest("message is required");
+
+    const intent = inferAiIntent(question);
+    const rate = await ctx.runMutation(internalAny.ai.checkAndIncrementRateLimit, {
+      userId: _uid(user.convexId),
+      perMinute: Number(process.env.AI_RATE_LIMIT_PER_MINUTE ?? 8),
+      perDay: Number(process.env.AI_RATE_LIMIT_PER_DAY ?? 120),
+    }) as { allowed: boolean; reason: string };
+    if (!rate.allowed) return tooManyRequests(rate.reason);
+
+    const snapshot = await ctx.runQuery(internalAny.ai.getOperationalSnapshot, {
+      requester: {
+        userId: _uid(user.convexId),
+        role: user.role,
+        clientId: _cid(user.clientId),
+        siteIds: (user.siteIds ?? []).map((siteId) => _sid(siteId)),
+      },
+      question,
+    });
+
+    const dataSources = [
+      "users",
+      "shifts",
+      "userSiteAssignments",
+      "sites",
+      "checkpoints",
+      "scans",
+      "incidents",
+      "passOnLogs",
+      "handovers",
+    ];
+    const sensitive = /\b(phone|email|contact|number|address)\b/i.test(question);
+
+    try {
+      let answer = "";
+      let model: string | null = null;
+      let assistantUnavailable = false;
+      let generatedReportId: string | null = null;
+
+      if (intent === "on_duty") {
+        answer = buildOnDutyAnswer(snapshot);
+      } else if (intent === "guard_details") {
+        answer = buildGuardDetailsAnswer(snapshot, question);
+      } else if (intent === "last_scan") {
+        answer = buildLastScanAnswer(snapshot);
+      } else if (intent === "pass_on_logs") {
+        answer = buildPassOnLogsAnswer(snapshot);
+      } else if (intent === "location_count") {
+        answer = buildLocationCountAnswer(snapshot);
+      } else if (intent === "report") {
+        answer = buildOperationalReport(snapshot, question);
+      } else {
+        const result = await callNvidiaChat([
+          {
+            role: "system",
+            content:
+              "You are the AI Operations Assistant for Evergreen / Patrol Security. Answer like a professional control-room assistant. Only use the verified JSON data provided. Never invent guard counts, active shifts, clock-in times, sites, checkpoints, patrol scans, incidents, pass-on logs, or locations. Use questionMatches.sites and questionMatches.checkpoints for fuzzy location matches when the user misspells a site/checkpoint. If data is missing, say exactly what is missing. Keep answers short: 2 to 6 plain lines. Do not use markdown tables, ### headings, **bold**, or long report formatting unless the user explicitly asks for a report.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              question,
+              intent,
+              verifiedOperationalSnapshot: snapshot,
+            }),
+          },
+        ]);
+        assistantUnavailable = !!result.unavailable;
+        model = result.model ?? null;
+        answer = result.content || "I checked the live operational records, but the AI provider did not return a usable answer.";
+      }
+
+      if (intent === "report" && answer && !assistantUnavailable) {
+        generatedReportId = await ctx.runMutation(internalAny.ai.saveGeneratedReport, {
+          userId: _uid(user.convexId),
+          reportType: "Operational Report",
+          title: `AI Operational Report - ${new Date().toLocaleDateString()}`,
+          content: answer,
+          sourceSummary: {
+            checkedAt: (snapshot as any).checkedAt,
+            counts: (snapshot as any).counts,
+            sources: dataSources,
+          },
+        }) as string;
+      }
+
+      await ctx.runMutation(internalAny.ai.recordAudit, {
+        userId: _uid(user.convexId),
+        userRole: user.role,
+        question,
+        intent,
+        dataSources,
+        sensitive,
+        status: "completed",
+      });
+
+      return json({
+        answer,
+        intent,
+        model,
+        assistantUnavailable,
+        generatedReportId,
+        sources: dataSources,
+        validation: (snapshot as any).dataValidation,
+        counts: (snapshot as any).counts,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown AI error";
+      await ctx.runMutation(internalAny.ai.recordAudit, {
+        userId: _uid(user.convexId),
+        userRole: user.role,
+        question,
+        intent,
+        dataSources,
+        sensitive,
+        status: "failed",
+        error: message,
+      });
+      return json({
+        answer: buildOnDutyAnswer(snapshot),
+        intent,
+        model: null,
+        assistantUnavailable: true,
+        generatedReportId: null,
+        sources: dataSources,
+        validation: (snapshot as any).dataValidation,
+        counts: (snapshot as any).counts,
+      });
+    }
+  }),
+});
+
+http.route({
+  path: "/ai/reports",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    return json(await ctx.runQuery(internalAny.ai.listGeneratedReports, {
+      requester: {
+        userId: _uid(user.convexId),
+        role: user.role,
+        clientId: _cid(user.clientId),
+        siteIds: (user.siteIds ?? []).map((siteId) => _sid(siteId)),
+      },
+      limit: 30,
+    }));
+  }),
+});
+
+http.route({
+  path: "/api/v1/ai/chat",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+
+    const body = await parseJson(request);
+    const question = String(body?.message ?? "").trim();
+    if (!question) return badRequest("message is required");
+
+    const intent = inferAiIntent(question);
+    const rate = await ctx.runMutation(internalAny.ai.checkAndIncrementRateLimit, {
+      userId: _uid(user.convexId),
+      perMinute: Number(process.env.AI_RATE_LIMIT_PER_MINUTE ?? 8),
+      perDay: Number(process.env.AI_RATE_LIMIT_PER_DAY ?? 120),
+    }) as { allowed: boolean; reason: string };
+    if (!rate.allowed) return tooManyRequests(rate.reason);
+
+    const snapshot = await ctx.runQuery(internalAny.ai.getOperationalSnapshot, {
+      requester: {
+        userId: _uid(user.convexId),
+        role: user.role,
+        clientId: _cid(user.clientId),
+        siteIds: (user.siteIds ?? []).map((siteId) => _sid(siteId)),
+      },
+      question,
+    });
+
+    const dataSources = ["users", "shifts", "userSiteAssignments", "sites", "checkpoints", "scans", "incidents", "passOnLogs", "handovers"];
+    const sensitive = /\b(phone|email|contact|number|address)\b/i.test(question);
+
+    try {
+      let answer = "";
+      let model: string | null = null;
+      let assistantUnavailable = false;
+      let generatedReportId: string | null = null;
+
+      if (intent === "on_duty") {
+        answer = buildOnDutyAnswer(snapshot);
+      } else if (intent === "guard_details") {
+        answer = buildGuardDetailsAnswer(snapshot, question);
+      } else if (intent === "last_scan") {
+        answer = buildLastScanAnswer(snapshot);
+      } else if (intent === "pass_on_logs") {
+        answer = buildPassOnLogsAnswer(snapshot);
+      } else if (intent === "location_count") {
+        answer = buildLocationCountAnswer(snapshot);
+      } else if (intent === "report") {
+        answer = buildOperationalReport(snapshot, question);
+      } else {
+        const result = await callNvidiaChat([
+          {
+            role: "system",
+            content:
+              "You are the AI Operations Assistant for Evergreen / Patrol Security. Answer like a professional control-room assistant. Only use the verified JSON data provided. Never invent guard counts, active shifts, clock-in times, sites, checkpoints, patrol scans, incidents, pass-on logs, or locations. Use questionMatches.sites and questionMatches.checkpoints for fuzzy location matches when the user misspells a site/checkpoint. If data is missing, say exactly what is missing. Keep answers short: 2 to 6 plain lines. Do not use markdown tables, ### headings, **bold**, or long report formatting unless the user explicitly asks for a report.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({ question, intent, verifiedOperationalSnapshot: snapshot }),
+          },
+        ]);
+        assistantUnavailable = !!result.unavailable;
+        model = result.model ?? null;
+        answer = result.content || "I checked the live operational records, but the AI provider did not return a usable answer.";
+      }
+
+      if (intent === "report" && answer && !assistantUnavailable) {
+        generatedReportId = await ctx.runMutation(internalAny.ai.saveGeneratedReport, {
+          userId: _uid(user.convexId),
+          reportType: "Operational Report",
+          title: `AI Operational Report - ${new Date().toLocaleDateString()}`,
+          content: answer,
+          sourceSummary: {
+            checkedAt: (snapshot as any).checkedAt,
+            counts: (snapshot as any).counts,
+            sources: dataSources,
+          },
+        }) as string;
+      }
+
+      await ctx.runMutation(internalAny.ai.recordAudit, {
+        userId: _uid(user.convexId),
+        userRole: user.role,
+        question,
+        intent,
+        dataSources,
+        sensitive,
+        status: "completed",
+      });
+
+      return json({
+        answer,
+        intent,
+        model,
+        assistantUnavailable,
+        generatedReportId,
+        sources: dataSources,
+        validation: (snapshot as any).dataValidation,
+        counts: (snapshot as any).counts,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown AI error";
+      await ctx.runMutation(internalAny.ai.recordAudit, {
+        userId: _uid(user.convexId),
+        userRole: user.role,
+        question,
+        intent,
+        dataSources,
+        sensitive,
+        status: "failed",
+        error: message,
+      });
+      return json({
+        answer: buildOnDutyAnswer(snapshot),
+        intent,
+        model: null,
+        assistantUnavailable: true,
+        generatedReportId: null,
+        sources: dataSources,
+        validation: (snapshot as any).dataValidation,
+        counts: (snapshot as any).counts,
+      });
+    }
+  }),
+});
+
+http.route({
+  path: "/api/v1/ai/reports",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    return json(await ctx.runQuery(internalAny.ai.listGeneratedReports, {
+      requester: {
+        userId: _uid(user.convexId),
+        role: user.role,
+        clientId: _cid(user.clientId),
+        siteIds: (user.siteIds ?? []).map((siteId) => _sid(siteId)),
+      },
+      limit: 30,
+    }));
+  }),
 });
 
 http.route({
