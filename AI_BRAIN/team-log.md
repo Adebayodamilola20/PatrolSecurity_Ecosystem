@@ -53,3 +53,4 @@ Keep it tiny — no code, just what happened and the next step.
 - [2026-06-30 13:48] antigravity: (20260630-134736) Error: authentication failed or timed out | files: 0 | next: see outbox/antigravity.md
 - [2026-07-01 01:01] system: (-) team workspace ready | files: 0 | next: agents idle, awaiting dispatch
 - [2026-07-01 01:21] system: (-) team workspace ready | files: 0 | next: agents idle, awaiting dispatch
+- [2026-07-02 09:00] claude(lead): (20260702-090006) dispatched: Web dashboard: live incident notifications (toast + real alert badge),… | files: 0 | next: agents working: antigravity, codex, opencode, kilo

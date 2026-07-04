@@ -87,20 +87,36 @@ export const listForApi = internalQuery({
       );
     }
     const users = await ctx.db.query("users").collect();
-    return incidents.map((i) => ({
-      id: i.legacyId ?? i._id,
-      title: i.title,
-      category: i.category ?? "Security Incident",
-      description: i.description,
-      photoUrls: i.photoUrls ?? [],
-      severity: i.severity,
-      status: i.status,
-      officerId: i.officerId,
-      officerName: users.find((u) => u._id === i.officerId)?.name ?? "",
-      checkpointId: i.checkpointId,
-      reportedAt: new Date(i.reportedAt).toISOString(),
-      resolvedAt: i.resolvedAt ? new Date(i.resolvedAt).toISOString() : null,
-    }));
+    const checkpoints = await ctx.db.query("checkpoints").collect();
+    const sites = await ctx.db.query("sites").collect();
+    return incidents.map((i) => {
+      const checkpoint = i.checkpointId
+        ? checkpoints.find((c) => c._id === i.checkpointId)
+        : undefined;
+      const site = i.siteId
+        ? sites.find((s) => s._id === i.siteId)
+        : checkpoint?.siteId
+          ? sites.find((s) => s._id === checkpoint.siteId)
+          : undefined;
+      return {
+        id: i.legacyId ?? i._id,
+        title: i.title,
+        category: i.category ?? "Security Incident",
+        description: i.description,
+        photoUrls: i.photoUrls ?? [],
+        severity: i.severity,
+        status: i.status,
+        officerId: i.officerId,
+        officerName: users.find((u) => u._id === i.officerId)?.name ?? "",
+        checkpointId: i.checkpointId,
+        checkpointName: checkpoint?.name ?? null,
+        siteName: site?.name ?? null,
+        latitude: checkpoint?.latitude ?? null,
+        longitude: checkpoint?.longitude ?? null,
+        reportedAt: new Date(i.reportedAt).toISOString(),
+        resolvedAt: i.resolvedAt ? new Date(i.resolvedAt).toISOString() : null,
+      };
+    });
   },
 });
 
