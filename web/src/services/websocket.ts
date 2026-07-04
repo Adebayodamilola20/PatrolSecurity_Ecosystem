@@ -1,13 +1,19 @@
 import { io, Socket } from 'socket.io-client'
 import { API_BASE } from './api'
 
-const WS_URL = import.meta.env.VITE_WS_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000')
+// Only dial Socket.IO when a server is explicitly configured — there is no
+// socket server behind the Convex HTTP API, and an unconfigured client would
+// retry localhost forever, spamming connection errors. Polling covers realtime.
+const WS_URL = import.meta.env.VITE_WS_URL || ''
 
 let socket: Socket | null = null
 let realtimeTimer: number | null = null
 let realtimeBootstrapped = false
+let incidentsBootstrapped = false
+let pollTick = 0
 let shiftSignature = ''
 const knownScanIds = new Set<string>()
+const knownIncidentIds = new Set<string>()
 const scanSubscribers = new Set<(data: any) => void>()
 const alertSubscribers = new Set<(data: any) => void>()
 const shiftSubscribers = new Set<(data: any) => void>()
@@ -36,14 +42,22 @@ function ensureRealtimeFallback() {
   const poll = async () => {
     if (!localStorage.getItem('patrol_token')) return
 
+    // Incidents change far less often than scans; poll them every 5th tick.
+    const shouldPollIncidents =
+      incidentSubscribers.size > 0 && (pollTick % 5 === 0 || !incidentsBootstrapped)
+    pollTick += 1
+
     try {
-      const [scans, shifts] = await Promise.all([
+      const [scans, shifts, incidents] = await Promise.all([
         scanSubscribers.size > 0 || alertSubscribers.size > 0 || positionSubscribers.size > 0
           ? fetchJson('/scans?limit=20').catch(() => [])
           : Promise.resolve([]),
         shiftSubscribers.size > 0
           ? fetchJson('/shifts').catch(() => [])
           : Promise.resolve([]),
+        shouldPollIncidents
+          ? fetchJson('/incidents').catch(() => null)
+          : Promise.resolve(null),
       ])
 
       if (Array.isArray(scans)) {
@@ -82,6 +96,19 @@ function ensureRealtimeFallback() {
         shiftSignature = nextSignature
       }
 
+      if (Array.isArray(incidents)) {
+        const unseenIncidents = incidents.filter(
+          (incident) => incident?.id && !knownIncidentIds.has(incident.id),
+        )
+        incidents.forEach((incident) => {
+          if (incident?.id) knownIncidentIds.add(incident.id)
+        })
+        if (incidentsBootstrapped) {
+          unseenIncidents.reverse().forEach((incident) => emitTo(incidentSubscribers, incident))
+        }
+        incidentsBootstrapped = true
+      }
+
       realtimeBootstrapped = true
     } catch {
       // The Socket.IO path still handles realtime on the Express API. Polling is best-effort for Convex HTTP.
@@ -110,6 +137,10 @@ function stopRealtimeFallbackIfIdle() {
 }
 
 export function connectSocket(token: string) {
+  if (!WS_URL) {
+    ensureRealtimeFallback()
+    return null
+  }
   if (socket?.connected) return socket
 
   socket = io(WS_URL, {
@@ -146,8 +177,11 @@ export function disconnectSocket() {
     realtimeTimer = null
   }
   realtimeBootstrapped = false
+  incidentsBootstrapped = false
+  pollTick = 0
   shiftSignature = ''
   knownScanIds.clear()
+  knownIncidentIds.clear()
 }
 
 export function subscribeToScans(callback: (data: any) => void) {

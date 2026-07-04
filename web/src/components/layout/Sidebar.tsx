@@ -19,6 +19,7 @@ import {
   Activity,
 } from 'lucide-react'
 import { useAuthStore, useCanManageUsers, useCanViewAlerts } from '../../stores/useAuthStore'
+import { useAlertStore } from '../../stores/useAlertStore'
 
 function useNav() {
   const role = useAuthStore((s) => s.user?.role)
@@ -79,6 +80,7 @@ export default function Sidebar({ collapsed, onToggle, mobile, onClose }: Sideba
   const location = useLocation()
   const { user, logout } = useAuthStore()
   const nav = useNav()
+  const openIncidentCount = useAlertStore((s) => s.openIncidentCount)
 
   return (
     <aside
@@ -127,31 +129,12 @@ export default function Sidebar({ collapsed, onToggle, mobile, onClose }: Sideba
                   >
                     <Icon className="h-4 w-4 shrink-0" />
                     {(!collapsed || mobile) && <span>{item.label}</span>}
-                    {(!collapsed || mobile) && item.label === "Alerts" && (
+                    {(!collapsed || mobile) && item.label === "Alerts" && openIncidentCount > 0 && (
                       <span className="ml-auto rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-semibold text-destructive-foreground">
-                        3
+                        {openIncidentCount > 99 ? '99+' : openIncidentCount}
                       </span>
                     )}
                   </Link>
-                  {(!collapsed || mobile) && item.label === "Reports" && (
-                    <div className="ml-8 space-y-1 mt-1">
-                      <Link to="/reports/daily" className="flex items-center gap-2 text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent rounded-md px-2 py-1">
-                        Daily Activity Report
-                      </Link>
-                      <Link to="/reports/incidents" className="flex items-center gap-2 text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent rounded-md px-2 py-1">
-                        Incident Report
-                      </Link>
-                      <Link to="/reports/parking-wisdom" className="flex items-center gap-2 text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent rounded-md px-2 py-1">
-                        Parking Wisdom
-                      </Link>
-                      <Link to="/reports/maintenance" className="flex items-center gap-2 text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent rounded-md px-2 py-1">
-                        Maintenance Request
-                      </Link>
-                      <Link to="/reports/pass-on-logs" className="flex items-center gap-2 text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent rounded-md px-2 py-1">
-                        Pass‑On Logs
-                      </Link>
-                    </div>
-                  )}
                 </React.Fragment>
               )
             })}

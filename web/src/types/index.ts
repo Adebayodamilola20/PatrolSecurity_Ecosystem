@@ -53,7 +53,12 @@ export interface Incident {
   officerId: string
   officerName: string
   checkpointId?: string
-  checkpointName?: string
+  checkpointName?: string | null
+  siteName?: string | null
+  latitude?: number | null
+  longitude?: number | null
+  category?: string
+  photoUrls?: string[]
   title: string
   description: string
   severity: 'low' | 'medium' | 'high' | 'critical'

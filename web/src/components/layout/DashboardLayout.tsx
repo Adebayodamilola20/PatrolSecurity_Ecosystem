@@ -6,6 +6,7 @@ import Header from './Header'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { ErrorBoundary } from '../ErrorBoundary'
 import AiAssistantPanel, { AiAssistantLauncher } from '../AiAssistantPanel'
+import IncidentToasts from '../IncidentToasts'
 import { subscribeToEmergency } from '../../services/websocket'
 
 interface AppIssue {
@@ -110,6 +111,7 @@ export default function DashboardLayout() {
         {emergency && (
           <EmergencyPopup alert={emergency} onClose={() => setEmergency(null)} />
         )}
+        {role !== 'guard' && <IncidentToasts />}
         {(!online || issue) && (
           <div className={`border-b px-5 py-3 text-sm ${
             !online || issue?.kind === 'network'

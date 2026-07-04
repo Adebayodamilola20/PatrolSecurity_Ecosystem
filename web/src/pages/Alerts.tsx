@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { AlertTriangle, AlertCircle, Info, Clock, ShieldAlert, User2, MapPin, RefreshCw, Mail, Search } from 'lucide-react'
+import { AlertTriangle, AlertCircle, Info, Clock, ShieldAlert, User2, MapPin, RefreshCw, Mail, Search, ChevronDown, Camera, ExternalLink } from 'lucide-react'
 import { api } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
+import { useAlertStore } from '../stores/useAlertStore'
 import type { Incident, MissedPatrol } from '../types'
 import { formatDate } from '../utils/format'
 
@@ -33,6 +34,9 @@ export default function Alerts() {
   const [severityFilter, setSeverityFilter] = useState<'all' | 'critical' | 'high' | 'medium' | 'low'>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'investigating' | 'resolved'>('all')
   const [typeFilter, setTypeFilter] = useState<'all' | 'incidents' | 'missed'>('all')
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const setOpenIncidentCount = useAlertStore((s) => s.setOpenIncidentCount)
 
   if (userRole === 'guard') {
     return <Navigate to="/" replace />
@@ -52,6 +56,7 @@ export default function Alerts() {
       ])
       setIncidents(incidentRows)
       setMissedPatrols(missedRows)
+      setOpenIncidentCount(incidentRows.filter((i: Incident) => i.status === 'open').length)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load alerts')
     } finally {
@@ -75,7 +80,9 @@ export default function Alerts() {
   const handleAcknowledge = async (id: string) => {
     try {
       await api.incidents.updateStatus(id, 'resolved')
-      setIncidents(prev => prev.filter(i => i.id !== id))
+      const next = incidents.filter(i => i.id !== id)
+      setIncidents(next)
+      setOpenIncidentCount(next.filter(i => i.status === 'open').length)
     } catch {}
   }
 
@@ -213,25 +220,41 @@ export default function Alerts() {
           {filteredIncidents.map((inc) => {
             const Icon = severityIcon[inc.severity] || Info
             const color = severityColor[inc.severity]
+            const expanded = expandedId === inc.id
+            const photos = inc.photoUrls ?? []
+            const hasCoords = inc.latitude != null && inc.longitude != null
+            const locationLabel = [inc.checkpointName, inc.siteName].filter(Boolean).join(' — ')
             return (
-              <div key={inc.id} className="rounded-xl border border-border bg-card p-4 flex items-start gap-3">
+              <div
+                key={inc.id}
+                onClick={() => setExpandedId(expanded ? null : inc.id)}
+                className="rounded-xl border border-border bg-card p-4 flex items-start gap-3 cursor-pointer transition-colors hover:border-primary/40"
+              >
                 <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${color}`}>
                   <Icon className="h-5 w-5" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <div className="font-medium">{inc.title}</div>
-                    <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase ${color}`}>
-                      {inc.severity}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase ${color}`}>
+                        {inc.severity}
+                      </span>
+                      <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                    </div>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <User2 className="h-3 w-3" /> {inc.officerName}
                     </span>
-                    {inc.checkpointName && (
+                    {locationLabel && (
                       <span className="flex items-center gap-1">
-                        <MapPin className="h-3 w-3" /> {inc.checkpointName}
+                        <MapPin className="h-3 w-3" /> {locationLabel}
+                      </span>
+                    )}
+                    {photos.length > 0 && (
+                      <span className="flex items-center gap-1">
+                        <Camera className="h-3 w-3" /> {photos.length} photo{photos.length > 1 ? 's' : ''}
                       </span>
                     )}
                     <span className="flex items-center gap-1">
@@ -241,19 +264,70 @@ export default function Alerts() {
                       {inc.status}
                     </span>
                   </div>
-                  {inc.description && (
-                    <div className="mt-2 text-sm text-muted-foreground">{inc.description}</div>
+                  {!expanded && inc.description && (
+                    <div className="mt-2 text-sm text-muted-foreground line-clamp-2">{inc.description}</div>
                   )}
-                  <div className="mt-3 flex gap-2">
-                    {inc.status !== 'resolved' && (
-                      <button
-                        onClick={() => handleAcknowledge(inc.id)}
-                        className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent"
-                      >
-                        Acknowledge & Resolve
-                      </button>
-                    )}
-                  </div>
+
+                  {expanded && (
+                    <div className="mt-3 space-y-3 border-t border-border pt-3" onClick={(e) => e.stopPropagation()}>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div className="rounded-lg border border-border bg-background/60 p-3">
+                          <div className="text-xs uppercase tracking-wider text-muted-foreground">Category</div>
+                          <div className="mt-1 text-sm font-medium">{inc.category || 'Security Incident'}</div>
+                        </div>
+                        <div className="rounded-lg border border-border bg-background/60 p-3">
+                          <div className="text-xs uppercase tracking-wider text-muted-foreground">Location</div>
+                          <div className="mt-1 text-sm font-medium">
+                            {locationLabel || 'No checkpoint attached'}
+                          </div>
+                          {hasCoords && (
+                            <a
+                              href={`https://www.google.com/maps?q=${inc.latitude},${inc.longitude}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              {inc.latitude!.toFixed(5)}, {inc.longitude!.toFixed(5)} — open in Maps
+                            </a>
+                          )}
+                        </div>
+                      </div>
+
+                      {inc.description && (
+                        <div className="rounded-lg border border-border bg-background/60 p-3">
+                          <div className="text-xs uppercase tracking-wider text-muted-foreground">Description</div>
+                          <div className="mt-1 whitespace-pre-wrap text-sm">{inc.description}</div>
+                        </div>
+                      )}
+
+                      {photos.length > 0 && (
+                        <div>
+                          <div className="mb-2 text-xs uppercase tracking-wider text-muted-foreground">Photos</div>
+                          <div className="flex flex-wrap gap-2">
+                            {photos.map((url) => (
+                              <button
+                                key={url}
+                                onClick={() => setPhotoPreview(url)}
+                                className="h-24 w-24 overflow-hidden rounded-lg border border-border hover:opacity-80"
+                              >
+                                <img src={url} alt="Incident photo" className="h-full w-full object-cover" loading="lazy" />
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {inc.status !== 'resolved' && (
+                        <button
+                          onClick={() => handleAcknowledge(inc.id)}
+                          className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent"
+                        >
+                          Acknowledge & Resolve
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )
@@ -264,6 +338,19 @@ export default function Alerts() {
           {incidents.length > 0 || missedPatrols.length > 0
             ? 'No alerts match your filters.'
             : 'No alerts at this time'}
+        </div>
+      )}
+
+      {photoPreview && (
+        <div
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setPhotoPreview(null)}
+        >
+          <img
+            src={photoPreview}
+            alt="Incident photo"
+            className="max-h-[90vh] max-w-full rounded-xl object-contain"
+          />
         </div>
       )}
     </div>
