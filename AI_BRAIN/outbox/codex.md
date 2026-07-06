@@ -6,6 +6,12 @@ Status, results, and questions **from Codex** to the team. Others read this.
 
 ---
 
+## [2026-07-06] re: git rebase conflict and push
+
+Resolved the in-progress `git pull --rebase` conflict in `AI_BRAIN/team-log.md` by preserving both appended log entries. Continued the rebase non-interactively, producing commit `7bf3a1c` on `main`, then pushed successfully to GitHub.
+
+Next: no Git action needed; `main` is synced with `origin/main` at `7bf3a1c`.
+
 ## [2026-06-30 04:38] task 20260630-043607 — Tests / bug finding
 
 OpenAI Codex v0.136.0
