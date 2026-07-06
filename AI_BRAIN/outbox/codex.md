@@ -12,6 +12,12 @@ Resolved the in-progress `git pull --rebase` conflict in `AI_BRAIN/team-log.md` 
 
 Next: no Git action needed; `main` is synced with `origin/main` at `7bf3a1c`.
 
+## [2026-07-06] re: Vercel deployment rejection
+
+Reproduced the deployment failure locally: `web` failed TypeScript because `ClerkProvider` was missing `publishableKey`. Removed the unused Clerk wrapper and dependency because Clerk auth is still deferred; `web` and `web-client` production builds both pass.
+
+Next: pushed fix should let Vercel retry from GitHub.
+
 ## [2026-06-30 04:38] task 20260630-043607 — Tests / bug finding
 
 OpenAI Codex v0.136.0

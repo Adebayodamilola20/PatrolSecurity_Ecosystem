@@ -1,4 +1,3 @@
-import {ClerkProvider} from '@clerk/react';
 import * as Sentry from '@sentry/react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
@@ -18,6 +17,4 @@ Sentry.init({
 
 initTheme()
 
-createRoot(document.getElementById('root')!).render(<ClerkProvider afterSignOutUrl="/">
-      <App />
-    </ClerkProvider>)
+createRoot(document.getElementById('root')!).render(<App />)
