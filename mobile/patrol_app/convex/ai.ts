@@ -104,11 +104,12 @@ export const getOperationalSnapshot = internalQuery({
 
     const guardIds = new Set(guards.map((guard) => guard._id));
 
+    const requesterClientId = requester.clientId;
     let scopedSites =
-      requester.role === "main_account" && requester.clientId
+      requester.role === "main_account" && requesterClientId
         ? await ctx.db
             .query("sites")
-            .withIndex("by_clientId", (q) => q.eq("clientId", requester.clientId))
+            .withIndex("by_clientId", (q) => q.eq("clientId", requesterClientId))
             .take(500)
         : await ctx.db.query("sites").take(500);
     scopedSites = scopedSites.filter((site) =>

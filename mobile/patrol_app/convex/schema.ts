@@ -523,10 +523,7 @@ export default defineSchema({
     reportType: v.string(),
     title: v.string(),
     content: v.string(),
-<<<<<<< HEAD
     // Loosened from v.string(): existing deployment data stores an object here.
-=======
->>>>>>> feat/ai-assistant-enhancements
     sourceSummary: v.any(),
     status: v.string(),
     createdAt: v.number(),
@@ -640,74 +637,4 @@ export default defineSchema({
     .index("by_siteId", ["siteId"])
     .index("by_officerId", ["officerId"])
     .index("by_status", ["status"]),
-
-  aiAuditLogs: defineTable({
-    userId: v.id("users"),
-    userRole: v.string(),
-    question: v.string(),
-    intent: v.string(),
-    dataSources: v.array(v.string()),
-    sensitive: v.boolean(),
-    status: v.string(),
-    error: v.string(),
-    createdAt: v.number(),
-  })
-    .index("by_userId_createdAt", ["userId", "createdAt"])
-    .index("by_createdAt", ["createdAt"]),
-
-  aiRateLimits: defineTable({
-    userId: v.id("users"),
-    windowKey: v.string(),
-    count: v.number(),
-    updatedAt: v.number(),
-  })
-    .index("by_userId_windowKey", ["userId", "windowKey"]),
-
-  aiGeneratedReports: defineTable({
-    userId: v.id("users"),
-    reportType: v.string(),
-    title: v.string(),
-    content: v.string(),
-    sourceSummary: v.any(),
-    status: v.string(),
-    createdAt: v.number(),
-  })
-    .index("by_userId_createdAt", ["userId", "createdAt"])
-    .index("by_createdAt", ["createdAt"]),
-
-  aiClientEmails: defineTable({
-    userId: v.id("users"),
-    reportId: v.optional(v.id("aiGeneratedReports")),
-    clientId: v.optional(v.id("clients")),
-    subject: v.string(),
-    body: v.string(),
-    status: v.string(),
-    approvedBy: v.optional(v.id("users")),
-    sentAt: v.optional(v.number()),
-    createdAt: v.number(),
-  })
-    .index("by_userId_createdAt", ["userId", "createdAt"])
-    .index("by_clientId_createdAt", ["clientId", "createdAt"]),
-
-  aiKnowledgeDocuments: defineTable({
-    title: v.string(),
-    type: v.string(),
-    siteId: v.optional(v.id("sites")),
-    clientId: v.optional(v.id("clients")),
-    uploadedBy: v.id("users"),
-    createdAt: v.number(),
-  })
-    .index("by_clientId", ["clientId"])
-    .index("by_siteId", ["siteId"])
-    .index("by_uploadedBy", ["uploadedBy"]),
-
-  aiKnowledgeChunks: defineTable({
-    documentId: v.id("aiKnowledgeDocuments"),
-    chunkIndex: v.number(),
-    content: v.string(),
-    embeddingJson: v.string(),
-    embeddingModel: v.string(),
-    createdAt: v.number(),
-  })
-    .index("by_documentId", ["documentId"]),
 });

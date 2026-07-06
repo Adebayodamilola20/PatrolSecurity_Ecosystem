@@ -274,6 +274,24 @@ export const ensureDemoContent = internalMutation({
       return { created: false, reason: "demo users/checkpoint missing" };
     }
 
+    if (checkpoint.siteId) {
+      const assignment = await ctx.db
+        .query("userSiteAssignments")
+        .withIndex("by_userId_siteId", (q) =>
+          q.eq("userId", guard._id).eq("siteId", checkpoint.siteId!),
+        )
+        .first();
+      if (!assignment) {
+        await ctx.db.insert("userSiteAssignments", {
+          legacyId: crypto.randomUUID(),
+          clientId: guard.clientId,
+          userId: guard._id,
+          siteId: checkpoint.siteId,
+          createdAt: Date.now(),
+        });
+      }
+    }
+
     const existingOrder = (
       await ctx.db.query("postOrders").collect()
     ).find((order) => order.title === "Perimeter Lock Check");

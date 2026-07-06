@@ -212,7 +212,7 @@ export const listReports = internalQuery({
         .take(50);
     }
     return await ctx.db.query("aiGeneratedReports")
-      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .withIndex("by_userId_createdAt", (q) => q.eq("userId", args.userId))
       .order("desc")
       .take(50);
   },
@@ -303,7 +303,17 @@ export const chat = internalAction({
       content: v.string(),
     }))),
   },
-  handler: async (ctx, args) => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    answer: string;
+    intent: string;
+    model: string | null;
+    assistantUnavailable: boolean;
+    generatedReportId: string | null;
+    sources: string[];
+  }> => {
     const question = args.question.trim();
     if (!question) {
       return { answer: "Please provide a question.", intent: "unknown", model: null, assistantUnavailable: false, generatedReportId: null, sources: [] };

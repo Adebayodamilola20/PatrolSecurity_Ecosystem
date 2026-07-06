@@ -35,6 +35,7 @@ export const API_BASE = normalizeApiBase(import.meta.env.VITE_API_URL)
 // Storage keys are namespaced so a client session never collides with the
 // staff dashboard session if both happen to be open on the same origin.
 export const TOKEN_KEY = 'patrol_client_token'
+export const REFRESH_KEY = 'patrol_client_refresh'
 export const USER_KEY = 'patrol_client_user'
 
 export function apiFileUrl(path: string) {
@@ -49,7 +50,53 @@ export function apiFileUrl(path: string) {
 
 const REQUEST_TIMEOUT = 30_000
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+// Endpoints that must never trigger a silent refresh (they mint tokens or ARE
+// the refresh call).
+const AUTH_PATHS_NO_REFRESH = ['/auth/login', '/auth/refresh']
+
+// Single-flight refresh so concurrent 401s only hit /auth/refresh once.
+let refreshInFlight: Promise<string | null> | null = null
+
+async function refreshAccessToken(): Promise<string | null> {
+  const refreshToken = localStorage.getItem(REFRESH_KEY)
+  if (!refreshToken) return null
+
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        })
+        if (!res.ok) return null
+        const data = await res.json().catch(() => null)
+        if (!data?.token || !data?.refreshToken) return null
+        localStorage.setItem(TOKEN_KEY, data.token)
+        localStorage.setItem(REFRESH_KEY, data.refreshToken)
+        if (data.user) localStorage.setItem(USER_KEY, JSON.stringify(data.user))
+        return data.token as string
+      } catch {
+        return null
+      }
+    })()
+    refreshInFlight.finally(() => { refreshInFlight = null })
+  }
+  return refreshInFlight
+}
+
+// Clears the client session and signals the app to route back to login. Fired
+// when a refresh is no longer possible (idle >1h or session >24h old).
+function forceSessionExpiry() {
+  localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(REFRESH_KEY)
+  localStorage.removeItem(USER_KEY)
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('client:session-expired'))
+  }
+}
+
+async function request<T>(path: string, options?: RequestInit, allowRefresh = true): Promise<T> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     throw new Error('You appear to be offline. Please check your connection and try again.')
   }
@@ -80,6 +127,21 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
   clearTimeout(timeout)
 
+  // Access token expired: try one silent refresh then retry. If refresh fails
+  // the session is over -> clear and bounce to login.
+  if (
+    res.status === 401 &&
+    allowRefresh &&
+    token &&
+    !AUTH_PATHS_NO_REFRESH.some((p) => path.startsWith(p))
+  ) {
+    const newToken = await refreshAccessToken()
+    if (newToken) {
+      return request<T>(path, options, false)
+    }
+    forceSessionExpiry()
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }))
     throw new Error(err.message || err.error || 'Request failed')
@@ -93,7 +155,7 @@ export const api = {
     // clientType: 'client' tells the backend this is the client portal, so it
     // should ONLY accept main_account (client) accounts here.
     login: (email: string, password: string) =>
-      request<{ token: string; user: ClientUser }>('/auth/login', {
+      request<{ token: string; refreshToken: string; user: ClientUser }>('/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password, clientType: 'client' }),
       }),

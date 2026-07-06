@@ -4,6 +4,20 @@ Per-session notes of **major changes**. Newest first. Short bullets only — wha
 
 > Format: `## YYYY-MM-DD — Agent — Session title`
 
+## 2026-07-04 — [[Claude_Code]] — DEMO READINESS COMPLETE + security lockdown + load test
+
+- **Un-bricked the backend**: repo had a botched merge (duplicate `_sid`, conflict markers in `schema.ts`, duplicate AI tables, duplicate `/ai/chat` routes) that silently blocked ALL deploys. Fixed and redeployed; live backend is current again.
+- Fixed 500s: GET `/visitors` + `/trucks` (null vs `v.optional`); double clock-in now **409**; scan at unassigned site now **403**.
+- `ensureDemoContent` now assigns demo guard to the checkpoint's site → QR scans work.
+- **Guard workflow 16/16 green** end-to-end on live. Admin 29/29 GETs 200. Client portal 8/8 views 200.
+- **Exports verified** (user's explicit ask): daily scans CSV (generate/list/download), activity-summary CSV, reports list + generate.
+- **Security lockdown**: `/dev/seed` needs `DEV_SEED_SECRET` bearer (env set, random 64-hex) + empty users table; `/dev/demo-content` needs real admin JWT. Fake headers → 401 (verified live).
+- **Load test**: 50 concurrent guard logins + startup calls = **300/300 OK in 9.3s** (login ~2.2s median = bcrypt; rest ≤1.3s p95). 50 simultaneous guards proven fine.
+- Keys verified on live deployment: Termii/Resend/NVIDIA/JWT ✓. Prod deployment missing NVIDIA_API_KEY (copy when switching).
+- **Next:** production-hardening checklist in [[Current_Task]] (Clerk auth, prod deployment switch, remove demo accounts, signed APK). convex/ changes not yet committed to git.
+
+---
+
 ## 2026-06-30 — [[Claude_Code]] — Scaffolded Client Portal (`web-client/`)
 - Created new standalone Vite app `web-client/` mirroring `web/` stack (config, tsconfig, eslint, vercel.json, .env.local → live Convex).
 - Frontend skeleton: `App.tsx` routing + auth guard, `useClientAuthStore` (client-only, namespaced storage), `services/api.ts` (client-scoped `/client/*` contract, `clientType:'client'` login), layout (ClientLayout/Sidebar/Header), UI (Card/EmptyState), `useClientData` hook.

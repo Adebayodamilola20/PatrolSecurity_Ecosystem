@@ -36,15 +36,65 @@ function emitAppEvent(name: string, detail?: Record<string, unknown>) {
   window.dispatchEvent(new CustomEvent(name, { detail }))
 }
 
+// localStorage keys for the staff dashboard session.
+export const ACCESS_TOKEN_KEY = 'patrol_token'
+export const REFRESH_TOKEN_KEY = 'patrol_refresh'
+export const USER_STORAGE_KEY = 'patrol_user'
+
 const REQUEST_TIMEOUT = 30_000
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+// Endpoints that must NEVER trigger a silent refresh (they either mint tokens
+// or are the refresh itself — refreshing here would loop or be meaningless).
+const AUTH_PATHS_NO_REFRESH = ['/auth/login', '/auth/refresh']
+
+// Single-flight refresh: if several requests 401 at once we only hit /auth/refresh
+// ONCE and they all await the same result.
+let refreshInFlight: Promise<string | null> | null = null
+
+async function refreshAccessToken(): Promise<string | null> {
+  const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY)
+  if (!refreshToken) return null
+
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        })
+        if (!res.ok) return null
+        const data = await res.json().catch(() => null)
+        if (!data?.token || !data?.refreshToken) return null
+        localStorage.setItem(ACCESS_TOKEN_KEY, data.token)
+        localStorage.setItem(REFRESH_TOKEN_KEY, data.refreshToken)
+        if (data.user) localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(data.user))
+        return data.token as string
+      } catch {
+        return null
+      }
+    })()
+    refreshInFlight.finally(() => { refreshInFlight = null })
+  }
+  return refreshInFlight
+}
+
+// Clears the session and tells the app to bounce the user to the login screen.
+// Used when a refresh is impossible (idle >1h or session >24h old).
+function forceSessionExpiry() {
+  localStorage.removeItem(ACCESS_TOKEN_KEY)
+  localStorage.removeItem(REFRESH_TOKEN_KEY)
+  localStorage.removeItem(USER_STORAGE_KEY)
+  emitAppEvent('app:session-expired')
+}
+
+async function request<T>(path: string, options?: RequestInit, allowRefresh = true): Promise<T> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     const error = new Error('You have a poor network connection or you are offline. Please try again.')
     emitAppEvent('app:request-error', { message: error.message, kind: 'network' })
     throw error
   }
-  const token = localStorage.getItem('patrol_token')
+  const token = localStorage.getItem(ACCESS_TOKEN_KEY)
   const headers: Record<string, string> = {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   }
@@ -73,6 +123,21 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
   clearTimeout(timeout)
 
+  // Access token expired (or missing): try ONE silent refresh, then retry the
+  // original request. If the refresh fails the session is truly over -> logout.
+  if (
+    res.status === 401 &&
+    allowRefresh &&
+    token &&
+    !AUTH_PATHS_NO_REFRESH.some((p) => path.startsWith(p))
+  ) {
+    const newToken = await refreshAccessToken()
+    if (newToken) {
+      return request<T>(path, options, false)
+    }
+    forceSessionExpiry()
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }))
     const message = err.message || err.error || 'Request failed'
@@ -91,7 +156,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 export const api = {
   auth: {
     login: (email: string, password: string) =>
-      request<{ token: string; user: any }>('/auth/login', {
+      request<{ token: string; refreshToken: string; user: any }>('/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password, clientType: 'web' }),
       }),

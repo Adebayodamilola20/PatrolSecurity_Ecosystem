@@ -7,13 +7,13 @@ import bcrypt from "bcryptjs";
 import { signPatrolToken } from "./lib/jwt";
 import { requireAuth } from "./lib/httpAuth";
 import type { SensitiveAction } from "./audit";
-import { badRequest, forbidden, notFound, tooManyRequests, unauthorized } from "./lib/errors";
+import { badRequest, errorResponse, forbidden, notFound, tooManyRequests, unauthorized } from "./lib/errors";
 
 const _uid = (s: string): Id<"users"> => s as Id<"users">;
 const _cid = (s: string | null | undefined): Id<"clients"> | undefined => (s ?? undefined) as Id<"clients"> | undefined;
 const _sid = (s: string | null | undefined): Id<"sites"> | undefined => (s ?? undefined) as Id<"sites"> | undefined;
 const _cpid = (s: string | null | undefined): Id<"checkpoints"> | undefined => (s ?? undefined) as Id<"checkpoints"> | undefined;
-const _sid = (s: string): Id<"sites"> => s as Id<"sites">;
+const _sidRequired = (s: string): Id<"sites"> => s as Id<"sites">;
 const internalAny = internal as any;
 
 const ACTIVITY_TYPES = [
@@ -843,10 +843,16 @@ http.route({
   path: "/dev/seed",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    // SECURITY: Only allow in development - check for auth header
-    const authHeader = request.headers.get("authorization")
-    if (!authHeader) {
-      return unauthorized("Dev endpoints require authentication")
+    // SECURITY: bootstrap-only endpoint. Requires the DEV_SEED_SECRET env var
+    // to be set on the deployment AND presented as a Bearer token, and only
+    // works while the database has no users at all.
+    const seedSecret = process.env.DEV_SEED_SECRET
+    if (!seedSecret) {
+      return notFound()
+    }
+    const authHeader = request.headers.get("authorization") ?? ""
+    if (authHeader !== `Bearer ${seedSecret}`) {
+      return unauthorized("Invalid seed secret")
     }
     const hasUsers = await ctx.runQuery(internal.dev.hasUsers, {})
     if (hasUsers) {
@@ -873,10 +879,11 @@ http.route({
   path: "/dev/demo-content",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    // SECURITY: Only allow in development - check for auth header
-    const authHeader = request.headers.get("authorization")
-    if (!authHeader) {
-      return unauthorized("Dev endpoints require authentication")
+    // SECURITY: requires a real authenticated admin session.
+    const user = await requireAuth(ctx, request)
+    if (!user) return unauthorized()
+    if (user.role !== "admin") {
+      return forbidden("Admin access required")
     }
     return json(await ctx.runMutation(internal.dev.ensureDemoContent, {}))
   }),
@@ -1274,13 +1281,21 @@ http.route({
     if (!checkpointId) {
       return notFound("Checkpoint not found");
     }
-    const scan = await ctx.runMutation(internal.scans.create, {
-      officerId: _uid(user.convexId),
-      checkpointId,
-      gpsLatitude: typeof body?.gpsLatitude === "number" ? body.gpsLatitude : undefined,
-      gpsLongitude: typeof body?.gpsLongitude === "number" ? body.gpsLongitude : undefined,
-      notes: typeof body?.notes === "string" ? body.notes : undefined,
-    });
+    let scan;
+    try {
+      scan = await ctx.runMutation(internal.scans.create, {
+        officerId: _uid(user.convexId),
+        checkpointId,
+        gpsLatitude: typeof body?.gpsLatitude === "number" ? body.gpsLatitude : undefined,
+        gpsLongitude: typeof body?.gpsLongitude === "number" ? body.gpsLongitude : undefined,
+        notes: typeof body?.notes === "string" ? body.notes : undefined,
+      });
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("not assigned to this checkpoint")) {
+        return forbidden("Officer is not assigned to this checkpoint's site");
+      }
+      throw err;
+    }
     return json(scan, { status: 201 });
   }),
 });
@@ -1410,13 +1425,21 @@ http.route({
       const storageId = await ctx.storage.store(blob);
       clockInPhotoUrl = (await ctx.storage.getUrl(storageId)) ?? undefined;
     }
-    const result = await ctx.runMutation(internal.shifts.clockIn, {
-      userId: _uid(user.convexId),
-      latitude: typeof body?.gpsLatitude === "number" ? body.gpsLatitude : undefined,
-      longitude: typeof body?.gpsLongitude === "number" ? body.gpsLongitude : undefined,
-      siteLabel: typeof body?.siteLabel === "string" ? body.siteLabel : undefined,
-      clockInPhoto: clockInPhotoUrl,
-    });
+    let result;
+    try {
+      result = await ctx.runMutation(internal.shifts.clockIn, {
+        userId: _uid(user.convexId),
+        latitude: typeof body?.gpsLatitude === "number" ? body.gpsLatitude : undefined,
+        longitude: typeof body?.gpsLongitude === "number" ? body.gpsLongitude : undefined,
+        siteLabel: typeof body?.siteLabel === "string" ? body.siteLabel : undefined,
+        clockInPhoto: clockInPhotoUrl,
+      });
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("Already clocked in")) {
+        return errorResponse("Already clocked in — end current shift first", 409);
+      }
+      throw err;
+    }
     await recordAudit(ctx, user, "clock_in.created", {
       details: `Clock in at ${body?.siteLabel ?? "unknown site"}`,
     });
@@ -1962,8 +1985,8 @@ http.route({
     return json(await ctx.runQuery(internal.visitors.listForApi, {
       clientId: user.role === "admin" ? _cid(url.searchParams.get("clientId")) : _cid(user.clientId),
       siteId: _sid(url.searchParams.get("siteId")),
-      officerId: user.role === "guard" ? _uid(user.convexId) : (url.searchParams.get("officerId") as any),
-      status: url.searchParams.get("status") as "active" | "completed" | undefined,
+      officerId: user.role === "guard" ? _uid(user.convexId) : ((url.searchParams.get("officerId") ?? undefined) as any),
+      status: (url.searchParams.get("status") ?? undefined) as "active" | "completed" | undefined,
       limit: Number(url.searchParams.get("limit") ?? 100),
     }));
   }),
@@ -2021,8 +2044,8 @@ http.route({
     return json(await ctx.runQuery(internal.truckLogs.listForApi, {
       clientId: user.role === "admin" ? _cid(url.searchParams.get("clientId")) : _cid(user.clientId),
       siteId: _sid(url.searchParams.get("siteId")),
-      officerId: user.role === "guard" ? _uid(user.convexId) : (url.searchParams.get("officerId") as any),
-      status: url.searchParams.get("status") as "active" | "completed" | undefined,
+      officerId: user.role === "guard" ? _uid(user.convexId) : ((url.searchParams.get("officerId") ?? undefined) as any),
+      status: (url.searchParams.get("status") ?? undefined) as "active" | "completed" | undefined,
       limit: Number(url.searchParams.get("limit") ?? 100),
     }));
   }),
@@ -2539,48 +2562,6 @@ http.route({ path: "/sites", method: "POST", handler: httpAction(async (ctx, req
     ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
   });
   return json(result, { status: 201 });
-})});
-
-http.route({ path: "/ai/chat", method: "POST", handler: httpAction(async (ctx, request) => {
-  const user = await requireAuth(ctx, request);
-  if (!user) return unauthorized();
-  const body = await parseJson(request);
-  const message = String(body?.message ?? "").trim();
-  if (!message) return badRequest("message is required");
-  const history = Array.isArray(body?.history) ? body.history : [];
-  try {
-    const result = await ctx.runAction(internal.aiService.chat, {
-      userId: _uid(user.convexId),
-      userRole: user.role,
-      clientId: user.clientId ?? undefined,
-      question: message,
-      history,
-    });
-    return json(result);
-  } catch (error: any) {
-    if (error.status === 429) {
-      return tooManyRequests(error.message);
-    }
-    console.error("[AI_CHAT_ERROR]", error);
-    return json({
-      answer: "I could not reach the AI service right now. Please try again shortly.",
-      intent: "unknown",
-      model: null,
-      assistantUnavailable: true,
-      generatedReportId: null,
-      sources: [],
-    });
-  }
-})});
-
-http.route({ path: "/ai/reports", method: "GET", handler: httpAction(async (ctx, request) => {
-  const user = await requireAuth(ctx, request);
-  if (!user) return unauthorized();
-  return json(await ctx.runQuery(internal.aiService.listReports, {
-    userId: _uid(user.convexId),
-    userRole: user.role,
-    clientId: _cid(user.clientId),
-  }));
 })});
 
 http.route({ path: "/ai/architecture", method: "GET", handler: httpAction(async (_ctx, _request) => {

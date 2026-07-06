@@ -26,6 +26,7 @@ declare module 'lucide-react' {
   export const ClipboardList: LucideIcon
   export const Clock: LucideIcon
   export const Clock3: LucideIcon
+  export const Cookie: LucideIcon
   export const Database: LucideIcon
   export const Download: LucideIcon
   export const Edit: LucideIcon

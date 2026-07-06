@@ -134,3 +134,39 @@
     hyphens: none;
   }
 }
+
+/* ---- Login / auth screen animations ---- */
+@keyframes lp-fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes lp-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes lp-aurora {
+  0%   { transform: translate(-8%, -6%) scale(1); }
+  50%  { transform: translate(8%, 8%) scale(1.25); }
+  100% { transform: translate(-8%, -6%) scale(1); }
+}
+@keyframes lp-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-10px); }
+}
+@keyframes lp-pulse-ring {
+  0%   { transform: scale(0.85); opacity: 0.6; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+
+@layer utilities {
+  .lp-fade-up { opacity: 0; animation: lp-fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+  .lp-fade    { opacity: 0; animation: lp-fade 0.9s ease forwards; }
+  .lp-aurora  { animation: lp-aurora 16s ease-in-out infinite; }
+  .lp-float   { animation: lp-float 6s ease-in-out infinite; }
+  .lp-pulse-ring { animation: lp-pulse-ring 2.8s ease-out infinite; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-fade-up, .lp-fade { opacity: 1; animation: none; }
+  .lp-aurora, .lp-float, .lp-pulse-ring { animation: none; }
+}

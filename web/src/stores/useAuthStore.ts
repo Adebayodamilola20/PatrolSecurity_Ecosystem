@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { api } from '../services/api'
+import { api, ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY, USER_STORAGE_KEY } from '../services/api'
 import { connectSocket, disconnectSocket } from '../services/websocket'
 import type { Site } from '../types'
 
@@ -37,13 +37,20 @@ function isClientRole(role?: string | null): boolean {
 }
 
 function loadFromStorage(): { token: string | null; user: AuthUser | null } {
-  const token = localStorage.getItem('patrol_token')
-  const raw = localStorage.getItem('patrol_user')
+  const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+  const raw = localStorage.getItem(USER_STORAGE_KEY)
   let user = null
   if (raw) {
-    try { user = JSON.parse(raw) } catch { localStorage.removeItem('patrol_user') }
+    try { user = JSON.parse(raw) } catch { localStorage.removeItem(USER_STORAGE_KEY) }
   }
   return { token, user }
+}
+
+function clearSession() {
+  disconnectSocket()
+  localStorage.removeItem(ACCESS_TOKEN_KEY)
+  localStorage.removeItem(REFRESH_TOKEN_KEY)
+  localStorage.removeItem(USER_STORAGE_KEY)
 }
 
 const saved = loadFromStorage()
@@ -59,63 +66,72 @@ export const useAuthStore = create<AuthStore>((set) => ({
   loading: !!saved.token,
 
   hydrate: async () => {
-    const token = localStorage.getItem('patrol_token')
-    const rawUser = localStorage.getItem('patrol_user')
+    const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+    const rawUser = localStorage.getItem(USER_STORAGE_KEY)
     if (!token || !rawUser) {
-      disconnectSocket()
+      clearSession()
       set({ user: null, token: null, isAuthenticated: false, loading: false })
       return
     }
 
     set({ loading: true })
     try {
+      // api.auth.me() silently refreshes the access token on 401. If the refresh
+      // window (1h idle / 24h absolute) has passed it throws, and we log out.
       const res = await api.auth.me()
       if (isClientRole(res.user?.role)) {
-        disconnectSocket()
-        localStorage.removeItem('patrol_token')
-        localStorage.removeItem('patrol_user')
+        clearSession()
         set({ user: null, token: null, isAuthenticated: false, loading: false })
         return
       }
-      localStorage.setItem('patrol_user', JSON.stringify(res.user))
-      connectSocket(token)
-      set({ user: res.user, token, isAuthenticated: true, loading: false })
+      // The token may have been rotated during me(); re-read the current one.
+      const currentToken = localStorage.getItem(ACCESS_TOKEN_KEY) || token
+      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(res.user))
+      connectSocket(currentToken)
+      set({ user: res.user, token: currentToken, isAuthenticated: true, loading: false })
     } catch {
-      disconnectSocket()
-      localStorage.removeItem('patrol_token')
-      localStorage.removeItem('patrol_user')
+      clearSession()
       set({ user: null, token: null, isAuthenticated: false, loading: false })
     }
   },
 
   login: async (email: string, password: string) => {
     const res = await api.auth.login(email, password)
-    const { token, user } = res
+    const { token, refreshToken, user } = res
     if (isClientRole(user?.role)) {
       throw new Error('Client accounts no longer have access to the staff dashboard.')
     }
     set({ user, token, isAuthenticated: true, loading: false })
-    localStorage.setItem('patrol_token', token)
-    localStorage.setItem('patrol_user', JSON.stringify(user))
+    localStorage.setItem(ACCESS_TOKEN_KEY, token)
+    localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken)
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user))
     connectSocket(token)
   },
 
   logout: () => {
-    disconnectSocket()
+    clearSession()
     set({ user: null, token: null, isAuthenticated: false, loading: false })
-    localStorage.removeItem('patrol_token')
-    localStorage.removeItem('patrol_user')
   },
 
   updateProfile: (data) => {
     set((state) => {
       if (!state.user) return state
       const updated = { ...state.user, ...data }
-      localStorage.setItem('patrol_user', JSON.stringify(updated))
+      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updated))
       return { user: updated }
     })
   },
 }))
+
+// When a request's silent refresh fails (idle >1h or session >24h), api.ts emits
+// 'app:session-expired'. Tear the session down so the app routes back to login and
+// the guard must re-enter their email + password.
+if (typeof window !== 'undefined') {
+  window.addEventListener('app:session-expired', () => {
+    clearSession()
+    useAuthStore.setState({ user: null, token: null, isAuthenticated: false, loading: false })
+  })
+}
 
 export function useIsAdmin() {
   return useAuthStore((s) => s.user?.role?.trim()?.toLowerCase() === 'admin')

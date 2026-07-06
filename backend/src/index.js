@@ -100,11 +100,18 @@ const limiter = rateLimit({
   message: { message: 'Too many requests, please try again later.' },
 })
 
+// Broad per-IP backstop for the auth router. Only counts FAILED requests and
+// skips GETs, so the frequent GET /me session check is never throttled while
+// credential-taking POSTs (login, forgot/reset/change-password) stay capped.
+// Per-account login brute-force is handled more tightly by loginLimiter in
+// routes/auth.js.
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  skip: (req) => req.method === 'GET',
   message: { error: 'Too many login attempts, please try again later.' },
 })
 

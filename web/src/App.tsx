@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import DashboardLayout from './components/layout/DashboardLayout'
+import CookieConsent from './components/CookieConsent'
 import Dashboard from './pages/Dashboard'
 import Monitoring from './pages/Monitoring'
 import Scans from './pages/Scans'
@@ -68,6 +69,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <CookieConsent />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />

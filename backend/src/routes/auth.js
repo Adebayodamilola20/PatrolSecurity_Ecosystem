@@ -1,14 +1,31 @@
 import { Router } from 'express'
+import { rateLimit, ipKeyGenerator } from 'express-rate-limit'
 import crypto from 'crypto'
 import bcrypt from 'bcryptjs'
 import { v4 as uuidv4 } from 'uuid'
 import db from '../db.js'
-import { authMiddleware, generateToken } from '../middleware/auth.js'
+import { authMiddleware, generateToken, generateRefreshToken, verifyRefreshToken } from '../middleware/auth.js'
 import { normalizeRole } from '../utils/roles.js'
 import { sendEmail } from '../services/notifications.js'
 
 const router = Router()
 const PASSWORD_RESET_EXPIRY_MINUTES = 30
+
+// Throttle repeated login attempts to slow brute-force / credential-stuffing.
+// Only FAILED attempts count (skipSuccessfulRequests), so a normal user who
+// logs in successfully is never penalised. Keyed by IP + email so an attacker
+// hammering one account is blocked without locking out other users who happen
+// to share the same NAT/office IP. Returns HTTP 429 once the limit is hit.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.LOGIN_RATE_LIMIT_MAX || 5),
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) =>
+    `${ipKeyGenerator(req.ip)}:${String(req.body?.email || '').trim().toLowerCase()}`,
+  message: { message: 'Too many failed login attempts. Please try again in 15 minutes.' },
+})
 
 function hashResetToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex')
@@ -44,7 +61,7 @@ async function buildSafeUser(user) {
   }
 }
 
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase()
   const { password, clientType } = req.body
 
@@ -78,9 +95,46 @@ router.post('/login', async (req, res) => {
   }
 
   const safeUser = await buildSafeUser(user)
-  const token = generateToken({ ...user, siteIds: safeUser.siteIds })
+  const tokenUser = { ...user, siteIds: safeUser.siteIds }
+  const token = generateToken(tokenUser)
+  const refreshToken = generateRefreshToken(tokenUser)
   res.json({
     token,
+    refreshToken,
+    user: safeUser,
+  })
+})
+
+// Silent-refresh endpoint. The client calls this with its refresh token when an
+// access token 401s. We verify the refresh token (signature + 1h idle window +
+// 24h absolute cap), re-check the account is still valid/active, then issue a
+// fresh access token AND a rotated refresh token (same absExp). A dead refresh
+// token (idle >1h or age >24h) returns 401 and the client must log in again.
+router.post('/refresh', async (req, res) => {
+  const presented = String(req.body?.refreshToken || '').trim()
+  if (!presented) {
+    return res.status(401).json({ message: 'Refresh token is required' })
+  }
+
+  let decoded
+  try {
+    decoded = verifyRefreshToken(presented)
+  } catch {
+    return res.status(401).json({ message: 'Session expired. Please sign in again.' })
+  }
+
+  const user = await db.get('SELECT * FROM users WHERE id = ?', [decoded.id])
+  if (!user || !user.active) {
+    return res.status(401).json({ message: 'Session expired. Please sign in again.' })
+  }
+
+  const safeUser = await buildSafeUser(user)
+  const tokenUser = { ...user, siteIds: safeUser.siteIds }
+  const token = generateToken(tokenUser)
+  const refreshToken = generateRefreshToken(tokenUser, decoded.absExp)
+  res.json({
+    token,
+    refreshToken,
     user: safeUser,
   })
 })
