@@ -305,28 +305,60 @@ export const create = internalMutation({
     let gpsValid = true;
 
     if (args.gpsLatitude != null && args.gpsLongitude != null) {
-      computedDistance = distanceMeters(
-        checkpoint.latitude,
-        checkpoint.longitude,
-        args.gpsLatitude,
-        args.gpsLongitude,
-      );
-      gpsValid = computedDistance <= checkpoint.radiusMeters;
-      if (!gpsValid) {
-        await ctx.runMutation(internal.audit.record, {
-          action: "scan.rejected",
-          actorId: args.officerId,
-          actorRole: officer?.role ?? "guard",
-          targetType: "checkpoint",
-          targetId: args.checkpointId,
-          details: `GPS out of radius: ${computedDistance}m > ${checkpoint.radiusMeters}m`,
-          clientId,
-          siteId,
-          success: false,
-        });
-        throw new Error(
-          "GPS location is outside the allowed radius for this checkpoint",
+      if (checkpoint.latitude != null && checkpoint.longitude != null) {
+        // Legacy checkpoint with its own coordinates: enforce as before.
+        computedDistance = distanceMeters(
+          checkpoint.latitude,
+          checkpoint.longitude,
+          args.gpsLatitude,
+          args.gpsLongitude,
         );
+        gpsValid = computedDistance <= (checkpoint.radiusMeters ?? 50);
+        if (!gpsValid) {
+          await ctx.runMutation(internal.audit.record, {
+            action: "scan.rejected",
+            actorId: args.officerId,
+            actorRole: officer?.role ?? "guard",
+            targetType: "checkpoint",
+            targetId: args.checkpointId,
+            details: `GPS out of radius: ${computedDistance}m > ${checkpoint.radiusMeters ?? 50}m`,
+            clientId,
+            siteId,
+            success: false,
+          });
+          throw new Error(
+            "GPS location is outside the allowed radius for this checkpoint",
+          );
+        }
+      } else {
+        // Sub-location (plain QR, no coordinates of its own): verify the
+        // guard's GPS against the parent site geofence. The scan is recorded
+        // either way — out-of-range only flags it as unverified so staff see
+        // the evidence instead of the scan silently never existing.
+        const site = siteId ? await ctx.db.get(siteId) : null;
+        if (site?.latitude != null && site?.longitude != null) {
+          computedDistance = distanceMeters(
+            site.latitude,
+            site.longitude,
+            args.gpsLatitude,
+            args.gpsLongitude,
+          );
+          gpsValid = computedDistance <= (site.radiusMeters ?? 150);
+          if (!gpsValid) {
+            await ctx.runMutation(internal.audit.record, {
+              action: "scan.unverified",
+              actorId: args.officerId,
+              actorRole: officer?.role ?? "guard",
+              targetType: "checkpoint",
+              targetId: args.checkpointId,
+              details: `Sub-location scan outside site geofence: ${Math.round(computedDistance)}m > ${site.radiusMeters ?? 150}m from ${site.name}`,
+              clientId,
+              siteId,
+              success: true,
+            });
+          }
+        }
+        // Site without coordinates: nothing to verify against — scan-only.
       }
     }
 

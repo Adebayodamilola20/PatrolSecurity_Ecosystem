@@ -41,6 +41,32 @@ export interface ClientScan {
   gpsValid: boolean
 }
 
+export interface ClientSubLocation {
+  id: string
+  name: string
+  code: string
+  active: boolean
+  scansToday: number
+  verifiedToday: number
+  lastScanAt: string | null
+  lastScanVerified: boolean | null
+}
+
+/** A location (site) with its sub-location QR points, from /client/sites. */
+export interface ClientSiteDetail {
+  id: string
+  name: string
+  location: string
+  address: string | null
+  latitude: number | null
+  longitude: number | null
+  radiusMeters: number | null
+  active: boolean
+  scansToday: number
+  verifiedToday: number
+  subLocations: ClientSubLocation[]
+}
+
 export interface ClientCheckpoint {
   id: string
   name: string

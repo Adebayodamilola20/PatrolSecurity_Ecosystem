@@ -108,9 +108,11 @@ export const create = internalMutation({
   args: {
     name: v.string(),
     code: v.string(),
-    latitude: v.number(),
-    longitude: v.number(),
-    radiusMeters: v.number(),
+    // Sub-locations are plain QR points: no coordinates of their own. Scans
+    // are then verified against the parent site geofence instead.
+    latitude: v.optional(v.number()),
+    longitude: v.optional(v.number()),
+    radiusMeters: v.optional(v.number()),
     expectedIntervalMinutes: v.number(),
     scheduledTimeIn: v.string(),
     scheduledTimeOut: v.string(),
@@ -120,6 +122,7 @@ export const create = internalMutation({
   },
   handler: async (ctx, args) => {
     const site = args.siteId ? await ctx.db.get(args.siteId) : null;
+    if (args.siteId && !site) throw new Error("Site not found");
     const createdAt = Date.now();
     const value = {
       ...args,
@@ -127,7 +130,7 @@ export const create = internalMutation({
       createdAt,
     };
     const id = await ctx.db.insert("checkpoints", value);
-    return cpShape({ ...value, _id: id });
+    return cpShape({ ...value, _id: id }, site);
   },
 });
 

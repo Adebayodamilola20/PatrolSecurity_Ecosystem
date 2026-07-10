@@ -60,6 +60,13 @@ export default defineSchema({
     clientId: v.id("clients"),
     name: v.string(),
     location: v.string(),
+    address: v.optional(v.string()),
+    latitude: v.optional(v.number()),
+    longitude: v.optional(v.number()),
+    // Geofence radius for verifying sub-location (checkpoint) scans that
+    // carry no coordinates of their own: guard GPS at scan time must fall
+    // within this distance of the site coordinates to count as verified.
+    radiusMeters: v.optional(v.number()),
     patrolIntervalMinutes: v.optional(v.number()),
     patrolGracePeriodMinutes: v.optional(v.number()),
     active: v.boolean(),
@@ -105,9 +112,11 @@ export default defineSchema({
     siteId: v.optional(v.id("sites")),
     name: v.string(),
     code: v.string(),
-    latitude: v.number(),
-    longitude: v.number(),
-    radiusMeters: v.number(),
+    // Optional: sub-locations are plain QR points with no coordinates of
+    // their own; scans are then verified against the parent site geofence.
+    latitude: v.optional(v.number()),
+    longitude: v.optional(v.number()),
+    radiusMeters: v.optional(v.number()),
     expectedIntervalMinutes: v.number(),
     scheduledTimeIn: v.string(),
     scheduledTimeOut: v.string(),

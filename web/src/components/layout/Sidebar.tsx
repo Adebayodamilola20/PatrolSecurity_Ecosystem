@@ -4,7 +4,7 @@ import {
   LayoutDashboard,
   MapPin,
   Users,
-  QrCode,
+  Building2,
   ClipboardList,
   FileText,
   Bell,
@@ -45,7 +45,12 @@ function useNav() {
     items.push({ to: '/users', label: 'Personnel', icon: Users })
   }
 
-  items.push({ to: '/checkpoints', label: 'Checkpoints', icon: QrCode })
+  // Client accounts own the whole hierarchy now: everything that used to
+  // live on the flat Checkpoints page is managed inside a client account
+  // (Client -> Locations -> Sub-locations with QR codes).
+  if (role === 'admin' || role === 'supervisor') {
+    items.push({ to: '/clients', label: 'Clients', icon: Building2 })
+  }
   items.push({ to: '/scans', label: 'Patrol History', icon: ClipboardList })
   items.push({ to: '/timesheets', label: 'Timesheets', icon: Clock })
   items.push({ to: '/post-orders', label: 'Post Orders', icon: ClipboardList })

@@ -21,6 +21,10 @@ export function notFound(message = "Not found") {
   return errorResponse(message, 404);
 }
 
+export function conflict(message = "Conflict") {
+  return errorResponse(message, 409);
+}
+
 export function tooManyRequests(message = "Too many requests. Please try again later.") {
   return errorResponse(message, 429);
 }

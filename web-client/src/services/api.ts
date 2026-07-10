@@ -179,6 +179,12 @@ export const api = {
   checkpoints: {
     list: () => request<ClientCheckpoint[]>('/client/checkpoints'),
   },
+  // The tenant's own hierarchy: locations -> sub-locations with scan
+  // verification activity. Everything is created by staff on the admin
+  // dashboard and simply appears here — clients never configure anything.
+  sites: {
+    list: () => request<{ sites: ClientSiteDetail[] }>('/client/sites'),
+  },
   reports: {
     list: () => request<ClientReport[]>('/client/reports'),
     pdfUrl: (id: string) => `${API_BASE}/client/reports/${id}/pdf`,
@@ -193,5 +199,6 @@ import type {
   ClientGuard,
   ClientScan,
   ClientCheckpoint,
+  ClientSiteDetail,
   ClientReport,
 } from '../types'
