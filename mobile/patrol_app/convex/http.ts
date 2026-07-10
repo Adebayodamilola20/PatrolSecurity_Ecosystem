@@ -2617,6 +2617,78 @@ http.route({ path: "/client/sites", method: "GET", handler: httpAction(async (ct
   return json({ sites: detail.sites });
 })});
 
+// [client-structure] Assign/unassign a guard to a site. Scans at a site are
+// rejected unless the guard is assigned, so staff need this when they add a
+// new client location.
+http.route({ path: "/site-assignments", method: "POST", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  const roleErr = requireRole(user, ["admin", "supervisor"]);
+  if (roleErr) return roleErr;
+  const body = await parseJson(request);
+  const siteId = await ctx.runQuery(internal.sites.resolveId, { id: String(body?.siteId ?? "") });
+  if (!siteId) return notFound("Site not found");
+  const userId = await ctx.runQuery(internal.users.resolveId, { id: String(body?.userId ?? "") });
+  if (!userId) return notFound("User not found");
+  const result = await ctx.runMutation(internal.sites.assignUser, { siteId, userId });
+  await recordAudit(ctx, user, "site.guard_assigned", {
+    targetType: "site", targetId: siteId,
+    details: `Assigned user ${userId} to site ${siteId}`,
+  });
+  return json(result, { status: result.alreadyAssigned ? 200 : 201 });
+})});
+
+http.route({ path: "/site-assignments", method: "DELETE", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  const roleErr = requireRole(user, ["admin", "supervisor"]);
+  if (roleErr) return roleErr;
+  const body = await parseJson(request);
+  const siteId = await ctx.runQuery(internal.sites.resolveId, { id: String(body?.siteId ?? "") });
+  if (!siteId) return notFound("Site not found");
+  const userId = await ctx.runQuery(internal.users.resolveId, { id: String(body?.userId ?? "") });
+  if (!userId) return notFound("User not found");
+  const result = await ctx.runMutation(internal.sites.unassignUser, { siteId, userId });
+  await recordAudit(ctx, user, "site.guard_unassigned", {
+    targetType: "site", targetId: siteId,
+    details: `Unassigned user ${userId} from site ${siteId}`,
+  });
+  return json(result);
+})});
+
+// [client-structure] Portal overview: only NUMBERS for guards (AGM rule —
+// clients never see guard identities), plus site list and scan activity.
+http.route({ path: "/client/overview", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  if (user.role !== "main_account") return forbidden("The client portal is for client accounts only.");
+  const clientId = _cid(user.clientId);
+  if (!clientId) {
+    return json({ guardsOnDuty: 0, totalGuards: 0, sites: [], scansToday: 0, lastScanAt: null, coveragePct: null });
+  }
+  return json(await ctx.runQuery(internal.clients.portalOverview, { clientId }));
+})});
+
+// [client-structure] Portal patrol activity — guard identities anonymized.
+http.route({ path: "/client/scans", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  if (user.role !== "main_account") return forbidden("The client portal is for client accounts only.");
+  const clientId = _cid(user.clientId);
+  if (!clientId) return json([]);
+  return json(await ctx.runQuery(internal.clients.portalScans, { clientId }));
+})});
+
+// [client-structure] Portal report inbox (list of submitted reports).
+http.route({ path: "/client/reports", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  if (user.role !== "main_account") return forbidden("The client portal is for client accounts only.");
+  const clientId = _cid(user.clientId);
+  if (!clientId) return json([]);
+  return json(await ctx.runQuery(internal.clients.portalReports, { clientId }));
+})});
+
 http.route({ path: "/sites", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();

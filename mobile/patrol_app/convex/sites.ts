@@ -115,3 +115,43 @@ export const updatePatrolSettings = internalMutation({
     return updated ? siteShape(updated) : null;
   },
 });
+
+// Guards must be assigned to a site before their scans there are accepted.
+// Idempotent: re-assigning an already-assigned guard is a no-op.
+export const assignUser = internalMutation({
+  args: { siteId: v.id("sites"), userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("userSiteAssignments")
+      .withIndex("by_userId_siteId", (q) =>
+        q.eq("userId", args.userId).eq("siteId", args.siteId),
+      )
+      .first();
+    if (existing) return { id: existing._id, alreadyAssigned: true };
+    const site = await ctx.db.get(args.siteId);
+    if (!site) throw new Error("Site not found");
+    const user = await ctx.db.get(args.userId);
+    if (!user) throw new Error("User not found");
+    const id = await ctx.db.insert("userSiteAssignments", {
+      clientId: site.clientId,
+      userId: args.userId,
+      siteId: args.siteId,
+      createdAt: Date.now(),
+    });
+    return { id, alreadyAssigned: false };
+  },
+});
+
+export const unassignUser = internalMutation({
+  args: { siteId: v.id("sites"), userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("userSiteAssignments")
+      .withIndex("by_userId_siteId", (q) =>
+        q.eq("userId", args.userId).eq("siteId", args.siteId),
+      )
+      .first();
+    if (existing) await ctx.db.delete(existing._id);
+    return { removed: !!existing };
+  },
+});

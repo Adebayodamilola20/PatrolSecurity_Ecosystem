@@ -255,3 +255,131 @@ export const getDetail = internalQuery({
     };
   },
 });
+
+// ---- Client-portal queries (tenant-scoped, guard identities withheld) ----
+// The AGM rule: clients see statistics and activity, never who the guard is.
+
+export const portalOverview = internalQuery({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const sites = await ctx.db
+      .query("sites")
+      .withIndex("by_clientId", (q) => q.eq("clientId", args.clientId))
+      .collect();
+
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const todayMs = startOfToday.getTime();
+
+    const guardIds = new Set<string>();
+    let scansToday = 0;
+    let lastScanAt: number | null = null;
+
+    for (const site of sites) {
+      const assignments = await ctx.db
+        .query("userSiteAssignments")
+        .withIndex("by_siteId", (q) => q.eq("siteId", site._id))
+        .collect();
+      for (const assignment of assignments) guardIds.add(assignment.userId);
+
+      const siteScans = await ctx.db
+        .query("scans")
+        .withIndex("by_siteId_scannedAt", (q) =>
+          q.eq("siteId", site._id).gte("scannedAt", todayMs),
+        )
+        .collect();
+      scansToday += siteScans.length;
+
+      const latest = await ctx.db
+        .query("scans")
+        .withIndex("by_siteId_scannedAt", (q) => q.eq("siteId", site._id))
+        .order("desc")
+        .first();
+      if (latest && (lastScanAt === null || latest.scannedAt > lastScanAt)) {
+        lastScanAt = latest.scannedAt;
+      }
+    }
+
+    let totalGuards = 0;
+    let guardsOnDuty = 0;
+    for (const guardId of guardIds) {
+      const guard = await ctx.db.get(guardId as any);
+      if (!guard || (guard as any).role !== "guard" || !(guard as any).active) continue;
+      totalGuards += 1;
+      const activeShift = await ctx.db
+        .query("shifts")
+        .withIndex("by_userId_status", (q) =>
+          q.eq("userId", guardId as any).eq("status", "active"),
+        )
+        .first();
+      if (activeShift) guardsOnDuty += 1;
+    }
+
+    return {
+      guardsOnDuty,
+      totalGuards,
+      sites: sites.map((s) => ({ id: s._id, name: s.name, location: s.address ?? s.location })),
+      scansToday,
+      lastScanAt,
+      coveragePct: null,
+    };
+  },
+});
+
+export const portalScans = internalQuery({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const sites = await ctx.db
+      .query("sites")
+      .withIndex("by_clientId", (q) => q.eq("clientId", args.clientId))
+      .collect();
+    const siteNames = new Map(sites.map((s) => [s._id, s.name]));
+    const checkpoints = await ctx.db.query("checkpoints").collect();
+
+    const all: Array<{
+      id: string
+      guardName: string
+      checkpointName: string
+      siteLabel: string
+      scannedAt: number
+      gpsValid: boolean
+    }> = [];
+    for (const site of sites) {
+      const siteScans = await ctx.db
+        .query("scans")
+        .withIndex("by_siteId_scannedAt", (q) => q.eq("siteId", site._id))
+        .order("desc")
+        .take(50);
+      for (const s of siteScans) {
+        all.push({
+          id: s._id,
+          // Deliberately anonymized: clients never see guard identities.
+          guardName: "On-duty guard",
+          checkpointName:
+            checkpoints.find((c) => c._id === s.checkpointId)?.name ?? "",
+          siteLabel: siteNames.get(site._id) ?? "",
+          scannedAt: s.scannedAt,
+          gpsValid: s.gpsValid,
+        });
+      }
+    }
+    return all.sort((a, b) => b.scannedAt - a.scannedAt).slice(0, 50);
+  },
+});
+
+export const portalReports = internalQuery({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const submissions = await ctx.db
+      .query("reportSubmissions")
+      .withIndex("by_clientId_submittedAt", (q) => q.eq("clientId", args.clientId))
+      .order("desc")
+      .take(50);
+    return submissions.map((s) => ({
+      id: s.legacyId ?? s._id,
+      title: s.title,
+      type: s.type,
+      submittedAt: s.submittedAt,
+    }));
+  },
+});
