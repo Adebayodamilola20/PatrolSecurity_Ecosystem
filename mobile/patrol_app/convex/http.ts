@@ -7,13 +7,12 @@ import bcrypt from "bcryptjs";
 import { signPatrolToken } from "./lib/jwt";
 import { requireAuth } from "./lib/httpAuth";
 import type { SensitiveAction } from "./audit";
-import { badRequest, forbidden, notFound, tooManyRequests, unauthorized } from "./lib/errors";
+import { badRequest, conflict, forbidden, notFound, tooManyRequests, unauthorized } from "./lib/errors";
 
 const _uid = (s: string): Id<"users"> => s as Id<"users">;
 const _cid = (s: string | null | undefined): Id<"clients"> | undefined => (s ?? undefined) as Id<"clients"> | undefined;
 const _sid = (s: string | null | undefined): Id<"sites"> | undefined => (s ?? undefined) as Id<"sites"> | undefined;
 const _cpid = (s: string | null | undefined): Id<"checkpoints"> | undefined => (s ?? undefined) as Id<"checkpoints"> | undefined;
-const _sid = (s: string): Id<"sites"> => s as Id<"sites">;
 const internalAny = internal as any;
 
 const ACTIVITY_TYPES = [
@@ -2117,10 +2116,18 @@ http.route({ path: "/checkpoints", method: "POST", handler: httpAction(async (ct
   const roleErr = requireRole(user, ["admin", "main_account", "supervisor"]);
   if (roleErr) return roleErr;
   const body = await parseJson(request);
+  const name = String(body?.name ?? "").trim();
+  if (!name) return badRequest("Sub-location name is required");
+  // [client-structure] Sub-locations are plain QR points: GPS is optional
+  // (scans verify against the parent site geofence), the QR code is
+  // auto-generated when not supplied, and a parent site is required.
+  if (!body?.siteId) return badRequest("A parent location (siteId) is required");
   const result = await ctx.runMutation(internal.checkpoints.create, {
-    name: String(body?.name ?? ""), code: String(body?.code ?? ""),
-    latitude: Number(body?.latitude ?? 0), longitude: Number(body?.longitude ?? 0),
-    radiusMeters: Number(body?.radiusMeters ?? 10),
+    name,
+    code: String(body?.code ?? "") || crypto.randomUUID(),
+    latitude: body?.latitude === undefined || body?.latitude === null ? undefined : Number(body.latitude),
+    longitude: body?.longitude === undefined || body?.longitude === null ? undefined : Number(body.longitude),
+    radiusMeters: body?.radiusMeters === undefined || body?.radiusMeters === null ? undefined : Number(body.radiusMeters),
     expectedIntervalMinutes: Number(body?.expectedIntervalMinutes ?? 60),
     scheduledTimeIn: String(body?.scheduledTimeIn ?? ""),
     scheduledTimeOut: String(body?.scheduledTimeOut ?? ""),
@@ -2489,23 +2496,101 @@ http.route({ path: "/clients", method: "GET", handler: httpAction(async (ctx, re
   return json(user.clientId ? [await ctx.runQuery(internal.clients.getById, { clientId: user.clientId as Id<"clients"> })].filter(Boolean) : []);
 })});
 
+// [client-structure] Creating a client now provisions the company AND its
+// portal login (main_account user) in one transaction. Password is required —
+// there is deliberately no default.
 http.route({ path: "/clients", method: "POST", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
   const roleErr = requireRole(user, ["admin"]);
   if (roleErr) return roleErr;
   const body = await parseJson(request);
-  const result = await ctx.runMutation(internal.clients.create, {
-    name: String(body?.name ?? ""), email: String(body?.email ?? ""),
-    phone: String(body?.phone ?? ""), active: body?.active !== false,
-  });
+  const name = String(body?.name ?? "").trim();
+  const email = String(body?.email ?? "").trim().toLowerCase();
+  const password = String(body?.password ?? "");
+  if (!name) return badRequest("Company name is required");
+  if (!email) return badRequest("Email is required");
+  if (password.length < 8) return badRequest("Password must be at least 8 characters");
+  let result;
+  try {
+    result = await ctx.runMutation(internal.clients.createWithLogin, {
+      name, email,
+      phone: String(body?.phone ?? ""),
+      passwordHash: await bcrypt.hash(password, 10),
+      active: body?.active !== false,
+    });
+  } catch (error: any) {
+    if (String(error?.message ?? "").includes("already exists")) {
+      return conflict("A user with this email already exists");
+    }
+    throw error;
+  }
   await recordAudit(ctx, user, "client.created", {
     targetType: "client",
       targetId: result.id as unknown as string,
-      details: `Created client: ${body?.name}`,
+      details: `Created client account with portal login: ${name}`,
     ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
   });
   return json(result, { status: 201 });
+})});
+
+// [client-structure] Admin drill-down for one client account: company info,
+// portal logins, and the Location -> Sub-location tree with scan activity.
+http.route({ pathPrefix: "/clients/", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  const id = lastPathPart(request);
+  if (!id) return badRequest("Client ID required");
+  const clientId = await ctx.runQuery(internal.clients.resolveId, { id });
+  if (!clientId) return notFound("Client not found");
+  if (user.role !== "admin" && _cid(user.clientId) !== clientId) {
+    return forbidden("Access denied");
+  }
+  const detail = await ctx.runQuery(internal.clients.getDetail, { clientId });
+  if (!detail) return notFound("Client not found");
+  return json(detail);
+})});
+
+// [client-structure] Update client account info (kept in step with the
+// portal login inside the mutation).
+http.route({ pathPrefix: "/clients/", method: "PUT", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  const roleErr = requireRole(user, ["admin"]);
+  if (roleErr) return roleErr;
+  const id = lastPathPart(request);
+  if (!id) return badRequest("Client ID required");
+  const clientId = await ctx.runQuery(internal.clients.resolveId, { id });
+  if (!clientId) return notFound("Client not found");
+  const body = await parseJson(request);
+  const result = await ctx.runMutation(internal.clients.update, {
+    clientId,
+    name: body.name === undefined ? undefined : String(body.name),
+    email: body.email === undefined ? undefined : String(body.email).trim().toLowerCase(),
+    phone: body.phone === undefined ? undefined : String(body.phone),
+    active: body.active === undefined ? undefined : Boolean(body.active),
+  }).catch(() => null);
+  if (!result) return notFound("Client not found");
+  await recordAudit(ctx, user, "client.updated", {
+    targetType: "client", targetId: id,
+    details: `Updated client: ${result.name}`,
+  });
+  return json(result);
+})});
+
+// [client-structure] Client-portal view of the tenant's own hierarchy:
+// locations -> sub-locations with scan/verification activity. Tenant is
+// resolved from the session token ONLY — the portal never sends a clientId.
+http.route({ path: "/client/sites", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  if (user.role !== "main_account") return forbidden("The client portal is for client accounts only.");
+  const clientId = _cid(user.clientId);
+  if (!clientId) return json({ sites: [] });
+  const detail = await ctx.runQuery(internal.clients.getDetail, { clientId });
+  if (!detail) return json({ sites: [] });
+  // Deliberately omit portal logins and any staff/guard identity data.
+  return json({ sites: detail.sites });
 })});
 
 http.route({ path: "/sites", method: "GET", handler: httpAction(async (ctx, request) => {
@@ -2527,6 +2612,10 @@ http.route({ path: "/sites", method: "POST", handler: httpAction(async (ctx, req
   const body = await parseJson(request);
   const result = await ctx.runMutation(internal.sites.create, {
     name: String(body?.name ?? ""), location: String(body?.location ?? ""),
+    address: body?.address === undefined ? undefined : String(body.address),
+    latitude: body?.latitude === undefined || body?.latitude === null ? undefined : Number(body.latitude),
+    longitude: body?.longitude === undefined || body?.longitude === null ? undefined : Number(body.longitude),
+    radiusMeters: body?.radiusMeters === undefined || body?.radiusMeters === null ? undefined : Number(body.radiusMeters),
     clientId: String(body?.clientId ?? "") as Id<"clients">,
     active: body?.active !== false,
     patrolIntervalMinutes: body?.patrolIntervalMinutes === undefined ? undefined : Number(body.patrolIntervalMinutes),
@@ -2612,6 +2701,10 @@ http.route({ pathPrefix: "/sites/", method: "PUT", handler: httpAction(async (ct
   const body = await parseJson(request);
   return json(await ctx.runMutation(internal.sites.update, {
     siteId, name: body.name, location: body.location, active: body.active,
+    address: body.address === undefined ? undefined : String(body.address),
+    latitude: body.latitude === undefined || body.latitude === null ? undefined : Number(body.latitude),
+    longitude: body.longitude === undefined || body.longitude === null ? undefined : Number(body.longitude),
+    radiusMeters: body.radiusMeters === undefined || body.radiusMeters === null ? undefined : Number(body.radiusMeters),
     patrolIntervalMinutes: body.patrolIntervalMinutes === undefined ? undefined : Number(body.patrolIntervalMinutes),
     patrolGracePeriodMinutes: body.patrolGracePeriodMinutes === undefined ? undefined : Number(body.patrolGracePeriodMinutes),
   }));

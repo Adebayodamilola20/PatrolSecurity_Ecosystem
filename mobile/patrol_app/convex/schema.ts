@@ -60,6 +60,13 @@ export default defineSchema({
     clientId: v.id("clients"),
     name: v.string(),
     location: v.string(),
+    address: v.optional(v.string()),
+    latitude: v.optional(v.number()),
+    longitude: v.optional(v.number()),
+    // Geofence radius for verifying sub-location (checkpoint) scans that
+    // carry no coordinates of their own: guard GPS at scan time must fall
+    // within this distance of the site coordinates to count as verified.
+    radiusMeters: v.optional(v.number()),
     patrolIntervalMinutes: v.optional(v.number()),
     patrolGracePeriodMinutes: v.optional(v.number()),
     active: v.boolean(),
@@ -105,9 +112,11 @@ export default defineSchema({
     siteId: v.optional(v.id("sites")),
     name: v.string(),
     code: v.string(),
-    latitude: v.number(),
-    longitude: v.number(),
-    radiusMeters: v.number(),
+    // Optional: sub-locations are plain QR points with no coordinates of
+    // their own; scans are then verified against the parent site geofence.
+    latitude: v.optional(v.number()),
+    longitude: v.optional(v.number()),
+    radiusMeters: v.optional(v.number()),
     expectedIntervalMinutes: v.number(),
     scheduledTimeIn: v.string(),
     scheduledTimeOut: v.string(),
@@ -523,10 +532,7 @@ export default defineSchema({
     reportType: v.string(),
     title: v.string(),
     content: v.string(),
-<<<<<<< HEAD
     // Loosened from v.string(): existing deployment data stores an object here.
-=======
->>>>>>> feat/ai-assistant-enhancements
     sourceSummary: v.any(),
     status: v.string(),
     createdAt: v.number(),
@@ -640,74 +646,4 @@ export default defineSchema({
     .index("by_siteId", ["siteId"])
     .index("by_officerId", ["officerId"])
     .index("by_status", ["status"]),
-
-  aiAuditLogs: defineTable({
-    userId: v.id("users"),
-    userRole: v.string(),
-    question: v.string(),
-    intent: v.string(),
-    dataSources: v.array(v.string()),
-    sensitive: v.boolean(),
-    status: v.string(),
-    error: v.string(),
-    createdAt: v.number(),
-  })
-    .index("by_userId_createdAt", ["userId", "createdAt"])
-    .index("by_createdAt", ["createdAt"]),
-
-  aiRateLimits: defineTable({
-    userId: v.id("users"),
-    windowKey: v.string(),
-    count: v.number(),
-    updatedAt: v.number(),
-  })
-    .index("by_userId_windowKey", ["userId", "windowKey"]),
-
-  aiGeneratedReports: defineTable({
-    userId: v.id("users"),
-    reportType: v.string(),
-    title: v.string(),
-    content: v.string(),
-    sourceSummary: v.any(),
-    status: v.string(),
-    createdAt: v.number(),
-  })
-    .index("by_userId_createdAt", ["userId", "createdAt"])
-    .index("by_createdAt", ["createdAt"]),
-
-  aiClientEmails: defineTable({
-    userId: v.id("users"),
-    reportId: v.optional(v.id("aiGeneratedReports")),
-    clientId: v.optional(v.id("clients")),
-    subject: v.string(),
-    body: v.string(),
-    status: v.string(),
-    approvedBy: v.optional(v.id("users")),
-    sentAt: v.optional(v.number()),
-    createdAt: v.number(),
-  })
-    .index("by_userId_createdAt", ["userId", "createdAt"])
-    .index("by_clientId_createdAt", ["clientId", "createdAt"]),
-
-  aiKnowledgeDocuments: defineTable({
-    title: v.string(),
-    type: v.string(),
-    siteId: v.optional(v.id("sites")),
-    clientId: v.optional(v.id("clients")),
-    uploadedBy: v.id("users"),
-    createdAt: v.number(),
-  })
-    .index("by_clientId", ["clientId"])
-    .index("by_siteId", ["siteId"])
-    .index("by_uploadedBy", ["uploadedBy"]),
-
-  aiKnowledgeChunks: defineTable({
-    documentId: v.id("aiKnowledgeDocuments"),
-    chunkIndex: v.number(),
-    content: v.string(),
-    embeddingJson: v.string(),
-    embeddingModel: v.string(),
-    createdAt: v.number(),
-  })
-    .index("by_documentId", ["documentId"]),
 });

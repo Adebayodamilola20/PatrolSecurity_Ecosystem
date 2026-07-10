@@ -7,7 +7,7 @@ import Overview from './pages/Overview'
 import Guards from './pages/Guards'
 import GuardDetail from './pages/GuardDetail'
 import Scans from './pages/Scans'
-import Checkpoints from './pages/Checkpoints'
+import Locations from './pages/Locations'
 import Reports from './pages/Reports'
 import { useClientAuthStore } from './stores/useClientAuthStore'
 
@@ -43,7 +43,9 @@ export default function App() {
           <Route path="/guards" element={<Guards />} />
           <Route path="/guards/:id" element={<GuardDetail />} />
           <Route path="/scans" element={<Scans />} />
-          <Route path="/checkpoints" element={<Checkpoints />} />
+          <Route path="/locations" element={<Locations />} />
+          {/* Old flat checkpoints view is superseded by the grouped Locations view. */}
+          <Route path="/checkpoints" element={<Navigate to="/locations" replace />} />
           <Route path="/reports" element={<Reports />} />
         </Route>
 

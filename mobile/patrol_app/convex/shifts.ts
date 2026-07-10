@@ -31,22 +31,35 @@ async function validateSiteGeofence(
   if (!siteId || latitude == null || longitude == null) {
     return { gpsValid: false, distanceMeters: undefined as number | undefined };
   }
+  // Prefer the site's own geofence when it has coordinates; fall back to the
+  // nearest checkpoint that still carries its own coordinates (legacy data).
+  // Sub-locations without coordinates can't anchor a geofence.
+  const site = await ctx.db.get(siteId);
+  if (site?.latitude != null && site?.longitude != null) {
+    const distance = distanceMeters(site.latitude, site.longitude, latitude, longitude);
+    return {
+      gpsValid: distance <= (site.radiusMeters ?? 150),
+      distanceMeters: distance,
+    };
+  }
   const checkpoints = await ctx.db
     .query("checkpoints")
     .withIndex("by_siteId", (q) => q.eq("siteId", siteId))
     .collect();
-  if (checkpoints.length === 0) {
+  const distances = checkpoints
+    .filter((cp) => cp.latitude != null && cp.longitude != null)
+    .map((checkpoint) => ({
+      distance: distanceMeters(
+        checkpoint.latitude!,
+        checkpoint.longitude!,
+        latitude,
+        longitude,
+      ),
+      radius: checkpoint.radiusMeters ?? 50,
+    }));
+  if (distances.length === 0) {
     return { gpsValid: true, distanceMeters: undefined as number | undefined };
   }
-  const distances = checkpoints.map((checkpoint) => ({
-    distance: distanceMeters(
-      checkpoint.latitude,
-      checkpoint.longitude,
-      latitude,
-      longitude,
-    ),
-    radius: checkpoint.radiusMeters,
-  }));
   const nearest = distances.sort((a, b) => a.distance - b.distance)[0];
   return {
     gpsValid: nearest.distance <= nearest.radius,

@@ -1,5 +1,23 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
+import type { Doc } from "./_generated/dataModel";
+
+const siteShape = (s: Doc<"sites">, clientName?: string) => ({
+  id: s.legacyId ?? s._id,
+  convexId: s._id,
+  name: s.name,
+  location: s.location,
+  address: s.address ?? null,
+  latitude: s.latitude ?? null,
+  longitude: s.longitude ?? null,
+  radiusMeters: s.radiusMeters ?? null,
+  clientId: s.clientId,
+  patrolIntervalMinutes: s.patrolIntervalMinutes ?? null,
+  patrolGracePeriodMinutes: s.patrolGracePeriodMinutes ?? null,
+  ...(clientName !== undefined ? { clientName } : {}),
+  active: s.active,
+  createdAt: new Date(s.createdAt).toISOString(),
+});
 
 export const list = internalQuery({
   args: { clientId: v.optional(v.id("clients")) },
@@ -7,14 +25,9 @@ export const list = internalQuery({
     let sites = await ctx.db.query("sites").collect();
     if (args.clientId) sites = sites.filter(s => s.clientId === args.clientId);
     const clients = await ctx.db.query("clients").collect();
-    return sites.map(s => ({
-      id: s.legacyId ?? s._id, convexId: s._id, name: s.name,
-      location: s.location, clientId: s.clientId,
-      patrolIntervalMinutes: s.patrolIntervalMinutes ?? null,
-      patrolGracePeriodMinutes: s.patrolGracePeriodMinutes ?? null,
-      clientName: clients.find(c => c._id === s.clientId)?.name ?? "",
-      active: s.active, createdAt: new Date(s.createdAt).toISOString(),
-    }));
+    return sites.map(s =>
+      siteShape(s, clients.find(c => c._id === s.clientId)?.name ?? ""),
+    );
   },
 });
 
@@ -22,14 +35,7 @@ export const getById = internalQuery({
   args: { siteId: v.id("sites") },
   handler: async (ctx, args) => {
     const s = await ctx.db.get(args.siteId);
-    if (!s) return null;
-    return {
-      id: s.legacyId ?? s._id, convexId: s._id, name: s.name,
-      location: s.location, clientId: s.clientId,
-      patrolIntervalMinutes: s.patrolIntervalMinutes ?? null,
-      patrolGracePeriodMinutes: s.patrolGracePeriodMinutes ?? null,
-      active: s.active, createdAt: new Date(s.createdAt).toISOString(),
-    };
+    return s ? siteShape(s) : null;
   },
 });
 
@@ -50,6 +56,10 @@ export const create = internalMutation({
   args: {
     name: v.string(),
     location: v.string(),
+    address: v.optional(v.string()),
+    latitude: v.optional(v.number()),
+    longitude: v.optional(v.number()),
+    radiusMeters: v.optional(v.number()),
     clientId: v.id("clients"),
     active: v.boolean(),
     patrolIntervalMinutes: v.optional(v.number()),
@@ -57,7 +67,8 @@ export const create = internalMutation({
   },
   handler: async (ctx, args) => {
     const id = await ctx.db.insert("sites", { ...args, createdAt: Date.now() });
-    return { id, ...args, convexId: id, createdAt: new Date().toISOString() };
+    const created = await ctx.db.get(id);
+    return created ? siteShape(created) : null;
   },
 });
 
@@ -66,6 +77,10 @@ export const update = internalMutation({
     siteId: v.id("sites"),
     name: v.optional(v.string()),
     location: v.optional(v.string()),
+    address: v.optional(v.string()),
+    latitude: v.optional(v.number()),
+    longitude: v.optional(v.number()),
+    radiusMeters: v.optional(v.number()),
     active: v.optional(v.boolean()),
     patrolIntervalMinutes: v.optional(v.number()),
     patrolGracePeriodMinutes: v.optional(v.number()),
@@ -77,19 +92,7 @@ export const update = internalMutation({
     );
     await ctx.db.patch(siteId, cleanPatch as any);
     const updated = await ctx.db.get(siteId);
-    return updated
-      ? {
-          id: updated.legacyId ?? updated._id,
-          convexId: updated._id,
-          name: updated.name,
-          location: updated.location,
-          clientId: updated.clientId,
-          patrolIntervalMinutes: updated.patrolIntervalMinutes ?? null,
-          patrolGracePeriodMinutes: updated.patrolGracePeriodMinutes ?? null,
-          active: updated.active,
-          createdAt: new Date(updated.createdAt).toISOString(),
-        }
-      : null;
+    return updated ? siteShape(updated) : null;
   },
 });
 
@@ -109,18 +112,6 @@ export const updatePatrolSettings = internalMutation({
     });
 
     const updated = await ctx.db.get(args.siteId);
-    return updated
-      ? {
-          id: updated.legacyId ?? updated._id,
-          convexId: updated._id,
-          name: updated.name,
-          location: updated.location,
-          clientId: updated.clientId,
-          patrolIntervalMinutes: updated.patrolIntervalMinutes ?? null,
-          patrolGracePeriodMinutes: updated.patrolGracePeriodMinutes ?? null,
-          active: updated.active,
-          createdAt: new Date(updated.createdAt).toISOString(),
-        }
-      : null;
+    return updated ? siteShape(updated) : null;
   },
 });

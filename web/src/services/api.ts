@@ -185,14 +185,21 @@ export const api = {
   },
   clients: {
     list: () => request<any[]>('/clients'),
+    // Full drill-down: client info + portal logins + locations + sub-locations.
+    get: (id: string) => request<any>(`/clients/${id}`),
+    // Creates the company AND its portal login; `password` is required.
     create: (data: any) =>
       request<any>('/clients', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: any) =>
+      request<any>(`/clients/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   },
   sites: {
     list: (params?: Record<string, string>) =>
       request<any[]>(`/sites?${new URLSearchParams(params || {})}`),
     create: (data: any) =>
       request<any>('/sites', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: any) =>
+      request<any>(`/sites/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   },
   passOnLogs: {
     list: () => request<any[]>('/pass-on-logs'),

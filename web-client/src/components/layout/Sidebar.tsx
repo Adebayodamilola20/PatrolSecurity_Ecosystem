@@ -13,7 +13,7 @@ const nav = [
   { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
   { to: '/guards', label: 'My Guards', icon: Users },
   { to: '/scans', label: 'Patrol Activity', icon: ScanLine },
-  { to: '/checkpoints', label: 'Checkpoints', icon: MapPin },
+  { to: '/locations', label: 'Locations', icon: MapPin },
   { to: '/reports', label: 'Reports', icon: FileText },
 ]
 

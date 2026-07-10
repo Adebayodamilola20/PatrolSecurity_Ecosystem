@@ -4,9 +4,12 @@ import DashboardLayout from './components/layout/DashboardLayout'
 import Dashboard from './pages/Dashboard'
 import Monitoring from './pages/Monitoring'
 import Scans from './pages/Scans'
-import Checkpoints from './pages/Checkpoints'
+import Clients from './pages/Clients'
+import ClientDetail from './pages/ClientDetail'
 import Reports from './pages/Reports'
 import Users from './pages/Users'
+// NOTE: pages/Checkpoints.tsx is intentionally no longer routed — checkpoint
+// management moved inside client accounts (Clients -> ClientDetail).
 import UserDetail from './pages/UserDetail'
 import Settings from './pages/Settings'
 import Alerts from './pages/Alerts'
@@ -84,7 +87,11 @@ export default function App() {
           <Route path="/monitoring" element={<MonitoringGuard><Monitoring /></MonitoringGuard>} />
           <Route path="/scans" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><Scans /></RoleRoute>} />
           <Route path="/scans/:id" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><ScanDetail /></RoleRoute>} />
-          <Route path="/checkpoints" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Checkpoints /></RoleRoute>} />
+          <Route path="/clients" element={<RoleRoute allowedRoles={['admin', 'supervisor']}><Clients /></RoleRoute>} />
+          <Route path="/clients/:id" element={<RoleRoute allowedRoles={['admin', 'supervisor']}><ClientDetail /></RoleRoute>} />
+          {/* The flat Checkpoints page moved inside client accounts; the list
+              route now redirects there. Detail stays for printed QR deep links. */}
+          <Route path="/checkpoints" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Navigate to="/clients" replace /></RoleRoute>} />
           <Route path="/checkpoints/:id" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><CheckpointDetail /></RoleRoute>} />
           <Route path="/reports" element={<RoleRoute allowedRoles={['admin', 'main_account']}><Reports /></RoleRoute>} />
           <Route path="/users" element={<RoleRoute allowedRoles={['admin']}><Users /></RoleRoute>} />
