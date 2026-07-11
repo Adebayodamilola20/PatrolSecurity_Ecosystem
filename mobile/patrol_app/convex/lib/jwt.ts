@@ -15,7 +15,10 @@ export async function signPatrolToken(payload: {
   return await new SignJWT(payload)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("365d")
+    // Short-lived by design: sessions stay alive via rotating refresh tokens
+    // (see convex/sessions.ts), which the server can revoke. The access token
+    // itself is stateless, so its lifetime is the revocation blast radius.
+    .setExpirationTime("30m")
     .sign(getJwtSecret());
 }
 

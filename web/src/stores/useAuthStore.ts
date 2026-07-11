@@ -109,6 +109,10 @@ export const useAuthStore = create<AuthStore>((set) => ({
   },
 
   logout: () => {
+    // Revoke the session server-side (kills the refresh-token family), then
+    // clear locally regardless — logout must always succeed for the user.
+    const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY)
+    if (refreshToken) void api.auth.logout(refreshToken).catch(() => {})
     clearSession()
     set({ user: null, token: null, isAuthenticated: false, loading: false })
   },

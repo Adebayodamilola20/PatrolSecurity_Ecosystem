@@ -160,6 +160,13 @@ export const api = {
         body: JSON.stringify({ email, password, clientType: 'client' }),
       }),
     me: () => request<{ user: ClientUser }>('/auth/me'),
+    // Revokes the whole refresh-token family server-side. Best-effort: the
+    // caller clears local state regardless of whether this reaches the server.
+    logout: (refreshToken: string) =>
+      request<{ message: string }>('/auth/logout', {
+        method: 'POST',
+        body: JSON.stringify({ refreshToken }),
+      }),
     forgotPassword: (email: string) =>
       request<{ message: string }>('/auth/forgot-password', {
         method: 'POST',

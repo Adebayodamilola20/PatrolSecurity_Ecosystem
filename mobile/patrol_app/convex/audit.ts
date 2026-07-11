@@ -4,6 +4,7 @@ import { internalMutation } from "./_generated/server";
 const sensitiveActions = [
   "user.login",
   "user.logout",
+  "user.session_reuse_detected",
   "user.password_change",
   "user.created",
   "user.deactivated",

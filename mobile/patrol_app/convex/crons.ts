@@ -10,4 +10,11 @@ crons.interval(
   {},
 );
 
+crons.daily(
+  "purge expired refresh tokens",
+  { hourUTC: 3, minuteUTC: 15 },
+  internal.sessions.cleanupExpired,
+  {},
+);
+
 export default crons;

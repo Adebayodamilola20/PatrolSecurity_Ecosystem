@@ -18,6 +18,11 @@ class TokenExpiredException implements Exception {
   String toString() => message;
 }
 
+// Outcome of an /auth/refresh attempt. `transientFailure` (offline, timeout)
+// keeps the session; only `sessionDead` (server rejected the refresh token)
+// forces a re-login.
+enum _RefreshOutcome { success, transientFailure, sessionDead }
+
 class ApiService {
   static final _storage = FlutterSecureStorage();
   static final _client = http.Client();
@@ -69,11 +74,91 @@ class ApiService {
   static Future<String?> getToken() async =>
       await _storage.read(key: 'patrol_token');
 
+  // --- Session refresh ----------------------------------------------------
+  // Access tokens last 30 minutes; the rotating refresh token in secure
+  // storage keeps a guard signed in across a full shift. Every request goes
+  // through _headers(), which refreshes proactively just before expiry.
+
+  static Future<_RefreshOutcome>? _refreshInFlight;
+
+  static Future<_RefreshOutcome> _refreshSession() {
+    // Single-flight: concurrent callers share one /auth/refresh round trip
+    // (refresh tokens are single-use, so parallel refreshes would collide).
+    return _refreshInFlight ??= _doRefresh().whenComplete(() {
+      _refreshInFlight = null;
+    });
+  }
+
+  static Future<_RefreshOutcome> _doRefresh() async {
+    final refreshToken = await _storage.read(key: 'patrol_refresh');
+    if (refreshToken == null || refreshToken.isEmpty) {
+      return _RefreshOutcome.sessionDead;
+    }
+    try {
+      final res = await _client
+          .post(
+            Uri.parse('$baseUrl/auth/refresh'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'refreshToken': refreshToken}),
+          )
+          .timeout(_timeout);
+      if (res.statusCode == 401) {
+        // Revoked or expired server-side: this session cannot be recovered.
+        await _storage.delete(key: 'patrol_token');
+        await _storage.delete(key: 'patrol_refresh');
+        return _RefreshOutcome.sessionDead;
+      }
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        return _RefreshOutcome.transientFailure;
+      }
+      final data = await _decodeBody<Map<String, dynamic>>(res.body);
+      if (data['token'] is! String || data['refreshToken'] is! String) {
+        return _RefreshOutcome.transientFailure;
+      }
+      await _storage.write(key: 'patrol_token', value: data['token']);
+      await _storage.write(key: 'patrol_refresh', value: data['refreshToken']);
+      return _RefreshOutcome.success;
+    } catch (_) {
+      // Network hiccup: keep the tokens so the next request can retry —
+      // a guard on patrol must not be logged out by a dead spot.
+      return _RefreshOutcome.transientFailure;
+    }
+  }
+
+  static bool _expiresWithin(String token, Duration margin) {
+    final payload = _decodeJwtPayload(token);
+    final exp = payload?['exp'];
+    if (exp is! int) return true;
+    final expiry = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
+    return DateTime.now().isAfter(expiry.subtract(margin));
+  }
+
+  /// True when the session is usable: the access token is still fresh, or the
+  /// refresh token can (eventually) mint a new one. Only a server-side
+  /// rejection of the refresh token counts as an unrecoverable session.
+  static Future<bool> hasRecoverableSession() async {
+    final token = await getToken();
+    if (token != null && !_expiresWithin(token, const Duration(seconds: 60))) {
+      return true;
+    }
+    final outcome = await _refreshSession();
+    if (outcome == _RefreshOutcome.success) return true;
+    if (outcome == _RefreshOutcome.sessionDead) return false;
+    // Transient failure (offline, timeout): keep the session alive locally;
+    // requests will retry the refresh when connectivity returns.
+    final stored = await _storage.read(key: 'patrol_refresh');
+    return stored != null && stored.isNotEmpty;
+  }
+
   static Future<Map<String, String>> _headers() async {
     final token = await getToken();
+    if (token == null || _expiresWithin(token, const Duration(seconds: 60))) {
+      await _refreshSession();
+    }
+    final current = await getToken();
     return {
       'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
+      if (current != null) 'Authorization': 'Bearer $current',
     };
   }
 
@@ -91,14 +176,9 @@ class ApiService {
   }
 
   static Future<bool> isTokenExpired() async {
-    final token = await getToken();
-    if (token == null) return true;
-    final payload = _decodeJwtPayload(token);
-    if (payload == null) return true;
-    final exp = payload['exp'];
-    if (exp is! int) return true;
-    final expiryDate = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
-    return DateTime.now().isAfter(expiryDate);
+    // "Expired" means the SESSION is over, not just the 30-minute access
+    // token — a stale access token silently refreshes here instead.
+    return !(await hasRecoverableSession());
   }
 
   static Future<Map<String, dynamic>> login(
@@ -128,6 +208,9 @@ class ApiService {
     }
     final data = await _decodeBody<Map<String, dynamic>>(res.body);
     await _storage.write(key: 'patrol_token', value: data['token']);
+    if (data['refreshToken'] is String) {
+      await _storage.write(key: 'patrol_refresh', value: data['refreshToken']);
+    }
     return data;
   }
 
@@ -193,7 +276,24 @@ class ApiService {
   }
 
   static Future<void> logout() async {
+    // Revoke the session server-side (kills the refresh-token family), then
+    // clear locally regardless — logout must always succeed for the user.
+    final refreshToken = await _storage.read(key: 'patrol_refresh');
+    if (refreshToken != null && refreshToken.isNotEmpty) {
+      try {
+        await _client
+            .post(
+              Uri.parse('$baseUrl/auth/logout'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'refreshToken': refreshToken}),
+            )
+            .timeout(const Duration(seconds: 5));
+      } catch (_) {
+        // Best-effort: local logout proceeds even if the server is offline.
+      }
+    }
     await _storage.delete(key: 'patrol_token');
+    await _storage.delete(key: 'patrol_refresh');
   }
 
   static Future<Map<String, dynamic>> clockIn({

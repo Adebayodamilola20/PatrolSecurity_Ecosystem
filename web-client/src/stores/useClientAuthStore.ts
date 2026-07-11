@@ -2,20 +2,6 @@ import { create } from 'zustand'
 import { api, TOKEN_KEY, REFRESH_KEY, USER_KEY } from '../services/api'
 import type { ClientUser } from '../types'
 
-// DEMO auth — lets you preview the portal before the /client/* backend routes
-// exist. Remove this block (and the demo checks in login/hydrate) for production.
-const DEMO_EMAIL = 'client@securecorp.com'
-const DEMO_PASSWORD = '123456'
-const DEMO_TOKEN = 'demo-token'
-const DEMO_USER: ClientUser = {
-  id: 'demo-client-user',
-  name: 'SecureCorp Client',
-  email: DEMO_EMAIL,
-  role: 'main_account',
-  clientId: 'demo-client',
-  clientName: 'SecureCorp',
-}
-
 // Normalizes role strings like "Main-Account" / "client_main_account" -> "main_account".
 function normalizeRole(role?: string | null): string {
   return (role ?? '').trim().toLowerCase().replace(/[-\s]+/g, '_')
@@ -74,11 +60,6 @@ export const useClientAuthStore = create<ClientAuthStore>((set) => ({
       set({ user: null, token: null, isAuthenticated: false, loading: false })
       return
     }
-    // DEMO: restore the mock session on refresh without calling the API.
-    if (token === DEMO_TOKEN) {
-      set({ user: DEMO_USER, token, isAuthenticated: true, loading: false })
-      return
-    }
     set({ loading: true })
     try {
       // api.auth.me() silently refreshes on 401; if the refresh window (1h idle
@@ -100,13 +81,6 @@ export const useClientAuthStore = create<ClientAuthStore>((set) => ({
   },
 
   login: async (email: string, password: string) => {
-    // DEMO: short-circuit real auth for the preview credentials.
-    if (email === DEMO_EMAIL && password === DEMO_PASSWORD) {
-      localStorage.setItem(TOKEN_KEY, DEMO_TOKEN)
-      localStorage.setItem(USER_KEY, JSON.stringify(DEMO_USER))
-      set({ user: DEMO_USER, token: DEMO_TOKEN, isAuthenticated: true, loading: false })
-      return
-    }
     const { token, refreshToken, user } = await api.auth.login(email, password)
     if (!isClientAccount(user?.role)) {
       throw new Error('This portal is for client accounts only.')
@@ -118,6 +92,10 @@ export const useClientAuthStore = create<ClientAuthStore>((set) => ({
   },
 
   logout: () => {
+    // Revoke the session server-side (kills the refresh-token family), then
+    // clear locally regardless — logout must always succeed for the user.
+    const refreshToken = localStorage.getItem(REFRESH_KEY)
+    if (refreshToken) void api.auth.logout(refreshToken).catch(() => {})
     clearSession()
     set({ user: null, token: null, isAuthenticated: false, loading: false })
   },

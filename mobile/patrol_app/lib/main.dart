@@ -55,11 +55,15 @@ void main() async {
     loggingOut = true;
     const storage = FlutterSecureStorage();
     storage.delete(key: 'patrol_token');
+    storage.delete(key: 'patrol_refresh');
     storage.delete(key: 'patrol_user');
     navigatorKey.currentState?.pushNamedAndRemoveUntil(
       AppRoutes.login,
       (_) => false,
     );
+    // Debounces the burst of 401s from requests already in flight, then
+    // re-arms so a session that dies AFTER a re-login still bounces here.
+    Future.delayed(const Duration(seconds: 3), () => loggingOut = false);
   };
   runApp(
     MultiProvider(

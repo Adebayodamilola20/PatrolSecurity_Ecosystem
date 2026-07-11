@@ -499,6 +499,35 @@ async function callNvidiaChat(messages: Array<{ role: string; content: string }>
   };
 }
 
+// Access tokens are 30-minute JWTs; long-lived sessions ride on the rotating
+// refresh tokens below. The raw refresh token only ever exists in the HTTP
+// response — the database sees just its SHA-256 hash.
+const ACCESS_TOKEN_TTL_SECONDS = 30 * 60;
+
+function generateRefreshToken() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function hashRefreshToken(raw: string) {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(raw),
+  );
+  return Array.from(new Uint8Array(digest), (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+function requestIp(request: Request) {
+  return (
+    request.headers.get("x-forwarded-for") ??
+    request.headers.get("x-real-ip") ??
+    undefined
+  );
+}
+
 async function recordAudit(
   ctx: any,
   user: { convexId: string; role: string; clientId?: string | null },
@@ -938,15 +967,28 @@ http.route({
       email: user.email,
       role: user.role,
     });
+    const refreshToken = generateRefreshToken();
+    await ctx.runMutation(internal.sessions.issue, {
+      userId: user._id,
+      tokenHash: await hashRefreshToken(refreshToken),
+      familyId: crypto.randomUUID(),
+      userAgent: request.headers.get("user-agent") ?? undefined,
+      ipAddress: requestIp(request),
+    });
     await recordAudit(ctx, {
       convexId: user._id,
       role: user.role,
       clientId: user.clientId,
     }, "user.login", {
       details: `Login via ${clientType}`,
-      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+      ipAddress: requestIp(request),
     });
-    return json({ token, user: safeUser });
+    return json({
+      token,
+      refreshToken,
+      expiresInSeconds: ACCESS_TOKEN_TTL_SECONDS,
+      user: safeUser,
+    });
   }),
 });
 
@@ -986,7 +1028,103 @@ http.route({
       userId: stored._id,
       passwordHash: await bcrypt.hash(newPassword, 10),
     });
+    // A password change invalidates every session on every device — the
+    // standard containment move when a password may have been compromised.
+    await ctx.runMutation(internal.sessions.revokeAllForUser, {
+      userId: stored._id,
+    });
     return json({ message: "Password updated successfully" });
+  }),
+});
+
+// Exchanges a valid refresh token for a fresh 30-minute access token AND a
+// new refresh token (single-use rotation). Authenticated by the refresh token
+// itself, so no Bearer header is required — and client-portal accounts may
+// use it (their portal session has to survive past 30 minutes too).
+http.route({
+  path: "/auth/refresh",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const body = await parseJson(request);
+    const raw = String(body?.refreshToken ?? "").trim();
+    if (!raw) return unauthorized("Refresh token required");
+
+    const newRefreshToken = generateRefreshToken();
+    const result = await ctx.runMutation(internal.sessions.rotate, {
+      tokenHash: await hashRefreshToken(raw),
+      newTokenHash: await hashRefreshToken(newRefreshToken),
+      userAgent: request.headers.get("user-agent") ?? undefined,
+      ipAddress: requestIp(request),
+    });
+
+    if (result.status === "reused" && result.userId) {
+      // Someone presented an already-rotated token: possible theft. The whole
+      // family is revoked inside rotate(); leave a trail for investigation.
+      const stolen = await ctx.runQuery(internal.users.getSafeProfile, {
+        userId: result.userId as Id<"users">,
+      });
+      await recordAudit(ctx, {
+        convexId: result.userId,
+        role: stolen?.role ?? "unknown",
+        clientId: stolen?.clientId ?? undefined,
+      }, "user.session_reuse_detected", {
+        details: "Rotated refresh token presented again; session family revoked",
+        ipAddress: requestIp(request),
+        userAgent: request.headers.get("user-agent") ?? undefined,
+      });
+    }
+    if (result.status !== "ok" || !result.userId) {
+      return unauthorized("Session expired. Please sign in again.");
+    }
+
+    const profile = await ctx.runQuery(internal.users.getSafeProfile, {
+      userId: result.userId as Id<"users">,
+    });
+    if (!profile || !profile.active) {
+      return unauthorized("Session expired. Please sign in again.");
+    }
+    const token = await signPatrolToken({
+      userId: result.userId,
+      email: profile.email,
+      role: profile.role,
+    });
+    return json({
+      token,
+      refreshToken: newRefreshToken,
+      expiresInSeconds: ACCESS_TOKEN_TTL_SECONDS,
+      user: profile,
+    });
+  }),
+});
+
+// Revokes the presented refresh token's whole session family. Requires no
+// Bearer header (the access token may already be expired at logout time) and
+// always succeeds — logging out with a dead token is not an error.
+http.route({
+  path: "/auth/logout",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const body = await parseJson(request);
+    const raw = String(body?.refreshToken ?? "").trim();
+    if (raw) {
+      const userId = await ctx.runMutation(internal.sessions.revokeFamilyByHash, {
+        tokenHash: await hashRefreshToken(raw),
+      });
+      if (userId) {
+        const profile = await ctx.runQuery(internal.users.getSafeProfile, {
+          userId: userId as Id<"users">,
+        });
+        await recordAudit(ctx, {
+          convexId: userId,
+          role: profile?.role ?? "unknown",
+          clientId: profile?.clientId ?? undefined,
+        }, "user.logout", {
+          details: "Session revoked via /auth/logout",
+          ipAddress: requestIp(request),
+        });
+      }
+    }
+    return json({ message: "Logged out" });
   }),
 });
 

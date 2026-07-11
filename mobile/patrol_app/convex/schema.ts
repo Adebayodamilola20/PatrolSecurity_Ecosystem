@@ -93,6 +93,27 @@ export default defineSchema({
     .index("by_role", ["role"])
     .index("by_role_clientId", ["role", "clientId"]),
 
+  // Server-side sessions: one row per refresh token, stored as a SHA-256
+  // hash (a database leak never exposes usable tokens). Tokens are single-use
+  // and rotate on every refresh; `familyId` ties a login's whole rotation
+  // chain together so a stolen-then-reused token revokes the entire session.
+  refreshTokens: defineTable({
+    userId: v.id("users"),
+    tokenHash: v.string(),
+    familyId: v.string(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+    lastUsedAt: v.optional(v.number()),
+    revokedAt: v.optional(v.number()),
+    replacedBy: v.optional(v.id("refreshTokens")),
+    userAgent: v.optional(v.string()),
+    ipAddress: v.optional(v.string()),
+  })
+    .index("by_tokenHash", ["tokenHash"])
+    .index("by_userId", ["userId"])
+    .index("by_familyId", ["familyId"])
+    .index("by_expiresAt", ["expiresAt"]),
+
   userSiteAssignments: defineTable({
     legacyId: v.optional(v.string()),
     clientId: v.optional(v.id("clients")),
