@@ -117,6 +117,9 @@ export default defineSchema({
     latitude: v.optional(v.number()),
     longitude: v.optional(v.number()),
     radiusMeters: v.optional(v.number()),
+    // The location's own QR point, auto-created with the site. Shown as the
+    // location QR (not among sub-locations) on both dashboards.
+    isPrimary: v.optional(v.boolean()),
     expectedIntervalMinutes: v.number(),
     scheduledTimeIn: v.string(),
     scheduledTimeOut: v.string(),

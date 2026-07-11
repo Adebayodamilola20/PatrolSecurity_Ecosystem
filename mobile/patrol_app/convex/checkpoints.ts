@@ -119,6 +119,7 @@ export const create = internalMutation({
     active: v.boolean(),
     siteId: v.optional(v.id("sites")),
     clientId: v.optional(v.id("clients")),
+    isPrimary: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const site = args.siteId ? await ctx.db.get(args.siteId) : null;
@@ -131,6 +132,38 @@ export const create = internalMutation({
     };
     const id = await ctx.db.insert("checkpoints", value);
     return cpShape({ ...value, _id: id }, site);
+  },
+});
+
+// One-off backfill: give every existing site its own primary QR point, so
+// locations created before this feature also get a location QR code.
+// Run with: npx convex run checkpoints:backfillPrimary
+export const backfillPrimary = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const sites = await ctx.db.query("sites").collect();
+    let created = 0;
+    for (const site of sites) {
+      const existing = await ctx.db
+        .query("checkpoints")
+        .withIndex("by_siteId", (q) => q.eq("siteId", site._id))
+        .collect();
+      if (existing.some((cp) => cp.isPrimary)) continue;
+      await ctx.db.insert("checkpoints", {
+        clientId: site.clientId,
+        siteId: site._id,
+        name: site.name,
+        code: crypto.randomUUID(),
+        expectedIntervalMinutes: 60,
+        scheduledTimeIn: "",
+        scheduledTimeOut: "",
+        active: true,
+        isPrimary: true,
+        createdAt: Date.now(),
+      });
+      created += 1;
+    }
+    return { created };
   },
 });
 

@@ -43,6 +43,8 @@ interface ClientSite {
   active: boolean
   scansToday: number
   verifiedToday: number
+  /** The location's own QR point, auto-created with the location. */
+  locationQr: SubLocation | null
   subLocations: SubLocation[]
 }
 
@@ -605,6 +607,62 @@ export default function ClientDetail() {
 
                 {isOpen && (
                   <div className="border-t border-border px-5 py-4">
+                    {site.locationQr && (
+                      <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-4">
+                        <div className="flex items-start gap-3">
+                          <QRCell data={`${window.location.origin}/checkpoints/${site.locationQr.id}`} />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <QrCodeIcon className="h-4 w-4 shrink-0 text-primary" />
+                              <span className="truncate font-medium">Location QR — {site.name}</span>
+                            </div>
+                            <p className="mt-1 text-[11px] text-muted-foreground">
+                              The location's own scan point. Mount it at the main entrance — scans verify against this location's geofence.
+                            </p>
+                            <div className="mt-1 text-[11px] text-muted-foreground">
+                              {site.locationQr.scansToday} scan{site.locationQr.scansToday === 1 ? '' : 's'} today
+                            </div>
+                            {site.locationQr.lastScanAt ? (
+                              <div className="mt-1 flex items-center gap-1 text-[11px]">
+                                {site.locationQr.lastScanVerified ? (
+                                  <ShieldCheck className="h-3.5 w-3.5 text-success" />
+                                ) : (
+                                  <ShieldAlert className="h-3.5 w-3.5 text-warning" />
+                                )}
+                                <span className={site.locationQr.lastScanVerified ? 'text-success' : 'text-warning'}>
+                                  {site.locationQr.lastScanVerified ? 'Verified' : 'Unverified'}
+                                </span>
+                                <span className="text-muted-foreground">
+                                  · {new Date(site.locationQr.lastScanAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="mt-3 flex items-center gap-2 border-t border-primary/20 pt-3">
+                          <button
+                            onClick={() => void downloadQr(site.locationQr!)}
+                            className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-accent"
+                            title="Download Location QR Code"
+                          >
+                            <Download className="h-3.5 w-3.5" /> QR
+                          </button>
+                          <button
+                            onClick={() => printQr(site, site.locationQr!)}
+                            className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-accent"
+                            title="Print Location QR Code"
+                          >
+                            <Printer className="h-3.5 w-3.5" /> Print
+                          </button>
+                          <button
+                            onClick={() => navigate(`/checkpoints/${site.locationQr!.id}`)}
+                            className="ml-auto flex items-center gap-1.5 rounded-lg bg-primary/15 px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-primary/25"
+                          >
+                            Scans
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     <div className="mb-3 flex items-center justify-between">
                       <div className="text-xs uppercase tracking-wider text-muted-foreground">Sub-locations & QR codes</div>
                       {canManage && (

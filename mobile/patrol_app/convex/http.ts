@@ -2613,8 +2613,11 @@ http.route({ path: "/client/sites", method: "GET", handler: httpAction(async (ct
   if (!clientId) return json({ sites: [] });
   const detail = await ctx.runQuery(internal.clients.getDetail, { clientId });
   if (!detail) return json({ sites: [] });
-  // Deliberately omit portal logins and any staff/guard identity data.
-  return json({ sites: detail.sites });
+  // Deliberately omit portal logins and any staff/guard identity data
+  // (assignedGuards carries guard names for the staff dashboard only).
+  return json({
+    sites: detail.sites.map(({ assignedGuards: _assignedGuards, ...site }) => site),
+  });
 })});
 
 // [client-structure] Assign/unassign a guard to a site. Scans at a site are
@@ -2739,6 +2742,18 @@ http.route({ path: "/sites", method: "POST", handler: httpAction(async (ctx, req
     patrolGracePeriodMinutes: body?.patrolGracePeriodMinutes === undefined ? undefined : Number(body.patrolGracePeriodMinutes),
   });
   if (!result) return notFound("Site could not be created");
+  // [client-structure] Every location gets its own scannable QR point,
+  // separate from the sub-locations staff add inside it.
+  await ctx.runMutation(internal.checkpoints.create, {
+    name: String(body?.name ?? ""),
+    code: crypto.randomUUID(),
+    expectedIntervalMinutes: 60,
+    scheduledTimeIn: "",
+    scheduledTimeOut: "",
+    active: true,
+    siteId: result.convexId as Id<"sites">,
+    isPrimary: true,
+  });
   await recordAudit(ctx, user, "site.created", {
     targetType: "site",
       targetId: result.id as unknown as string,

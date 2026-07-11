@@ -62,6 +62,8 @@ export interface ClientSiteDetail {
   active: boolean
   scansToday: number
   verifiedToday: number
+  /** The location's own QR point (auto-created with the location). */
+  locationQr: ClientSubLocation | null
   subLocations: ClientSubLocation[]
 }
 

@@ -190,34 +190,67 @@ export const getDetail = internalQuery({
           )
           .collect();
 
+        const describeQrPoint = async (cp: (typeof checkpoints)[number]) => {
+          const lastScan = await ctx.db
+            .query("scans")
+            .withIndex("by_checkpointId_scannedAt", (q) =>
+              q.eq("checkpointId", cp._id),
+            )
+            .order("desc")
+            .first();
+          const cpScansToday = scansToday.filter(
+            (s) => s.checkpointId === cp._id,
+          );
+          return {
+            id: cp._id,
+            name: cp.name,
+            code: cp.code,
+            hasOwnGps: cp.latitude != null && cp.longitude != null,
+            active: cp.active,
+            scansToday: cpScansToday.length,
+            verifiedToday: cpScansToday.filter((s) => s.gpsValid).length,
+            lastScanAt: lastScan
+              ? new Date(lastScan.scannedAt).toISOString()
+              : null,
+            lastScanVerified: lastScan ? lastScan.gpsValid : null,
+            createdAt: new Date(cp.createdAt).toISOString(),
+          };
+        };
+
+        // The location's own QR point is kept apart from its sub-locations.
+        const primary = checkpoints.find((cp) => cp.isPrimary) ?? null;
+        const locationQr = primary ? await describeQrPoint(primary) : null;
         const subLocations = await Promise.all(
-          checkpoints.map(async (cp) => {
-            const lastScan = await ctx.db
-              .query("scans")
-              .withIndex("by_checkpointId_scannedAt", (q) =>
-                q.eq("checkpointId", cp._id),
-              )
-              .order("desc")
-              .first();
-            const cpScansToday = scansToday.filter(
-              (s) => s.checkpointId === cp._id,
-            );
-            return {
-              id: cp._id,
-              name: cp.name,
-              code: cp.code,
-              hasOwnGps: cp.latitude != null && cp.longitude != null,
-              active: cp.active,
-              scansToday: cpScansToday.length,
-              verifiedToday: cpScansToday.filter((s) => s.gpsValid).length,
-              lastScanAt: lastScan
-                ? new Date(lastScan.scannedAt).toISOString()
-                : null,
-              lastScanVerified: lastScan ? lastScan.gpsValid : null,
-              createdAt: new Date(cp.createdAt).toISOString(),
-            };
-          }),
+          checkpoints.filter((cp) => !cp.isPrimary).map(describeQrPoint),
         );
+
+        // Guards posted at this location. Staff-facing only — the portal
+        // queries below deliberately never expose these identities.
+        const assignments = await ctx.db
+          .query("userSiteAssignments")
+          .withIndex("by_siteId", (q) => q.eq("siteId", site._id))
+          .collect();
+        const assignedGuards = (
+          await Promise.all(
+            assignments.map(async (assignment) => {
+              const guard = await ctx.db.get(assignment.userId);
+              if (!guard || guard.role !== "guard") return null;
+              const activeShift = await ctx.db
+                .query("shifts")
+                .withIndex("by_userId_status", (q) =>
+                  q.eq("userId", assignment.userId).eq("status", "active"),
+                )
+                .first();
+              return {
+                id: guard._id,
+                name: guard.name,
+                phone: guard.phone,
+                active: guard.active,
+                onDuty: !!activeShift,
+              };
+            }),
+          )
+        ).filter((g): g is NonNullable<typeof g> => g !== null);
 
         return {
           id: site._id,
@@ -230,6 +263,8 @@ export const getDetail = internalQuery({
           active: site.active,
           scansToday: scansToday.length,
           verifiedToday: scansToday.filter((s) => s.gpsValid).length,
+          assignedGuards,
+          locationQr,
           subLocations,
           createdAt: new Date(site.createdAt).toISOString(),
         };

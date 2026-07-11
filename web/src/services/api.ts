@@ -204,6 +204,15 @@ export const api = {
     create: (data: any) =>
       request<any>('/users', { method: 'POST', body: JSON.stringify(data) }),
   },
+  // Guard <-> location posting. Scans at a location are rejected unless the
+  // guard is assigned to it, and the client portal's coverage numbers count
+  // these assignments.
+  siteAssignments: {
+    assign: (siteId: string, userId: string) =>
+      request<any>('/site-assignments', { method: 'POST', body: JSON.stringify({ siteId, userId }) }),
+    unassign: (siteId: string, userId: string) =>
+      request<any>('/site-assignments', { method: 'DELETE', body: JSON.stringify({ siteId, userId }) }),
+  },
   shifts: {
     status: () => request<{ active: boolean; shift: any }>('/shifts/status'),
     clockIn: () =>
