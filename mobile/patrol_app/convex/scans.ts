@@ -192,6 +192,10 @@ export const getDetail = internalQuery({
     const checkpoints = await ctx.db.query("checkpoints").collect();
     return {
       id: scan.legacyId ?? scan._id,
+      clientId:
+        scan.clientId ??
+        checkpoints.find((c) => c._id === scan.checkpointId)?.clientId ??
+        null,
       officerId: scan.officerId,
       officerName: users.find(u => u._id === scan.officerId)?.name ?? "",
       checkpointId: scan.checkpointId,

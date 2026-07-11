@@ -4,6 +4,12 @@ import { verifyPatrolToken } from "./jwt";
 export async function requireAuth(
   ctx: any,
   request: Request,
+  // [tenant-isolation] Client (main_account) logins are portal-only. Only
+  // /auth/me and the /client/* routes opt in via allowClientPortal — every
+  // other route rejects client credentials here, so a client token can never
+  // pull staff data (guard identities, other tenants' records) out of the
+  // general API even if a route forgets its own role check.
+  opts?: { allowClientPortal?: boolean },
 ) {
   const header = request.headers.get("authorization") ?? "";
   if (!header.startsWith("Bearer ")) {
@@ -32,6 +38,9 @@ export async function requireAuth(
       liveTracking: boolean;
       siteIds: string[];
     } | null;
+    if (profile?.role === "main_account" && !opts?.allowClientPortal) {
+      return null;
+    }
     return profile;
   } catch {
     return null;

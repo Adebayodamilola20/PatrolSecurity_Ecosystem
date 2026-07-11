@@ -2093,7 +2093,7 @@ http.route({
 });
 
 http.route({ path: "/auth/me", method: "GET", handler: httpAction(async (ctx, request) => {
-  const user = await requireAuth(ctx, request);
+  const user = await requireAuth(ctx, request, { allowClientPortal: true });
   if (!user) return unauthorized();
   const profile = await ctx.runQuery(internal.users.getSafeProfile, { userId: _uid(user.convexId) });
   return json({ user: profile });
@@ -2131,7 +2131,12 @@ http.route({ pathPrefix: "/scans/", method: "GET", handler: httpAction(async (ct
   if (id === "recent" || id === "export") return notFound("Scan route not found");
   const scanId = await ctx.runQuery(internal.scans.resolveId, { id });
   if (!scanId) return notFound("Scan not found");
-  return json(await ctx.runQuery(internal.scans.getDetail, { scanId }));
+  const detail = await ctx.runQuery(internal.scans.getDetail, { scanId });
+  // Tenant-bound users only see scans belonging to their own account.
+  if (detail && user.clientId && detail.clientId && detail.clientId !== user.clientId) {
+    return notFound("Scan not found");
+  }
+  return json(detail);
 })});
 
 http.route({ path: "/checkpoints", method: "POST", handler: httpAction(async (ctx, request) => {
@@ -2156,7 +2161,8 @@ http.route({ path: "/checkpoints", method: "POST", handler: httpAction(async (ct
     scheduledTimeIn: String(body?.scheduledTimeIn ?? ""),
     scheduledTimeOut: String(body?.scheduledTimeOut ?? ""),
     active: body?.active !== false, siteId: body?.siteId ?? undefined,
-    clientId: body?.clientId ?? _cid(user.role === "admin" ? undefined : user.clientId),
+    // Tenant-bound users can only create points inside their own account.
+    clientId: user.clientId ? _cid(user.clientId) : (body?.clientId ?? undefined),
   });
   await recordAudit(ctx, user, "checkpoint.created", {
     targetType: "checkpoint", details: `Created checkpoint: ${body?.name}`,
@@ -2606,7 +2612,7 @@ http.route({ pathPrefix: "/clients/", method: "PUT", handler: httpAction(async (
 // locations -> sub-locations with scan/verification activity. Tenant is
 // resolved from the session token ONLY — the portal never sends a clientId.
 http.route({ path: "/client/sites", method: "GET", handler: httpAction(async (ctx, request) => {
-  const user = await requireAuth(ctx, request);
+  const user = await requireAuth(ctx, request, { allowClientPortal: true });
   if (!user) return unauthorized();
   if (user.role !== "main_account") return forbidden("The client portal is for client accounts only.");
   const clientId = _cid(user.clientId);
@@ -2662,7 +2668,7 @@ http.route({ path: "/site-assignments", method: "DELETE", handler: httpAction(as
 // [client-structure] Portal overview: only NUMBERS for guards (AGM rule —
 // clients never see guard identities), plus site list and scan activity.
 http.route({ path: "/client/overview", method: "GET", handler: httpAction(async (ctx, request) => {
-  const user = await requireAuth(ctx, request);
+  const user = await requireAuth(ctx, request, { allowClientPortal: true });
   if (!user) return unauthorized();
   if (user.role !== "main_account") return forbidden("The client portal is for client accounts only.");
   const clientId = _cid(user.clientId);
@@ -2674,7 +2680,7 @@ http.route({ path: "/client/overview", method: "GET", handler: httpAction(async 
 
 // [client-structure] Portal patrol activity — guard identities anonymized.
 http.route({ path: "/client/scans", method: "GET", handler: httpAction(async (ctx, request) => {
-  const user = await requireAuth(ctx, request);
+  const user = await requireAuth(ctx, request, { allowClientPortal: true });
   if (!user) return unauthorized();
   if (user.role !== "main_account") return forbidden("The client portal is for client accounts only.");
   const clientId = _cid(user.clientId);
@@ -2685,7 +2691,7 @@ http.route({ path: "/client/scans", method: "GET", handler: httpAction(async (ct
 // [client-structure] Guard STATISTICS only — never identities (AGM rule):
 // "Assigned 7 / Clocked In 4 / Pending 3", no names, no photos.
 http.route({ path: "/client/guard-stats", method: "GET", handler: httpAction(async (ctx, request) => {
-  const user = await requireAuth(ctx, request);
+  const user = await requireAuth(ctx, request, { allowClientPortal: true });
   if (!user) return unauthorized();
   if (user.role !== "main_account") return forbidden("The client portal is for client accounts only.");
   const clientId = _cid(user.clientId);
@@ -2695,7 +2701,7 @@ http.route({ path: "/client/guard-stats", method: "GET", handler: httpAction(asy
 
 // [client-structure] Flat checkpoint list for the portal (compat shape).
 http.route({ path: "/client/checkpoints", method: "GET", handler: httpAction(async (ctx, request) => {
-  const user = await requireAuth(ctx, request);
+  const user = await requireAuth(ctx, request, { allowClientPortal: true });
   if (!user) return unauthorized();
   if (user.role !== "main_account") return forbidden("The client portal is for client accounts only.");
   const clientId = _cid(user.clientId);
@@ -2705,7 +2711,7 @@ http.route({ path: "/client/checkpoints", method: "GET", handler: httpAction(asy
 
 // [client-structure] Portal report inbox (list of submitted reports).
 http.route({ path: "/client/reports", method: "GET", handler: httpAction(async (ctx, request) => {
-  const user = await requireAuth(ctx, request);
+  const user = await requireAuth(ctx, request, { allowClientPortal: true });
   if (!user) return unauthorized();
   if (user.role !== "main_account") return forbidden("The client portal is for client accounts only.");
   const clientId = _cid(user.clientId);
@@ -2718,7 +2724,11 @@ http.route({ path: "/sites", method: "GET", handler: httpAction(async (ctx, requ
   if (!user) return unauthorized();
   const url = new URL(request.url);
   const queryClientId = url.searchParams.get("clientId");
-  const effectiveClientId = queryClientId || (user.role === "admin" ? undefined : (_cid(user.clientId)));
+  // Tenant-bound users can never widen their scope via the query param;
+  // unscoped staff (admin/supervisor) may filter by client with it.
+  const effectiveClientId = user.clientId
+    ? _cid(user.clientId)
+    : queryClientId || undefined;
   return json(await ctx.runQuery(internal.sites.list, {
     clientId: effectiveClientId as Id<"clients"> | undefined,
   }));
