@@ -53,6 +53,7 @@ export const listForApi = internalQuery({
     }
 
     const scans = await ctx.db.query("scans").take(500);
+    const sites = await ctx.db.query("sites").collect();
 
     return checkpoints
       .filter((checkpoint) => checkpoint.active)
@@ -63,6 +64,11 @@ export const listForApi = internalQuery({
         const latestScan = checkpointScans
           .slice()
           .sort((a, b) => b.scannedAt - a.scannedAt)[0];
+        // Parent location + its geofence: what scans at plain QR points
+        // (no own GPS) are actually verified against.
+        const site = checkpoint.siteId
+          ? sites.find((s) => s._id === checkpoint.siteId)
+          : undefined;
 
         return {
           id: checkpoint.legacyId ?? checkpoint._id,
@@ -71,6 +77,11 @@ export const listForApi = internalQuery({
           location: "",
           siteId: checkpoint.siteId,
           clientId: checkpoint.clientId,
+          siteName: site?.name ?? null,
+          siteLatitude: site?.latitude ?? null,
+          siteLongitude: site?.longitude ?? null,
+          siteRadiusMeters: site?.radiusMeters ?? null,
+          isPrimary: checkpoint.isPrimary ?? false,
           latitude: checkpoint.latitude,
           longitude: checkpoint.longitude,
           radiusMeters: checkpoint.radiusMeters,
