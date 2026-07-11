@@ -3,6 +3,7 @@ class Checkpoint {
   final String name;
   final String code;
   final String location;
+  final String? siteId;
   final double latitude;
   final double longitude;
   final double radiusMeters;
@@ -18,6 +19,7 @@ class Checkpoint {
     required this.name,
     required this.code,
     this.location = '',
+    this.siteId,
     required this.latitude,
     required this.longitude,
     this.radiusMeters = 10,
@@ -34,6 +36,7 @@ class Checkpoint {
     name: json['name'] ?? '',
     code: json['code'] ?? '',
     location: json['location'] ?? '',
+    siteId: json['siteId'],
     latitude: (json['latitude'] ?? 0).toDouble(),
     longitude: (json['longitude'] ?? 0).toDouble(),
     radiusMeters: (json['radiusMeters'] ?? 10).toDouble(),

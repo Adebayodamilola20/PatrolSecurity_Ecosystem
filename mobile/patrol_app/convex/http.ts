@@ -520,6 +520,24 @@ async function hashRefreshToken(raw: string) {
   ).join("");
 }
 
+// Streams a cached PDF out of Convex storage as a download.
+async function servePdf(
+  ctx: { storage: { get: (id: Id<"_storage">) => Promise<Blob | null> } },
+  storageId: string | null,
+  filename: string,
+) {
+  if (!storageId) return notFound("Report not found");
+  const blob = await ctx.storage.get(storageId as Id<"_storage">);
+  if (!blob) return notFound("PDF not found");
+  return new Response(blob, {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Access-Control-Allow-Origin": "*",
+    },
+  });
+}
+
 function requestIp(request: Request) {
   return (
     request.headers.get("x-forwarded-for") ??
@@ -2380,14 +2398,51 @@ http.route({ pathPrefix: "/reports/", method: "POST", handler: httpAction(async 
   return notFound("Report route not found");
 })});
 
+// Streams the report as a real generated PDF (cached in storage after the
+// first request — submissions are immutable). Guards may only pull their own.
 http.route({ pathPrefix: "/reports/", method: "GET", handler: httpAction(async (ctx, request) => {
-  const parts = request.url.split("/").filter(Boolean);
-  const id = parts[parts.length - 2];
-  const action = parts[parts.length - 1];
-  if (action === "pdf") {
-    return json({ message: "PDF generation not available in Convex", id, url: null });
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  const id = lastPathPart(request, 1);
+  const action = lastPathPart(request);
+  if (!id || action !== "pdf") return notFound("Report route not found");
+  const reportId = await ctx.runQuery(internal.reports.resolveId, { id });
+  if (!reportId) return notFound("Report not found");
+  const access = await ctx.runQuery(internal.reports.getAccessInfo, { reportId });
+  if (!access) return notFound("Report not found");
+  if (user.role === "guard" && access.userId !== user.convexId) {
+    return forbidden("You can only download your own reports");
   }
-  return notFound("Report route not found");
+  const storageId =
+    access.pdfStorageId ??
+    (await ctx.runAction(internal.pdfService.generateReportPdf, {
+      reportId,
+      variant: "staff",
+    }));
+  return servePdf(ctx, storageId, `report-${id}.pdf`);
+})});
+
+// Portal variant of the same PDF: tenant-checked and guard-anonymized.
+http.route({ pathPrefix: "/client/reports/", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request, { allowClientPortal: true });
+  if (!user) return unauthorized();
+  if (user.role !== "main_account") return forbidden("The client portal is for client accounts only.");
+  const id = lastPathPart(request, 1);
+  const action = lastPathPart(request);
+  if (!id || action !== "pdf") return notFound("Report route not found");
+  const reportId = await ctx.runQuery(internal.reports.resolveId, { id });
+  if (!reportId) return notFound("Report not found");
+  const access = await ctx.runQuery(internal.reports.getAccessInfo, { reportId });
+  if (!access || !access.clientId || access.clientId !== user.clientId) {
+    return notFound("Report not found");
+  }
+  const storageId =
+    access.portalPdfStorageId ??
+    (await ctx.runAction(internal.pdfService.generateReportPdf, {
+      reportId,
+      variant: "portal",
+    }));
+  return servePdf(ctx, storageId, `report-${id}.pdf`);
 })});
 
 http.route({ path: "/users", method: "GET", handler: httpAction(async (ctx, request) => {
@@ -2576,10 +2631,21 @@ http.route({ path: "/post-orders", method: "POST", handler: httpAction(async (ct
   const roleErr = requireRole(user, ["admin", "main_account", "supervisor"]);
   if (roleErr) return roleErr;
   const body = await parseJson(request);
+  // Scope: a sub-location (checkpointId) or a whole location (siteId) —
+  // resolved here so legacy IDs from older data keep working.
+  const checkpointId = body?.checkpointId
+    ? await ctx.runQuery(internal.checkpoints.resolveId, { id: String(body.checkpointId) })
+    : null;
+  if (body?.checkpointId && !checkpointId) return notFound("Sub-location not found");
+  const siteId = body?.siteId
+    ? await ctx.runQuery(internal.sites.resolveId, { id: String(body.siteId) })
+    : null;
+  if (body?.siteId && !siteId) return notFound("Location not found");
   const result = await ctx.runMutation(internal.postOrders.create, {
     title: String(body?.title ?? ""), summary: String(body?.summary ?? ""),
     instructions: String(body?.instructions ?? ""),
-    checkpointId: body?.checkpointId ?? undefined,
+    checkpointId: checkpointId ?? undefined,
+    siteId: siteId ?? undefined,
     assignedUserId: body?.assignedUserId ?? undefined,
     assignedRole: (["admin","main_account","supervisor","guard"].includes(String(body?.assignedRole)) ? String(body?.assignedRole) : "guard") as any,
     priority: String(body?.priority ?? "normal"),

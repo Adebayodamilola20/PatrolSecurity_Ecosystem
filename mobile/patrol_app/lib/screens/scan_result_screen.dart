@@ -57,7 +57,12 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
     if (_checkpoint == null) return const [];
     return orders.where((order) {
       if (!order.active) return false;
-      return order.checkpointId == _checkpoint!.id;
+      // Pinned to this exact QR point, or covering the whole location the
+      // point belongs to (site-level orders have no checkpointId).
+      if (order.checkpointId != null) {
+        return order.checkpointId == _checkpoint!.id;
+      }
+      return order.siteId != null && order.siteId == _checkpoint!.siteId;
     }).toList();
   }
 

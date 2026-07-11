@@ -23,6 +23,7 @@ export const listAll = internalQuery({
       );
     }
     const checkpoints = await ctx.db.query("checkpoints").collect();
+    const sites = await ctx.db.query("sites").collect();
     const completions = await ctx.db.query("postOrderCompletions").collect();
     return orders.map((o) => ({
       id: o.legacyId ?? o._id,
@@ -32,6 +33,8 @@ export const listAll = internalQuery({
       checkpointId: o.checkpointId,
       checkpointName:
         checkpoints.find((c) => c._id === o.checkpointId)?.name ?? null,
+      siteId: o.siteId ?? null,
+      siteName: sites.find((s) => s._id === o.siteId)?.name ?? null,
       assignedUserId: o.assignedUserId,
       priority: o.priority,
       active: o.active,
@@ -49,7 +52,10 @@ export const create = internalMutation({
     title: v.string(),
     summary: v.string(),
     instructions: v.string(),
+    // Scope: a sub-location (checkpointId), a whole location (siteId), or
+    // neither (general duty). A checkpoint implies its parent site.
     checkpointId: v.optional(v.id("checkpoints")),
+    siteId: v.optional(v.id("sites")),
     assignedUserId: v.optional(v.id("users")),
     assignedRole: v.union(v.literal("admin"), v.literal("main_account"), v.literal("supervisor"), v.literal("guard")),
     priority: v.string(),
@@ -63,13 +69,17 @@ export const create = internalMutation({
     const checkpoint = args.checkpointId
       ? await ctx.db.get(args.checkpointId)
       : null;
+    if (args.checkpointId && !checkpoint) throw new Error("Sub-location not found");
+    const siteId = checkpoint?.siteId ?? args.siteId;
+    const site = siteId ? await ctx.db.get(siteId) : null;
+    if (siteId && !site) throw new Error("Location not found");
     const id = await ctx.db.insert("postOrders", {
       ...args,
-      clientId: checkpoint?.clientId ?? creator?.clientId,
-      siteId: checkpoint?.siteId,
+      clientId: checkpoint?.clientId ?? site?.clientId ?? creator?.clientId,
+      siteId,
       createdAt: Date.now(),
     });
-    return { id, ...args, createdAt: new Date().toISOString() };
+    return { id, ...args, siteId, createdAt: new Date().toISOString() };
   },
 });
 
@@ -192,19 +202,25 @@ export const listForUser = internalQuery({
         .map((checkpoint) => checkpoint._id),
     );
 
+    const sites = await ctx.db.query("sites").collect();
+
     return orders
       .filter((order) => {
         if (user.role === "admin") return true;
         if (user.role === "main_account") {
-          const checkpoint = checkpoints.find(
-            (item) => item._id === order.checkpointId,
-          );
-          return checkpoint?.clientId === user.clientId;
+          return order.clientId === user.clientId;
         }
-        return (
-          (!order.assignedUserId || order.assignedUserId === args.userId) &&
-          (!order.checkpointId || visibleCheckpointIds.has(order.checkpointId))
-        );
+        if (order.assignedUserId && order.assignedUserId !== args.userId) {
+          return false;
+        }
+        // Scoped orders only reach guards posted there: a sub-location order
+        // needs its checkpoint's site assigned, a location order needs the
+        // site itself. Unscoped orders are general duties for everyone.
+        if (order.checkpointId) {
+          return visibleCheckpointIds.has(order.checkpointId);
+        }
+        if (order.siteId) return siteIds.has(order.siteId);
+        return true;
       })
       .map((order) => {
         const latestCompletion = completions
@@ -226,6 +242,8 @@ export const listForUser = internalQuery({
             ? (checkpoint.legacyId ?? checkpoint._id)
             : null,
           checkpointName: checkpoint?.name ?? null,
+          siteId: order.siteId ?? null,
+          siteName: sites.find((s) => s._id === order.siteId)?.name ?? null,
           priority: order.priority,
           active: order.active,
           requiresAcknowledgement: order.requiresAcknowledgement,

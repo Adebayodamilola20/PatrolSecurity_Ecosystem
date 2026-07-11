@@ -1,6 +1,7 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 
 function distanceMeters(
   latitudeA: number,
@@ -382,14 +383,13 @@ export const create = internalMutation({
       workflowStatus: "completed",
     });
 
-    const checkpointPostOrders = await ctx.db
-      .query("postOrders")
-      .withIndex("by_checkpointId", (q) =>
-        q.eq("checkpointId", args.checkpointId),
-      )
-      .collect();
-    const requiredPostOrders = checkpointPostOrders.filter(
-      (order) => order.active && order.requiresAcknowledgement,
+    const triggeredPostOrders = await postOrdersTriggeredByScan(
+      ctx,
+      args.checkpointId,
+      siteId,
+    );
+    const requiredPostOrders = triggeredPostOrders.filter(
+      (order) => order.requiresAcknowledgement,
     );
     if (requiredPostOrders.length > 0) {
       await ctx.db.patch(scanId, {
@@ -490,9 +490,44 @@ export const create = internalMutation({
       postOrdersRequired: requiredPostOrders.length > 0,
       workflowStatus:
         requiredPostOrders.length > 0 ? "pending_post_order_ack" : "completed",
+      // The duties triggered by THIS scan (sub-location + whole-location
+      // orders) so the app can pop them up immediately after a successful
+      // scan without re-deriving the match client-side.
+      postOrders: triggeredPostOrders.map((order) => ({
+        id: order.legacyId ?? order._id,
+        title: order.title,
+        summary: order.summary,
+        instructions: order.instructions,
+        priority: order.priority,
+        requiresAcknowledgement: order.requiresAcknowledgement,
+        requiresPhotoProof: order.requiresPhotoProof,
+      })),
     };
   },
 });
+
+// Every active post order a scan at this point puts in front of the guard:
+// orders pinned to the exact sub-location plus orders covering the whole
+// location (siteId set, no checkpointId of their own).
+async function postOrdersTriggeredByScan(
+  ctx: { db: any },
+  checkpointId: Id<"checkpoints">,
+  siteId?: Id<"sites">,
+) {
+  const forCheckpoint = await ctx.db
+    .query("postOrders")
+    .withIndex("by_checkpointId", (q: any) => q.eq("checkpointId", checkpointId))
+    .collect();
+  const forSite = siteId
+    ? (
+        await ctx.db
+          .query("postOrders")
+          .withIndex("by_siteId", (q: any) => q.eq("siteId", siteId))
+          .collect()
+      ).filter((order: any) => !order.checkpointId)
+    : [];
+  return [...forCheckpoint, ...forSite].filter((order) => order.active);
+}
 
 export const acknowledgePostOrdersForScan = internalMutation({
   args: {
@@ -514,14 +549,13 @@ export const acknowledgePostOrdersForScan = internalMutation({
         q.eq("userId", args.userId).eq("status", "active"),
       )
       .first();
-    const requiredOrders = await ctx.db
-      .query("postOrders")
-      .withIndex("by_checkpointId", (q) =>
-        q.eq("checkpointId", scan.checkpointId),
-      )
-      .collect();
+    const requiredOrders = await postOrdersTriggeredByScan(
+      ctx,
+      scan.checkpointId,
+      scan.siteId,
+    );
     const requiredIds = requiredOrders
-      .filter((order) => order.active && order.requiresAcknowledgement)
+      .filter((order) => order.requiresAcknowledgement)
       .map((order) => order._id);
     const submitted = new Set(args.postOrderIds);
     const missing = requiredIds.filter((id) => !submitted.has(id));

@@ -36,6 +36,8 @@ class PostOrder {
   final String instructions;
   final String? checkpointId;
   final String? checkpointName;
+  final String? siteId;
+  final String? siteName;
   final String priority;
   final bool active;
   final bool requiresAcknowledgement;
@@ -49,6 +51,8 @@ class PostOrder {
     required this.instructions,
     this.checkpointId,
     this.checkpointName,
+    this.siteId,
+    this.siteName,
     required this.priority,
     required this.active,
     required this.requiresAcknowledgement,
@@ -63,6 +67,8 @@ class PostOrder {
     instructions: json['instructions'] ?? '',
     checkpointId: json['checkpointId'],
     checkpointName: json['checkpointName'],
+    siteId: json['siteId'],
+    siteName: json['siteName'],
     priority: json['priority'] ?? 'normal',
     active: json['active'] == true || json['active'] == 1,
     requiresAcknowledgement:

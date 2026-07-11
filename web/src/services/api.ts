@@ -153,6 +153,24 @@ async function request<T>(path: string, options?: RequestInit, allowRefresh = tr
   return res.json()
 }
 
+// Same auth/refresh behaviour as request(), but for binary downloads (PDFs).
+async function requestBlob(path: string, allowRefresh = true): Promise<Blob> {
+  const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (res.status === 401 && allowRefresh && token) {
+    const newToken = await refreshAccessToken()
+    if (newToken) return requestBlob(path, false)
+    forceSessionExpiry()
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: res.statusText }))
+    throw new Error(err.message || err.error || 'Download failed')
+  }
+  return res.blob()
+}
+
 export const api = {
   auth: {
     login: (email: string, password: string) =>
@@ -203,7 +221,9 @@ export const api = {
       request<any>('/reports/generate', { method: 'POST', body: JSON.stringify(data || {}) }),
     resend: (id: string) =>
       request<any>(`/reports/${id}/resend`, { method: 'POST' }),
-    pdf: (id: string) => `${API_BASE}/reports/${id}/pdf`,
+    // Authenticated download — the endpoint needs the Bearer token, so a
+    // plain link would 401; callers get a Blob to hand to the browser.
+    pdf: (id: string) => requestBlob(`/reports/${id}/pdf`),
   },
   users: {
     list: () => request<any[]>('/users'),

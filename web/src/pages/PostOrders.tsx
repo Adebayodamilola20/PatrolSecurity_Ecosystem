@@ -10,6 +10,9 @@ export default function PostOrders() {
   const [orders, setOrders] = useState<PostOrder[]>([])
   const [completions, setCompletions] = useState<PostOrderCompletion[]>([])
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([])
+  // convexId is what checkpoints reference as their siteId (id may be a
+  // legacy import id), so the picker keys options on convexId.
+  const [sites, setSites] = useState<{ id: string; convexId?: string; name: string }[]>([])
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -19,6 +22,7 @@ export default function PostOrders() {
     title: '',
     summary: '',
     instructions: '',
+    siteId: '',
     checkpointId: '',
     assignedUserId: '',
     assignedRole: 'guard',
@@ -31,20 +35,28 @@ export default function PostOrders() {
   const load = async () => {
     setLoading(true)
     try {
-      const [ordersData, completionsData, checkpointsData, usersData] = await Promise.all([
+      const [ordersData, completionsData, checkpointsData, sitesData, usersData] = await Promise.all([
         api.postOrders.list({ active: 'all' }),
         api.postOrders.completions(),
         api.checkpoints.list(),
+        api.sites.list(),
         api.users.list(),
       ])
       setOrders(ordersData)
       setCompletions(completionsData)
       setCheckpoints(checkpointsData)
+      setSites(sitesData)
       setUsers(usersData.filter((user: User) => user.role === 'guard' || user.role === 'supervisor'))
     } finally {
       setLoading(false)
     }
   }
+
+  // Points inside the chosen location; a sub-location pin narrows the order
+  // from "any scan at this location" to that one QR point.
+  const sitePoints = form.siteId
+    ? checkpoints.filter((cp) => cp.siteId === form.siteId)
+    : []
 
   useEffect(() => {
     void load()
@@ -56,7 +68,10 @@ export default function PostOrders() {
     try {
       await api.postOrders.create({
         ...form,
+        // A pinned sub-location wins; otherwise the whole location; otherwise
+        // this is a general duty that isn't tied to any scan.
         checkpointId: form.checkpointId || null,
+        siteId: form.checkpointId ? null : form.siteId || null,
         assignedUserId: form.assignedUserId || null,
       })
       setShowForm(false)
@@ -64,6 +79,7 @@ export default function PostOrders() {
         title: '',
         summary: '',
         instructions: '',
+        siteId: '',
         checkpointId: '',
         assignedUserId: '',
         assignedRole: 'guard',
@@ -110,9 +126,13 @@ export default function PostOrders() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Title" className="rounded-lg border border-border bg-background px-3 py-2 text-sm" />
               <input value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} placeholder="Short summary" className="rounded-lg border border-border bg-background px-3 py-2 text-sm" />
-              <select value={form.checkpointId} onChange={(e) => setForm({ ...form, checkpointId: e.target.value })} className="rounded-lg border border-border bg-background px-3 py-2 text-sm">
-                <option value="">Any checkpoint</option>
-                {checkpoints.map((cp) => <option key={cp.id} value={cp.id}>{cp.name}</option>)}
+              <select value={form.siteId} onChange={(e) => setForm({ ...form, siteId: e.target.value, checkpointId: '' })} className="rounded-lg border border-border bg-background px-3 py-2 text-sm">
+                <option value="">Anywhere (general duty)</option>
+                {sites.map((site) => <option key={site.id} value={site.convexId ?? site.id}>{site.name}</option>)}
+              </select>
+              <select value={form.checkpointId} onChange={(e) => setForm({ ...form, checkpointId: e.target.value })} disabled={!form.siteId} className="rounded-lg border border-border bg-background px-3 py-2 text-sm disabled:opacity-50">
+                <option value="">{form.siteId ? 'Whole location (any scan there)' : 'Pick a location first'}</option>
+                {sitePoints.map((cp) => <option key={cp.id} value={cp.id}>{cp.name}</option>)}
               </select>
               <select value={form.assignedUserId} onChange={(e) => setForm({ ...form, assignedUserId: e.target.value })} className="rounded-lg border border-border bg-background px-3 py-2 text-sm">
                 <option value="">Any guard</option>
@@ -171,7 +191,11 @@ export default function PostOrders() {
                   </span>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-muted-foreground">
-                  <div>Checkpoint: <span className="text-foreground">{order.checkpointName || 'Any'}</span></div>
+                  <div>Where: <span className="text-foreground">{
+                    order.checkpointName
+                      ? `${order.siteName ? `${order.siteName} — ` : ''}${order.checkpointName}`
+                      : order.siteName || 'Anywhere'
+                  }</span></div>
                   <div>Assigned: <span className="text-foreground">{order.assignedUserName || order.assignedRole || 'Guard'}</span></div>
                   <div>Photo proof: <span className="text-foreground">{order.requiresPhotoProof ? 'Required' : 'Optional'}</span></div>
                   <div>Created: <span className="text-foreground">{formatDate(order.createdAt)}</span></div>

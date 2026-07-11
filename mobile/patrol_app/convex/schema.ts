@@ -303,6 +303,10 @@ export default defineSchema({
     submittedAt: v.number(),
     emailedAt: v.optional(v.number()),
     deliveryPayload: v.any(),
+    // Cached generated PDFs (reports are immutable once submitted). The
+    // portal variant omits guard identities per the AGM rule.
+    pdfStorageId: v.optional(v.id("_storage")),
+    portalPdfStorageId: v.optional(v.id("_storage")),
   })
     .index("by_legacyId", ["legacyId"])
     .index("by_clientId", ["clientId"])

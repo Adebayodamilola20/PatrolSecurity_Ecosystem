@@ -555,7 +555,9 @@ class _DutiesScreenState extends State<DutiesScreen> {
                         ),
                         const SizedBox(height: 10),
                         Text(
-                          order.checkpointName ?? 'General site order',
+                          order.checkpointName ??
+                              order.siteName ??
+                              'General site order',
                           style: const TextStyle(
                             fontSize: 13,
                             color: AppTheme.primary,

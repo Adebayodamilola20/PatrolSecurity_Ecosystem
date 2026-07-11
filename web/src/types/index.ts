@@ -114,13 +114,17 @@ export interface Scan {
 
 export interface Report {
   id: string
-  clientEmail: string
-  periodStart: string
-  periodEnd: string
-  format: 'pdf' | 'html'
-  status: 'pending' | 'generating' | 'sent' | 'failed'
+  clientEmail?: string
+  periodStart?: string
+  periodEnd?: string
+  format?: 'pdf' | 'html'
+  status: string
   sentAt?: string
   createdAt: string
+  // Guard-submitted reports (reportSubmissions) surfaced in the same list.
+  title?: string
+  type?: string
+  userName?: string
 }
 
 export interface ExportFile {
@@ -163,6 +167,8 @@ export interface PostOrder {
   instructions: string
   checkpointId?: string | null
   checkpointName?: string | null
+  siteId?: string | null
+  siteName?: string | null
   assignedUserId?: string | null
   assignedUserName?: string | null
   assignedRole?: string

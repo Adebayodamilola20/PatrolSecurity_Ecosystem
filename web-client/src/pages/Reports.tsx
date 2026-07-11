@@ -1,5 +1,5 @@
-import { useCallback } from 'react'
-import { FileText, Download } from 'lucide-react'
+import { useCallback, useState } from 'react'
+import { FileText, Download, Loader2 } from 'lucide-react'
 import { api } from '../services/api'
 import { useClientData } from '../hooks/useClientData'
 import EmptyState from '../components/ui/EmptyState'
@@ -8,6 +8,28 @@ import { formatDate } from '../utils/format'
 export default function Reports() {
   const fetcher = useCallback(() => api.reports.list(), [])
   const { data, loading, error } = useClientData(fetcher)
+  const [downloading, setDownloading] = useState<string | null>(null)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
+
+  // The PDF endpoint needs the session token, so a plain link won't do:
+  // fetch it authenticated, then hand the file to the browser.
+  const downloadPdf = async (id: string, title: string) => {
+    setDownloading(id)
+    setDownloadError(null)
+    try {
+      const blob = await api.reports.pdf(id)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${title.replace(/[^\w\d-]+/g, '-').replace(/^-+|-+$/g, '') || 'report'}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      setDownloadError(e instanceof Error ? e.message : 'Download failed')
+    } finally {
+      setDownloading(null)
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -15,6 +37,12 @@ export default function Reports() {
         <h1 className="text-xl font-semibold">Reports</h1>
         <p className="text-sm text-muted-foreground">Download patrol & incident reports for your sites.</p>
       </div>
+
+      {downloadError ? (
+        <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          {downloadError}
+        </p>
+      ) : null}
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
@@ -32,14 +60,18 @@ export default function Reports() {
                   {r.type} · {formatDate(new Date(r.submittedAt))}
                 </p>
               </div>
-              <a
-                href={api.reports.pdfUrl(r.id)}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent"
+              <button
+                onClick={() => void downloadPdf(r.id, r.title)}
+                disabled={downloading === r.id}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
               >
-                <Download className="h-3.5 w-3.5" /> PDF
-              </a>
+                {downloading === r.id ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Download className="h-3.5 w-3.5" />
+                )}
+                PDF
+              </button>
             </div>
           ))}
         </div>

@@ -1,5 +1,6 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
+import { scrubOfficerName } from "./lib/anonymize";
 
 export const list = internalQuery({
   args: { clientId: v.optional(v.id("clients")) },
@@ -410,12 +411,18 @@ export const portalReports = internalQuery({
       .withIndex("by_clientId_submittedAt", (q) => q.eq("clientId", args.clientId))
       .order("desc")
       .take(50);
-    return submissions.map((s) => ({
-      id: s.legacyId ?? s._id,
-      title: s.title,
-      type: s.type,
-      submittedAt: s.submittedAt,
-    }));
+    // Report titles embed the submitting officer's name — scrub it (AGM rule).
+    return await Promise.all(
+      submissions.map(async (s) => {
+        const officer = await ctx.db.get(s.userId);
+        return {
+          id: s.legacyId ?? s._id,
+          title: scrubOfficerName(s.title, officer?.name),
+          type: s.type,
+          submittedAt: s.submittedAt,
+        };
+      }),
+    );
   },
 });
 

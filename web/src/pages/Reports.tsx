@@ -7,6 +7,7 @@ import { EmptyState } from '../components/ui/EmptyState'
 
 const statusColor: Record<string, string> = {
   sent: 'bg-success/15 text-success',
+  submitted: 'bg-success/15 text-success',
   generating: 'bg-primary/15 text-primary',
   pending: 'bg-warning/15 text-warning',
   failed: 'bg-destructive/15 text-destructive',
@@ -19,6 +20,7 @@ export default function Reports() {
   const [showForm, setShowForm] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [resending, setResending] = useState<string | null>(null)
+  const [downloadingPdf, setDownloadingPdf] = useState<string | null>(null)
   const [requestingExport, setRequestingExport] = useState(false)
   const [exportDate, setExportDate] = useState(new Date().toISOString().slice(0, 10))
   const [form, setForm] = useState({ clientEmail: '', periodStart: '', periodEnd: '' })
@@ -29,7 +31,17 @@ export default function Reports() {
       api.reports.list(),
       api.scans.listDailyExports(),
     ])
-    setReports(result?.reports ?? result ?? [])
+    // The API returns { reports, submissions }: submissions are the reports
+    // guards actually file from the app — fold them into one list.
+    const submissions = (result?.submissions ?? []).map((s: any) => ({
+      id: s.id,
+      title: s.title,
+      type: s.type,
+      userName: s.userName,
+      status: s.status,
+      createdAt: s.submittedAt,
+    }))
+    setReports([...(result?.reports ?? []), ...submissions])
     setExports(exportList)
   }
 
@@ -52,6 +64,24 @@ export default function Reports() {
       await loadData()
     } catch {}
     setGenerating(false)
+  }
+
+  // Authenticated fetch → browser download; a plain link can't carry the token.
+  const handleDownloadPdf = async (id: string) => {
+    setDownloadingPdf(id)
+    try {
+      const blob = await api.reports.pdf(id)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `report-${id}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      // request-error toast is emitted by the api layer
+    } finally {
+      setDownloadingPdf(null)
+    }
   }
 
   const handleResend = async (id: string) => {
@@ -241,9 +271,10 @@ export default function Reports() {
                 <FileText className="h-5 w-5" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-medium">Patrol Report — {r.clientEmail}</div>
+                <div className="font-medium truncate">{r.title || `Patrol Report — ${r.clientEmail}`}</div>
                 <div className="text-xs text-muted-foreground">
-                  {r.id.slice(0, 8).toUpperCase()} · {r.format?.toUpperCase() || 'PDF'}
+                  {r.id.slice(0, 8).toUpperCase()} · {(r.type || r.format || 'pdf').toUpperCase()}
+                  {r.userName ? ` · ${r.userName}` : ''}
                 </div>
               </div>
               <div className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -253,15 +284,14 @@ export default function Reports() {
                 {r.status}
               </span>
               <div className="flex gap-1">
-                <a
-                  href={api.reports.pdf(r.id)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded-lg border border-border p-2 hover:bg-accent inline-flex items-center justify-center"
-                  title="Download PDF"
+                <button
+                  onClick={() => void handleDownloadPdf(r.id)}
+                  disabled={downloadingPdf === r.id}
+                  className="rounded-lg border border-border p-2 hover:bg-accent disabled:opacity-50 inline-flex items-center justify-center"
+                  title={downloadingPdf === r.id ? 'Preparing PDF...' : 'Download PDF'}
                 >
-                  <Download className="h-4 w-4" />
-                </a>
+                  {downloadingPdf === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                </button>
                 <button
                   onClick={() => handleResend(r.id)}
                   disabled={resending === r.id}

@@ -90,6 +90,117 @@ export const generate = internalMutation({
   },
 });
 
+export const resolveId = internalQuery({
+  args: { id: v.string() },
+  handler: async (ctx, args) => {
+    const byLegacyId = await ctx.db
+      .query("reportSubmissions")
+      .withIndex("by_legacyId", (q) => q.eq("legacyId", args.id))
+      .unique();
+    if (byLegacyId) return byLegacyId._id;
+    const normalized = ctx.db.normalizeId("reportSubmissions", args.id);
+    if (!normalized) return null;
+    return (await ctx.db.get(normalized)) ? normalized : null;
+  },
+});
+
+// Everything the PDF generator needs for one report, in one query.
+export const getForPdf = internalQuery({
+  args: { reportId: v.id("reportSubmissions") },
+  handler: async (ctx, args) => {
+    const report = await ctx.db.get(args.reportId);
+    if (!report) return null;
+    const officer = await ctx.db.get(report.userId);
+    const checkpoint = report.checkpointId
+      ? await ctx.db.get(report.checkpointId)
+      : null;
+    const site = report.siteId
+      ? await ctx.db.get(report.siteId)
+      : checkpoint?.siteId
+        ? await ctx.db.get(checkpoint.siteId)
+        : null;
+    const client = report.clientId ? await ctx.db.get(report.clientId) : null;
+    return {
+      id: report.legacyId ?? report._id,
+      type: report.type,
+      title: report.title,
+      summary: report.summary,
+      details: report.details,
+      equipmentName: report.equipmentName ?? null,
+      evidenceUrls: report.evidenceUrls ?? [],
+      gpsLatitude: report.gpsLatitude ?? null,
+      gpsLongitude: report.gpsLongitude ?? null,
+      siteLabel: report.siteLabel,
+      siteName: site?.name ?? null,
+      checkpointName: checkpoint?.name ?? null,
+      clientName: client?.name ?? null,
+      officerName: officer?.name ?? null,
+      status: report.status,
+      submittedAt: report.submittedAt,
+      pdfStorageId: report.pdfStorageId ?? null,
+      portalPdfStorageId: report.portalPdfStorageId ?? null,
+    };
+  },
+});
+
+// Lightweight access-control view: who may fetch this report's PDF.
+export const getAccessInfo = internalQuery({
+  args: { reportId: v.id("reportSubmissions") },
+  handler: async (ctx, args) => {
+    const report = await ctx.db.get(args.reportId);
+    if (!report) return null;
+    return {
+      clientId: report.clientId ?? null,
+      userId: report.userId,
+      pdfStorageId: report.pdfStorageId ?? null,
+      portalPdfStorageId: report.portalPdfStorageId ?? null,
+      title: report.title,
+      submittedAt: report.submittedAt,
+    };
+  },
+});
+
+// Ops lever: drop cached PDFs so the next download re-renders them (needed
+// whenever the PDF layout/generator changes). Run with:
+//   npx convex run reports:clearPdfCache
+export const clearPdfCache = internalMutation({
+  args: { reportId: v.optional(v.id("reportSubmissions")) },
+  handler: async (ctx, args) => {
+    const reports = args.reportId
+      ? [await ctx.db.get(args.reportId)]
+      : await ctx.db.query("reportSubmissions").collect();
+    let cleared = 0;
+    for (const report of reports) {
+      if (!report) continue;
+      if (!report.pdfStorageId && !report.portalPdfStorageId) continue;
+      if (report.pdfStorageId) await ctx.storage.delete(report.pdfStorageId);
+      if (report.portalPdfStorageId) await ctx.storage.delete(report.portalPdfStorageId);
+      await ctx.db.patch(report._id, {
+        pdfStorageId: undefined,
+        portalPdfStorageId: undefined,
+      });
+      cleared += 1;
+    }
+    return { cleared };
+  },
+});
+
+export const setPdfStorage = internalMutation({
+  args: {
+    reportId: v.id("reportSubmissions"),
+    storageId: v.id("_storage"),
+    variant: v.union(v.literal("staff"), v.literal("portal")),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(
+      args.reportId,
+      args.variant === "staff"
+        ? { pdfStorageId: args.storageId }
+        : { portalPdfStorageId: args.storageId },
+    );
+  },
+});
+
 const VALID_REPORT_TYPES = ["daily-activity", "incident", "maintenance", "pass-on-log", "generated"] as const;
 
 function sanitize(input: string): string {
