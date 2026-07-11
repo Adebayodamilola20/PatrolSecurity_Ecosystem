@@ -32,6 +32,14 @@ interface SubLocation {
   lastScanVerified: boolean | null
 }
 
+interface AssignedGuard {
+  id: string
+  name: string
+  phone: string
+  active: boolean
+  onDuty: boolean
+}
+
 interface ClientSite {
   id: string
   name: string
@@ -45,6 +53,7 @@ interface ClientSite {
   verifiedToday: number
   /** The location's own QR point, auto-created with the location. */
   locationQr: SubLocation | null
+  assignedGuards: AssignedGuard[]
   subLocations: SubLocation[]
 }
 
@@ -129,6 +138,12 @@ export default function ClientDetail() {
   const [submittingSubLocation, setSubmittingSubLocation] = useState(false)
   const [subLocationError, setSubLocationError] = useState('')
 
+  // Guard-assignment state: the pool of assignable guards plus, per location,
+  // the guard picked in the dropdown and whether a request is in flight.
+  const [guardPool, setGuardPool] = useState<Array<{ id: string; convexId?: string; name: string }>>([])
+  const [pendingGuard, setPendingGuard] = useState<Record<string, string>>({})
+  const [assignBusySiteId, setAssignBusySiteId] = useState('')
+
   const load = () => {
     if (!id) return
     api.clients.get(id)
@@ -151,6 +166,46 @@ export default function ClientDetail() {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
+
+  // The guard pool for the assign dropdown (GET /users is admin-only, which
+  // matches canManage).
+  useEffect(() => {
+    if (!canManage) return
+    api.users.list()
+      .then((users) => setGuardPool(
+        (users || []).filter((u: any) => u.role === 'guard' && u.active),
+      ))
+      .catch(() => setGuardPool([]))
+  }, [canManage])
+
+  const assignGuard = async (site: ClientSite) => {
+    const guardId = pendingGuard[site.id]
+    if (!guardId) return
+    try {
+      setAssignBusySiteId(site.id)
+      setActionError('')
+      await api.siteAssignments.assign(site.id, guardId)
+      setPendingGuard((prev) => ({ ...prev, [site.id]: '' }))
+      load()
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Could not assign the guard.')
+    } finally {
+      setAssignBusySiteId('')
+    }
+  }
+
+  const unassignGuard = async (site: ClientSite, guard: AssignedGuard) => {
+    try {
+      setAssignBusySiteId(site.id)
+      setActionError('')
+      await api.siteAssignments.unassign(site.id, guard.id)
+      load()
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Could not remove the guard.')
+    } finally {
+      setAssignBusySiteId('')
+    }
+  }
 
   // Leaflet picker for the add-location modal (same pattern as the old
   // Checkpoints page: search an address, then refine by dragging the pin).
@@ -663,6 +718,66 @@ export default function ClientDetail() {
                         </div>
                       </div>
                     )}
+                    {/* Assigned guards: scans at this location only count for
+                        guards posted here, and the client portal's coverage
+                        numbers are derived from these assignments. */}
+                    <div className="mb-4">
+                      <div className="mb-2 text-xs uppercase tracking-wider text-muted-foreground">Assigned Guards</div>
+                      {site.assignedGuards.length === 0 ? (
+                        <div className="rounded-lg border border-dashed border-warning/40 bg-warning/5 px-3 py-3 text-xs text-warning">
+                          No guards posted here yet — assign at least one, or their patrol scans at this location won't be accepted.
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {site.assignedGuards.map((guard) => (
+                            <span
+                              key={guard.id}
+                              className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs"
+                            >
+                              <span className={`h-2 w-2 rounded-full ${guard.onDuty ? 'bg-success' : 'bg-muted-foreground/40'}`} />
+                              <span className="font-medium">{guard.name}</span>
+                              <span className="text-muted-foreground">{guard.onDuty ? 'on duty' : 'off duty'}</span>
+                              {canManage && (
+                                <button
+                                  onClick={() => void unassignGuard(site, guard)}
+                                  disabled={assignBusySiteId === site.id}
+                                  title={`Remove ${guard.name} from ${site.name}`}
+                                  className="text-muted-foreground hover:text-destructive disabled:opacity-50"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {canManage && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <select
+                            value={pendingGuard[site.id] ?? ''}
+                            onChange={(e) => setPendingGuard((prev) => ({ ...prev, [site.id]: e.target.value }))}
+                            className="w-full max-w-xs rounded-lg border border-border bg-background px-3 py-2 text-xs"
+                          >
+                            <option value="">Select a guard to assign…</option>
+                            {guardPool
+                              .filter((g) => !site.assignedGuards.some(
+                                (a) => a.id === g.id || a.id === g.convexId,
+                              ))
+                              .map((g) => (
+                                <option key={g.id} value={g.convexId ?? g.id}>{g.name}</option>
+                              ))}
+                          </select>
+                          <button
+                            onClick={() => void assignGuard(site)}
+                            disabled={!pendingGuard[site.id] || assignBusySiteId === site.id}
+                            className="rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {assignBusySiteId === site.id ? 'Saving…' : 'Assign'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="mb-3 flex items-center justify-between">
                       <div className="text-xs uppercase tracking-wider text-muted-foreground">Sub-locations & QR codes</div>
                       {canManage && (
