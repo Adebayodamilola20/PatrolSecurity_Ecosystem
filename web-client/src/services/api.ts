@@ -169,8 +169,8 @@ export const api = {
   // All of the following are server-tenant-scoped to the caller's clientId.
   overview: () => request<ClientOverview>('/client/overview'),
   guards: {
-    list: () => request<ClientGuard[]>('/client/guards'),
-    get: (id: string) => request<ClientGuard>(`/client/guards/${id}`),
+    // Numbers only — clients never see guard identities (names/photos/etc).
+    stats: () => request<ClientGuardStats>('/client/guard-stats'),
   },
   scans: {
     list: (params?: Record<string, string>) =>
@@ -196,7 +196,7 @@ export const api = {
 import type {
   ClientUser,
   ClientOverview,
-  ClientGuard,
+  ClientGuardStats,
   ClientScan,
   ClientCheckpoint,
   ClientSiteDetail,

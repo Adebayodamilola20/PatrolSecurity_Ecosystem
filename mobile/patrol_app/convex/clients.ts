@@ -383,3 +383,84 @@ export const portalReports = internalQuery({
     }));
   },
 });
+
+export const portalGuardStats = internalQuery({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const sites = await ctx.db
+      .query("sites")
+      .withIndex("by_clientId", (q) => q.eq("clientId", args.clientId))
+      .collect();
+
+    const guardIds = new Set<string>();
+    for (const site of sites) {
+      const assignments = await ctx.db
+        .query("userSiteAssignments")
+        .withIndex("by_siteId", (q) => q.eq("siteId", site._id))
+        .collect();
+      for (const assignment of assignments) guardIds.add(assignment.userId);
+    }
+
+    let assigned = 0;
+    let clockedIn = 0;
+    for (const guardId of guardIds) {
+      const guard = await ctx.db.get(guardId as any);
+      if (!guard || (guard as any).role !== "guard" || !(guard as any).active) continue;
+      assigned += 1;
+      const activeShift = await ctx.db
+        .query("shifts")
+        .withIndex("by_userId_status", (q) =>
+          q.eq("userId", guardId as any).eq("status", "active"),
+        )
+        .first();
+      if (activeShift) clockedIn += 1;
+    }
+
+    return { assigned, clockedIn, pending: assigned - clockedIn };
+  },
+});
+
+export const portalCheckpoints = internalQuery({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const sites = await ctx.db
+      .query("sites")
+      .withIndex("by_clientId", (q) => q.eq("clientId", args.clientId))
+      .collect();
+    const results: Array<{
+      id: string
+      name: string
+      code: string
+      siteLabel: string
+      latitude: number | null
+      longitude: number | null
+      hitRate: null
+      lastScanAt: number | null
+    }> = [];
+    for (const site of sites) {
+      const checkpoints = await ctx.db
+        .query("checkpoints")
+        .withIndex("by_siteId", (q) => q.eq("siteId", site._id))
+        .collect();
+      for (const cp of checkpoints) {
+        if (!cp.active) continue;
+        const lastScan = await ctx.db
+          .query("scans")
+          .withIndex("by_checkpointId_scannedAt", (q) => q.eq("checkpointId", cp._id))
+          .order("desc")
+          .first();
+        results.push({
+          id: cp._id,
+          name: cp.name,
+          code: cp.code,
+          siteLabel: site.name,
+          latitude: cp.latitude ?? null,
+          longitude: cp.longitude ?? null,
+          hitRate: null,
+          lastScanAt: lastScan?.scannedAt ?? null,
+        });
+      }
+    }
+    return results;
+  },
+});

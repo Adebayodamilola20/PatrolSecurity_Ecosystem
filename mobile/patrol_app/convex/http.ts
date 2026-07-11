@@ -2679,6 +2679,27 @@ http.route({ path: "/client/scans", method: "GET", handler: httpAction(async (ct
   return json(await ctx.runQuery(internal.clients.portalScans, { clientId }));
 })});
 
+// [client-structure] Guard STATISTICS only — never identities (AGM rule):
+// "Assigned 7 / Clocked In 4 / Pending 3", no names, no photos.
+http.route({ path: "/client/guard-stats", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  if (user.role !== "main_account") return forbidden("The client portal is for client accounts only.");
+  const clientId = _cid(user.clientId);
+  if (!clientId) return json({ assigned: 0, clockedIn: 0, pending: 0 });
+  return json(await ctx.runQuery(internal.clients.portalGuardStats, { clientId }));
+})});
+
+// [client-structure] Flat checkpoint list for the portal (compat shape).
+http.route({ path: "/client/checkpoints", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  if (user.role !== "main_account") return forbidden("The client portal is for client accounts only.");
+  const clientId = _cid(user.clientId);
+  if (!clientId) return json([]);
+  return json(await ctx.runQuery(internal.clients.portalCheckpoints, { clientId }));
+})});
+
 // [client-structure] Portal report inbox (list of submitted reports).
 http.route({ path: "/client/reports", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);

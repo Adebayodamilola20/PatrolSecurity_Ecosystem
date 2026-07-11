@@ -20,16 +20,14 @@ export interface ClientSite {
   location: string
 }
 
-export interface ClientGuard {
-  id: string
-  name: string
-  phone?: string
-  /** Whether the guard is currently clocked in on an active shift. */
-  onShift: boolean
-  /** Site label the guard is currently/most recently assigned to. */
-  siteLabel?: string
-  /** Epoch ms of the guard's most recent scan or position ping. */
-  lastSeenAt?: number | null
+/**
+ * Guard staffing NUMBERS for the client portal. Deliberately contains no
+ * identities — clients never see guard names, photos or personal details.
+ */
+export interface ClientGuardStats {
+  assigned: number
+  clockedIn: number
+  pending: number
 }
 
 export interface ClientScan {

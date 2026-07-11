@@ -5,7 +5,6 @@ import Login from './pages/Login'
 import ForgotPassword from './pages/ForgotPassword'
 import Overview from './pages/Overview'
 import Guards from './pages/Guards'
-import GuardDetail from './pages/GuardDetail'
 import Scans from './pages/Scans'
 import Locations from './pages/Locations'
 import Reports from './pages/Reports'
@@ -40,8 +39,8 @@ export default function App() {
           }
         >
           <Route path="/" element={<Overview />} />
+          {/* Guard identities are staff-only; clients get coverage numbers. */}
           <Route path="/guards" element={<Guards />} />
-          <Route path="/guards/:id" element={<GuardDetail />} />
           <Route path="/scans" element={<Scans />} />
           <Route path="/locations" element={<Locations />} />
           {/* Old flat checkpoints view is superseded by the grouped Locations view. */}
