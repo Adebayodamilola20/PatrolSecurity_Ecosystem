@@ -524,7 +524,9 @@ export default function Checkpoints() {
 
                   <div className="mt-3 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
                     <MapPin className="h-3.5 w-3.5 shrink-0" />
-                    {cp.latitude.toFixed(4)}, {cp.longitude.toFixed(4)}
+                    {cp.latitude != null && cp.longitude != null
+                      ? `${cp.latitude.toFixed(4)}, ${cp.longitude.toFixed(4)}`
+                      : 'Uses location geofence'}
                   </div>
                 </button>
 

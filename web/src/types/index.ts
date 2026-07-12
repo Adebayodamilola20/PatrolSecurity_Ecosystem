@@ -36,9 +36,11 @@ export interface Checkpoint {
   id: string
   name: string
   code: string
-  latitude: number
-  longitude: number
-  radiusMeters: number
+  // Sub-location QRs have no own GPS — they verify against the parent location's
+  // geofence — so these can be null.
+  latitude: number | null
+  longitude: number | null
+  radiusMeters: number | null
   expectedIntervalMinutes: number
   active: boolean
   clientId?: string | null

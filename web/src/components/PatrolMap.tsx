@@ -72,6 +72,10 @@ export function PatrolMap() {
       const bounds = new maps.LatLngBounds()
 
       checkpoints.forEach((checkpoint) => {
+        // Sub-locations have no coordinates of their own, so they can't be
+        // placed on the map — skip them instead of feeding Google Maps a null
+        // position (which throws "not a LatLng").
+        if (checkpoint.latitude == null || checkpoint.longitude == null) return
         const marker = new maps.Marker({
           map,
           position: { lat: checkpoint.latitude, lng: checkpoint.longitude },
@@ -87,7 +91,7 @@ export function PatrolMap() {
         })
         marker.addListener('click', () => {
           new maps.InfoWindow({
-            content: `<div style="min-width:160px"><strong>${escapeHtml(checkpoint.name)}</strong><br/>${escapeHtml(checkpoint.code)}<br/>Radius: ${checkpoint.radiusMeters}m</div>`,
+            content: `<div style="min-width:160px"><strong>${escapeHtml(checkpoint.name)}</strong><br/>${escapeHtml(checkpoint.code)}<br/>Radius: ${checkpoint.radiusMeters ?? 50}m</div>`,
           }).open({ map, anchor: marker })
         })
         checkpointMarkersRef.current.push(marker)
