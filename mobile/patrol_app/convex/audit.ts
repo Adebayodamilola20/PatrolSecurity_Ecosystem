@@ -37,6 +37,7 @@ const sensitiveActions = [
   "dar.created",
   "rate_limit.exceeded",
   "report.submitted",
+  "report.sent",
   "handover.created",
   "pass_on_log.created",
   "pass_on_log.acknowledged",

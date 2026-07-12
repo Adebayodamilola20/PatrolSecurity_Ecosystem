@@ -2439,16 +2439,43 @@ http.route({ path: "/reports/generate", method: "POST", handler: httpAction(asyn
   }));
 })});
 
+// Send (or resend) a drafted report to a client — flips it to "sent" so it
+// appears in the client portal. Optional clientId in the body lets staff pick
+// exactly which client receives it. Staff-only.
 http.route({ pathPrefix: "/reports/", method: "POST", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
-  const parts = request.url.split("/").filter(Boolean);
-  const id = parts[parts.length - 2];
-  const action = parts[parts.length - 1];
-  if (action === "resend") {
-    return json({ message: "Report resent successfully", id });
+  const id = lastPathPart(request, 1);
+  const action = lastPathPart(request);
+  if (!id || (action !== "send" && action !== "resend")) {
+    return notFound("Report route not found");
   }
-  return notFound("Report route not found");
+  const roleErr = requireRole(user, ["admin", "supervisor"]);
+  if (roleErr) return roleErr;
+  const reportId = await ctx.runQuery(internal.reports.resolveId, { id });
+  if (!reportId) return notFound("Report not found");
+  const body = await parseJson(request);
+  const clientId = body?.clientId
+    ? await ctx.runQuery(internal.clients.resolveId, { id: String(body.clientId) })
+    : null;
+  if (body?.clientId && !clientId) return notFound("Client not found");
+  let result;
+  try {
+    result = await ctx.runMutation(internal.reports.sendToClient, {
+      reportId,
+      clientId: clientId ?? undefined,
+    });
+  } catch (err) {
+    const raw = err instanceof Error ? err.message : "Could not send report";
+    return badRequest(raw.replace(/^Uncaught Error:\s*/, "").split("\n")[0].trim());
+  }
+  await recordAudit(ctx, user, "report.sent", {
+    targetType: "report",
+    targetId: String(result.id),
+    details: `Sent report to ${result.clientName ?? "client"}`,
+    ipAddress: requestIp(request),
+  });
+  return json(result);
 })});
 
 // Streams the report as a real generated PDF (cached in storage after the
@@ -2486,7 +2513,14 @@ http.route({ pathPrefix: "/client/reports/", method: "GET", handler: httpAction(
   const reportId = await ctx.runQuery(internal.reports.resolveId, { id });
   if (!reportId) return notFound("Report not found");
   const access = await ctx.runQuery(internal.reports.getAccessInfo, { reportId });
-  if (!access || !access.clientId || access.clientId !== user.clientId) {
+  // Portal can only see reports that belong to this client AND have been sent —
+  // drafts and internal reports never reach the client, even by direct URL.
+  if (
+    !access ||
+    !access.clientId ||
+    access.clientId !== user.clientId ||
+    access.status !== "sent"
+  ) {
     return notFound("Report not found");
   }
   const storageId =

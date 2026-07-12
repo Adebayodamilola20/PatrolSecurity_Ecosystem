@@ -66,6 +66,7 @@ export const listAll = internalQuery({
         details: s.details ?? {},
         status: s.status,
         siteLabel: s.siteLabel,
+        clientId: s.clientId ?? null,
         clientName: clients.find((c) => c._id === s.clientId)?.name ?? null,
         userName: users.find((u) => u._id === s.userId)?.name ?? "",
         submittedAt: new Date(s.submittedAt).toISOString(),
@@ -125,11 +126,66 @@ export const createFromTemplate = internalMutation({
       details: validated.fields,
       siteLabel: site?.name ?? "",
       userId: args.userId,
-      status: "submitted",
+      // Staff-authored reports start as a private DRAFT. They only reach the
+      // client portal once staff explicitly send them (see sendToClient).
+      status: "draft",
       submittedAt,
       deliveryPayload: {},
     });
-    return { id, title, type: template.category, status: "submitted" };
+    return { id, title, type: template.category, status: "draft" };
+  },
+});
+
+// Deliver a drafted report to a client: mark it sent (portal now shows it) and
+// stamp the send time. An optional clientId lets staff pick/confirm exactly
+// which client receives it. Cached PDFs are dropped so they re-render with the
+// final recipient. Staff-only — enforced at the HTTP layer.
+export const sendToClient = internalMutation({
+  args: {
+    reportId: v.id("reportSubmissions"),
+    clientId: v.optional(v.id("clients")),
+  },
+  handler: async (ctx, args) => {
+    const report = await ctx.db.get(args.reportId);
+    if (!report) throw new Error("Report not found");
+
+    let clientId = report.clientId ?? undefined;
+    const patch: Record<string, unknown> = {};
+    if (args.clientId) {
+      const client = await ctx.db.get(args.clientId);
+      if (!client) throw new Error("Client not found");
+      clientId = args.clientId;
+      // If the report was tied to a location of a different client, drop that
+      // link so the recipient and the location can't contradict each other.
+      if (report.siteId) {
+        const site = await ctx.db.get(report.siteId);
+        if (site && site.clientId !== clientId) {
+          patch.siteId = undefined;
+          patch.siteLabel = "";
+        }
+      }
+    }
+    if (!clientId) throw new Error("Choose a client to send this report to");
+
+    if (report.pdfStorageId) await ctx.storage.delete(report.pdfStorageId);
+    if (report.portalPdfStorageId)
+      await ctx.storage.delete(report.portalPdfStorageId);
+
+    await ctx.db.patch(args.reportId, {
+      ...patch,
+      clientId,
+      status: "sent",
+      emailedAt: Date.now(),
+      pdfStorageId: undefined,
+      portalPdfStorageId: undefined,
+    });
+
+    const client = await ctx.db.get(clientId);
+    return {
+      id: report.legacyId ?? report._id,
+      status: "sent",
+      clientName: client?.name ?? null,
+    };
   },
 });
 
@@ -223,6 +279,7 @@ export const getAccessInfo = internalQuery({
     return {
       clientId: report.clientId ?? null,
       userId: report.userId,
+      status: report.status,
       pdfStorageId: report.pdfStorageId ?? null,
       portalPdfStorageId: report.portalPdfStorageId ?? null,
       title: report.title,

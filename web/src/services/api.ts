@@ -223,8 +223,13 @@ export const api = {
       request<any>('/reports', { method: 'POST', body: JSON.stringify(data) }),
     generate: (data?: any) =>
       request<any>('/reports/generate', { method: 'POST', body: JSON.stringify(data || {}) }),
-    resend: (id: string) =>
-      request<any>(`/reports/${id}/resend`, { method: 'POST' }),
+    // Sends a drafted report to a client so it appears in their portal. Pass
+    // clientId to choose/confirm exactly which client receives it.
+    send: (id: string, clientId?: string) =>
+      request<{ id: string; status: string; clientName: string | null }>(
+        `/reports/${id}/send`,
+        { method: 'POST', body: JSON.stringify(clientId ? { clientId } : {}) },
+      ),
     // Authenticated download — the endpoint needs the Bearer token, so a
     // plain link would 401; callers get a Blob to hand to the browser.
     pdf: (id: string) => requestBlob(`/reports/${id}/pdf`),

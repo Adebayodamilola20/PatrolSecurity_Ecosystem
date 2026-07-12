@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FileText, Download, Calendar, Plus, X, Eye, Loader2, ChevronLeft } from 'lucide-react'
+import { FileText, Download, Calendar, Plus, X, Eye, Loader2, ChevronLeft, Send, CheckCircle2 } from 'lucide-react'
 import { api, apiFileUrl } from '../services/api'
 import type { ExportFile } from '../types'
 import { TableSkeleton } from '../components/ui/Skeleton'
@@ -15,6 +15,7 @@ interface ReportRow {
   details: Record<string, string>
   status: string
   siteLabel: string
+  clientId: string | null
   clientName: string | null
   userName: string
   submittedAt: string
@@ -46,6 +47,11 @@ export default function Reports() {
   // PDF preview modal: the eye button renders the actual report PDF in-app.
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
+  // Send-to-client dialog.
+  const [sending, setSending] = useState<ReportRow | null>(null)
+  const [sendClient, setSendClient] = useState('')
+  const [sendBusy, setSendBusy] = useState(false)
+  const [sendError, setSendError] = useState('')
 
   // List filters — server-side so the archive can grow past one page.
   const [filterType, setFilterType] = useState('')
@@ -196,6 +202,32 @@ export default function Reports() {
       // request-error toast is emitted by the api layer
     } finally {
       setDownloadingPdf(null)
+    }
+  }
+
+  // Open the send dialog, pre-selecting the report's current client.
+  const openSend = (report: ReportRow) => {
+    setSending(report)
+    setSendError('')
+    const match = clients.find(
+      (c) => c.convexId === report.clientId || c.name === report.clientName,
+    )
+    setSendClient(match?.convexId ?? match?.id ?? '')
+  }
+
+  const confirmSend = async () => {
+    if (!sending) return
+    if (!sendClient) { setSendError('Pick a client to send this report to.'); return }
+    setSendBusy(true)
+    setSendError('')
+    try {
+      await api.reports.send(sending.id, sendClient)
+      setSending(null)
+      await loadReports()
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : 'Could not send the report.')
+    } finally {
+      setSendBusy(false)
     }
   }
 
@@ -383,6 +415,39 @@ export default function Reports() {
         </div>
       )}
 
+      {/* Send-to-client dialog */}
+      {sending && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setSending(null)}>
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">Send report to client</h2>
+                <p className="mt-1 text-xs text-muted-foreground">{sending.title}</p>
+              </div>
+              <button onClick={() => setSending(null)} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+            </div>
+            <p className="mt-4 text-sm text-muted-foreground">
+              The client will receive this report in their portal as an A4 PDF. Choose which client it goes to.
+            </p>
+            <label className="mt-4 block text-xs font-medium text-muted-foreground">Client</label>
+            <select value={sendClient} onChange={(e) => setSendClient(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm">
+              <option value="">Select a client…</option>
+              {clients.map((c) => <option key={c.id} value={c.convexId ?? c.id}>{c.name}</option>)}
+            </select>
+            {sendError ? <p className="mt-3 text-xs text-destructive">{sendError}</p> : null}
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={() => setSending(null)} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent">Cancel</button>
+              <button onClick={() => void confirmSend()} disabled={sendBusy}
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60">
+                {sendBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {sending.status === 'sent' ? 'Re-send' : 'Send'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Excel daily-tour export (unchanged feature) */}
       <div className="rounded-xl border border-border bg-card p-4">
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -493,6 +558,15 @@ export default function Reports() {
                   {r.userName ? ` · by ${r.userName}` : ''}
                 </div>
               </div>
+              {r.status === 'sent' ? (
+                <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-success/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-success">
+                  <CheckCircle2 className="h-3 w-3" /> Sent
+                </span>
+              ) : (
+                <span className="hidden sm:inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Draft
+                </span>
+              )}
               <div className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Calendar className="h-3.5 w-3.5" /> {formatDate(r.submittedAt)}
               </div>
@@ -505,6 +579,15 @@ export default function Reports() {
                   className="rounded-lg border border-border p-2 hover:bg-accent disabled:opacity-50 inline-flex items-center justify-center"
                   title={downloadingPdf === r.id ? 'Preparing PDF...' : 'Download PDF'}>
                   {downloadingPdf === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                </button>
+                <button onClick={() => openSend(r)}
+                  className={`rounded-lg border p-2 inline-flex items-center justify-center ${
+                    r.status === 'sent'
+                      ? 'border-border hover:bg-accent text-muted-foreground'
+                      : 'border-primary bg-primary text-primary-foreground hover:opacity-90'
+                  }`}
+                  title={r.status === 'sent' ? 'Re-send to a client' : 'Send to client'}>
+                  <Send className="h-4 w-4" />
                 </button>
               </div>
             </div>

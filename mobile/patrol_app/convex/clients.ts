@@ -434,11 +434,15 @@ export const portalScans = internalQuery({
 export const portalReports = internalQuery({
   args: { clientId: v.id("clients") },
   handler: async (ctx, args) => {
-    const submissions = await ctx.db
+    // Clients only ever see reports staff have explicitly SENT — never drafts,
+    // and never guard-submitted internal reports (those stay staff-only).
+    const submissions = (await ctx.db
       .query("reportSubmissions")
       .withIndex("by_clientId_submittedAt", (q) => q.eq("clientId", args.clientId))
       .order("desc")
-      .take(50);
+      .take(200))
+      .filter((s) => s.status === "sent")
+      .slice(0, 50);
     // Report titles embed the submitting officer's name — scrub it (AGM rule).
     return await Promise.all(
       submissions.map(async (s) => {
