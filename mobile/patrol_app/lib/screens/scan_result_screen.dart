@@ -328,11 +328,20 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
     });
 
     if (!mounted) return;
+    // The server is the source of truth for verification: it checks the guard's
+    // GPS against the parent location's geofence. Checkpoints/sub-locations have
+    // no own coordinates, so the local pre-estimate above can be off — adopt the
+    // server's distance and validity for what we show the guard.
+    final serverScan = scanProvider.lastScan;
     setState(() {
       _success = ok;
       _errorMessage = ok ? null : scanProvider.error;
       _submitting = false;
-      _scanId = ok ? scanProvider.lastScan?.id : null;
+      _scanId = ok ? serverScan?.id : null;
+      if (ok && serverScan != null) {
+        _gpsValid = serverScan.gpsValid;
+        _distance = serverScan.distanceMeters;
+      }
     });
 
     if (ok && _scanId != null) {
@@ -520,20 +529,41 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
             child: Column(
               children: [
                 const Spacer(),
-                const Icon(
-                  Icons.check_circle_outline,
+                Icon(
+                  _gpsValid
+                      ? Icons.check_circle_outline
+                      : Icons.warning_amber_rounded,
                   size: 80,
-                  color: AppTheme.verified,
+                  color: _gpsValid ? AppTheme.verified : AppTheme.flagged,
                 ),
                 const SizedBox(height: 16),
-                const Text(
-                  'Scan Verified!',
+                Text(
+                  _gpsValid ? 'Scan Verified!' : 'Scan Flagged',
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
-                    color: AppTheme.verified,
+                    color: _gpsValid ? AppTheme.verified : AppTheme.flagged,
                   ),
                 ),
+                if (!_gpsValid) ...[
+                  const SizedBox(height: 10),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Text(
+                      'You are about ${_distance.toStringAsFixed(0)}m from '
+                      '${_checkpointName ?? 'this checkpoint'} — outside its '
+                      'allowed range. The scan was recorded and flagged for your '
+                      'supervisor to review. Move closer to the checkpoint and '
+                      'scan again if you can.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.4,
+                        color: AppTheme.flagged,
+                      ),
+                    ),
+                  ),
+                ],
                 if (_acknowledged) ...[
                   const SizedBox(height: 8),
                   Container(

@@ -81,7 +81,9 @@ export default function Dashboard() {
   const recentScans = scans.slice(0, 5).map((s) => ({
     id: s.id,
     displayId: `#SC-${s.id.slice(0, 4).toUpperCase()}`,
-    cp: [s.checkpointCode, s.checkpointName].filter(Boolean).join(' ') || 'Unknown checkpoint',
+    // Show the human checkpoint name. The code is an auto-generated QR UUID and
+    // is only a fallback when a name is somehow missing.
+    cp: s.checkpointName || s.checkpointCode || 'Unknown checkpoint',
     deactivated: s.checkpointActive === false,
     officer: officerInitials(s.officerName),
     time: (() => {

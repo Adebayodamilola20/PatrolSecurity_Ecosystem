@@ -23,9 +23,11 @@ interface CheckpointSnapshot {
   id: string
   name: string
   code: string
-  latitude: number
-  longitude: number
-  radiusMeters: number
+  // Sub-location QRs carry no own coordinates — they verify against the parent
+  // location's geofence — so these can be null.
+  latitude: number | null
+  longitude: number | null
+  radiusMeters: number | null
 }
 
 export default function ScanDetail() {
@@ -223,12 +225,20 @@ export default function ScanDetail() {
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div>
                     <p className="text-xs text-muted-foreground">Stored checkpoint coordinates</p>
-                    <p className="text-sm font-medium text-foreground">
-                      {checkpoint.latitude.toFixed(6)}, {checkpoint.longitude.toFixed(6)}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">Radius: {checkpoint.radiusMeters} meters</p>
+                    {checkpoint.latitude != null && checkpoint.longitude != null ? (
+                      <>
+                        <p className="text-sm font-medium text-foreground">
+                          {checkpoint.latitude.toFixed(6)}, {checkpoint.longitude.toFixed(6)}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">Radius: {checkpoint.radiusMeters ?? 50} meters</p>
+                      </>
+                    ) : (
+                      <p className="text-sm font-medium text-muted-foreground">
+                        No own coordinates — verified against the location geofence.
+                      </p>
+                    )}
                   </div>
-                  {!scan.gpsValid && user?.role === 'admin' && scan.gpsLatitude != null && scan.gpsLongitude != null ? (
+                  {checkpoint.latitude != null && checkpoint.longitude != null && !scan.gpsValid && user?.role === 'admin' && scan.gpsLatitude != null && scan.gpsLongitude != null ? (
                     <div className="flex items-start justify-start md:justify-end">
                       <button
                         onClick={() => void handleAlignCheckpoint()}
