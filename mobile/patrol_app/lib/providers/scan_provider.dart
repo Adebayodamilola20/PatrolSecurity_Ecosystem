@@ -47,9 +47,13 @@ class ScanProvider extends ChangeNotifier {
   }
 
   int get totalScans => _scans.length;
+  // Only GPS-verified scans count as completed checkpoints for the day. A
+  // flagged (out-of-range) scan is not a completed patrol — the guard is
+  // expected to move closer and re-scan until it verifies.
   int get todayScans => _scans.where((s) {
     final now = DateTime.now();
-    return s.scannedAt.year == now.year &&
+    return s.gpsValid &&
+        s.scannedAt.year == now.year &&
         s.scannedAt.month == now.month &&
         s.scannedAt.day == now.day;
   }).length;

@@ -344,7 +344,10 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
       }
     });
 
-    if (ok && _scanId != null) {
+    // Post orders are only surfaced on a VERIFIED scan. A GPS-mismatch scan is
+    // not a completed checkpoint — the guard must move closer and re-scan until
+    // it verifies before they receive the post order and move on.
+    if (ok && _scanId != null && _gpsValid) {
       final dutyProvider = context.read<DutyProvider>();
       final matchingOrders = _matchingOrders(
         dutyProvider.orders,
@@ -647,12 +650,22 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                   width: double.infinity,
                   height: 50,
                   child: ElevatedButton(
+                    style: _gpsValid
+                        ? null
+                        : ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.flagged,
+                          ),
                     onPressed: () => Navigator.pushNamedAndRemoveUntil(
                       context,
                       AppRoutes.scanner,
                       (route) => route.settings.name == AppRoutes.home,
                     ),
-                    child: const Text('Scan Next'),
+                    // On a mismatch the guard hasn't completed this checkpoint,
+                    // so the forward action is to re-scan this same location —
+                    // not to move on to the next one.
+                    child: Text(
+                      _gpsValid ? 'Scan Next' : 'Scan This Location Again',
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
