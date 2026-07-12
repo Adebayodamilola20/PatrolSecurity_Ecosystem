@@ -21,7 +21,7 @@ export default function Users() {
   const canManage = useCanManageUsers()
   const isMainAccount = useIsMainAccount()
   const [search, setSearch] = useState('')
-  const [roleFilter, setRoleFilter] = useState<'all' | 'guard' | 'supervisor' | 'main_account'>('all')
+  const [roleFilter, setRoleFilter] = useState<'all' | 'guard' | 'supervisor'>('all')
   const [dutyFilter, setDutyFilter] = useState<'all' | 'on' | 'off'>('all')
 
   const filteredOfficers = officers.filter((o) => {
@@ -42,7 +42,9 @@ export default function Users() {
   const load = (silent = false) => {
     if (!silent) setLoading(true)
     api.users.list().then((users) => {
-      setOfficers(users.filter((u: User) => u.role === 'guard' || u.role === 'supervisor' || u.role === 'main_account'))
+      // Personnel = field staff only. Client portal logins (main_account) are
+      // managed on the Clients page, not here.
+      setOfficers(users.filter((u: User) => u.role === 'guard' || u.role === 'supervisor'))
     }).catch((err) => { console.error('Failed to load users:', err) }).finally(() => { if (!silent) setLoading(false) })
   }
 
@@ -144,7 +146,6 @@ export default function Users() {
                     className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm">
                     <option value="guard">Guard</option>
                     <option value="supervisor">Supervisor</option>
-                    <option value="main_account">Main Account</option>
                     {currentUser?.role === 'admin' && <option value="admin">Admin</option>}
                   </select>
                 </div>
@@ -213,7 +214,6 @@ export default function Users() {
               <option value="all">All roles</option>
               <option value="guard">Guard</option>
               <option value="supervisor">Supervisor</option>
-              <option value="main_account">Main Account</option>
             </select>
             <select
               value={dutyFilter}
