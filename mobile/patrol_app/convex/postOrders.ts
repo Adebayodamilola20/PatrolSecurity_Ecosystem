@@ -142,12 +142,17 @@ export const listCompletions = internalQuery({
     }
     const users = await ctx.db.query("users").collect();
     const orders = await ctx.db.query("postOrders").collect();
+    const checkpoints = await ctx.db.query("checkpoints").collect();
     return completions.map((c) => ({
       id: c.legacyId ?? c._id,
       postOrderId: c.postOrderId,
-      orderTitle: orders.find((o) => o._id === c.postOrderId)?.title ?? "",
+      postOrderTitle: orders.find((o) => o._id === c.postOrderId)?.title ?? "",
       userId: c.userId,
       userName: users.find((u) => u._id === c.userId)?.name ?? "",
+      checkpointId: c.checkpointId ?? null,
+      checkpointName: c.checkpointId
+        ? (checkpoints.find((cp) => cp._id === c.checkpointId)?.name ?? null)
+        : null,
       status: c.status,
       reviewStatus: c.reviewStatus,
       completedAt: c.completedAt ? new Date(c.completedAt).toISOString() : null,

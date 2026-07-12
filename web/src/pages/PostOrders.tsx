@@ -58,6 +58,13 @@ export default function PostOrders() {
     ? checkpoints.filter((cp) => cp.siteId === form.siteId)
     : []
 
+  // Plain acknowledgements ("read & continue" after a scan) also create
+  // completion rows, but there is nothing to review on them — only actual
+  // proof submissions belong in the review queue.
+  const proofReviews = completions.filter(
+    (c) => c.status === 'completed' || c.proofPhotoUrl,
+  )
+
   useEffect(() => {
     void load()
   }, [])
@@ -208,9 +215,9 @@ export default function PostOrders() {
           <div className="rounded-xl border border-border bg-card p-4">
             <div className="mb-3 text-lg font-semibold">Proof Photo Reviews</div>
             <div className="space-y-3">
-              {completions.length === 0 ? (
-                <div className="text-sm text-muted-foreground">No submissions yet.</div>
-              ) : completions.map((completion) => (
+              {proofReviews.length === 0 ? (
+                <div className="text-sm text-muted-foreground">No proof submissions yet.</div>
+              ) : proofReviews.map((completion) => (
                 <div key={completion.id} className="rounded-lg border border-border/60 bg-background/40 p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -229,7 +236,7 @@ export default function PostOrders() {
                   </div>
                   {completion.proofPhotoUrl ? (
                     <div className="mt-3 flex items-center gap-3">
-                      <img src={`${API_BASE.replace(/\/api\/v1$/, '')}${completion.proofPhotoUrl}`} alt="Proof" className="h-20 w-20 rounded-lg object-cover border border-border" />
+                      <img src={/^https?:\/\//.test(completion.proofPhotoUrl) ? completion.proofPhotoUrl : `${API_BASE.replace(/\/api\/v1$/, '')}${completion.proofPhotoUrl}`} alt="Proof" className="h-20 w-20 rounded-lg object-cover border border-border" />
                       <div className="text-sm text-muted-foreground">
                         <div className="flex items-center gap-2"><Camera className="h-4 w-4" /> Proof photo attached</div>
                         {completion.proofNote ? <div className="mt-1">{completion.proofNote}</div> : null}
