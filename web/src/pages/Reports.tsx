@@ -36,11 +36,6 @@ const categoryLabel = (type: string) =>
   REPORT_TEMPLATES.find((t) => t.category === type)?.label ??
   type.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 
-// Turns a stored field key back into the template's label for display.
-const fieldLabel = (type: string, key: string) =>
-  REPORT_TEMPLATES.find((t) => t.category === type)?.fields.find((f) => f.key === key)?.label ??
-  key.replace(/([a-z\d])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase())
-
 export default function Reports() {
   const [reports, setReports] = useState<ReportRow[]>([])
   const [exports, setExports] = useState<ExportFile[]>([])
@@ -48,6 +43,9 @@ export default function Reports() {
   const [loading, setLoading] = useState(true)
   const [downloadingPdf, setDownloadingPdf] = useState<string | null>(null)
   const [viewing, setViewing] = useState<ReportRow | null>(null)
+  // PDF preview modal: the eye button renders the actual report PDF in-app.
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
 
   // List filters — server-side so the archive can grow past one page.
   const [filterType, setFilterType] = useState('')
@@ -155,6 +153,33 @@ export default function Reports() {
     } finally {
       setSaving(false)
     }
+  }
+
+  // The eye opens the report as a real PDF preview (fetched with auth, shown in
+  // an iframe) rather than a plain field dump.
+  const handlePreview = async (report: ReportRow) => {
+    setViewing(report)
+    setPreviewUrl((old) => {
+      if (old) URL.revokeObjectURL(old)
+      return null
+    })
+    setPreviewLoading(true)
+    try {
+      const blob = await api.reports.pdf(report.id)
+      setPreviewUrl(URL.createObjectURL(blob))
+    } catch {
+      // request-error toast is emitted by the api layer
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  const closePreview = () => {
+    setViewing(null)
+    setPreviewUrl((old) => {
+      if (old) URL.revokeObjectURL(old)
+      return null
+    })
   }
 
   const handleDownloadPdf = async (report: ReportRow) => {
@@ -316,11 +341,11 @@ export default function Reports() {
         </div>
       )}
 
-      {/* View modal: the filled template, field by field */}
+      {/* PDF preview modal: renders the actual report PDF in an iframe */}
       {viewing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setViewing(null)}>
-          <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl border border-border bg-card p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-start justify-between gap-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={closePreview}>
+          <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-border bg-card" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3 border-b border-border p-5">
               <div>
                 <div className="text-xs uppercase tracking-wider text-primary">{categoryLabel(viewing.type)}</div>
                 <h2 className="mt-1 text-lg font-semibold">{viewing.title}</h2>
@@ -331,24 +356,28 @@ export default function Reports() {
                   {formatDate(viewing.submittedAt)}
                 </p>
               </div>
-              <button onClick={() => setViewing(null)} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => void handleDownloadPdf(viewing)} disabled={downloadingPdf === viewing.id}
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60">
+                  {downloadingPdf === viewing.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                  Download
+                </button>
+                <button onClick={closePreview} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+              </div>
             </div>
-            <div className="mt-4 space-y-3">
-              {Object.entries(viewing.details ?? {}).length === 0 ? (
-                <p className="text-sm text-muted-foreground">{viewing.summary}</p>
-              ) : Object.entries(viewing.details).map(([key, value]) => (
-                <div key={key} className="rounded-lg border border-border/60 bg-background/40 p-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{fieldLabel(viewing.type, key)}</div>
-                  <div className="mt-1 whitespace-pre-wrap text-sm">{String(value)}</div>
+            <div className="min-h-[60vh] flex-1 bg-muted/20">
+              {previewLoading ? (
+                <div className="flex h-[60vh] items-center justify-center text-sm text-muted-foreground">
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Preparing preview…
                 </div>
-              ))}
-            </div>
-            <div className="mt-5 flex justify-end">
-              <button onClick={() => void handleDownloadPdf(viewing)} disabled={downloadingPdf === viewing.id}
-                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60">
-                {downloadingPdf === viewing.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                Download PDF
-              </button>
+              ) : previewUrl ? (
+                <iframe src={previewUrl} title={viewing.title} className="h-[70vh] w-full" />
+              ) : (
+                <div className="flex h-[60vh] flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground">
+                  <FileText className="h-6 w-6" />
+                  Couldn't load the PDF preview. Try the Download button instead.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -468,8 +497,8 @@ export default function Reports() {
                 <Calendar className="h-3.5 w-3.5" /> {formatDate(r.submittedAt)}
               </div>
               <div className="flex gap-1">
-                <button onClick={() => setViewing(r)}
-                  className="rounded-lg border border-border p-2 hover:bg-accent inline-flex items-center justify-center" title="View report">
+                <button onClick={() => void handlePreview(r)}
+                  className="rounded-lg border border-border p-2 hover:bg-accent inline-flex items-center justify-center" title="Preview PDF">
                   <Eye className="h-4 w-4" />
                 </button>
                 <button onClick={() => void handleDownloadPdf(r)} disabled={downloadingPdf === r.id}
