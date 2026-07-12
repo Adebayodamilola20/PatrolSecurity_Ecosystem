@@ -3,14 +3,38 @@
 > **Every agent reads this file first.** Keep it to one active focus.
 
 ## Active Focus
-- **PHASE 2 + PRODUCTION HARDENING — SHIPPED THROUGH 2026-07-12.** Branch
-  `feature/client-structure`, latest commit `c937598`, all deployed LIVE to
-  `dev:resilient-buffalo-226` and verified end-to-end. NOT merged to `main` — user review pending.
+- **PHASE 2 + PRODUCTION HARDENING — SHIPPED + MERGED TO `main` THROUGH 2026-07-12.**
+  Latest commit `660968e` on `main` (feature/client-structure fast-forwarded in and
+  pushed to origin/main). All deployed LIVE to `dev:resilient-buffalo-226`.
+  Dev DB has been purged of all seed/test tenants — only real data remains
+  (admin, guards Adebayo+Adejuwon, client NAFDAC + site IKA).
 - **USER DIRECTIVE (2026-07-11): this is PRODUCTION now, not a demo.** Every new line of code
   must be production-grade. No demo shortcuts, no stubs that fake success. The remaining demo
   leftovers (demo accounts, Clerk migration, prod Convex deploy, release APK) are deliberately LAST.
 
 ## Shipped (newest first — all live-verified)
+-1. **`660968e` (07-12) Personnel page fix + seed/test-tenant DB purge.**
+   - Personnel/Team page was listing `main_account` (client portal) logins as if
+     they were staff — NAFDAC/Acme/"Client Admin" showed next to real guards.
+     Fixed: `web/src/pages/Users.tsx` now filters to guard+supervisor only;
+     removed main_account from the role filter and Add-Personnel form.
+   - Purged ALL seed/test tenants from `dev:resilient-buffalo-226` via a one-off
+     `clients.purgeSeedTenants` cascade mutation (added, run, then REMOVED — not
+     in the codebase). Deleted the SecureCorp-as-client
+     (`j97eh65v3xn9p6zt61…`) and Acme (`j971dfmmpyahdqms9m…`) tenants +
+     dependents: 2 clients, 4 sites, 6 checkpoints, 3 users (Field Guard,
+     Client Admin, Acme Estates portal), 6 Field-Guard scans, 5 reportSubmissions
+     (+PDF blobs), 113 auditLogs, 30 siteActivityEvents, 27 officerPositions, etc.
+   - KEPT (verified): admin@securecorp.com (clientId=None), guards ADEBAYO STEPHEN
+     + ADEJUWON TOPE (clientId=None), NAFDAC client + IKA site, and the real
+     guards' scans. Real staff/admin have clientId=None so were structurally
+     excluded from the purge.
+   - STILL PRESENT (flagged, not deleted — user didn't approve): two orphan
+     checkpoints `OWT-322` and `Jumia Services, Ahmadu Bello Way` (clientId/siteId
+     null, no scans) + `Ishawo, Ikorodu` (kept — holds Adebayo's real scans, but
+     also orphaned with no client). Legacy pre-restructure data.
+   - NOTE: the operating company is still seed-branded "SecureCorp Nigeria" /
+     admin@securecorp.com — real company name + admin email is production-cutover work.
 0. **`c937598` (07-12) Fix "Proof Photo Reviews" panel on admin Post Orders.**
    - Symptom: the panel showed junk rows ("Post order completion · Field Guard ·
      No checkpoint", VERIFIED/REJECTED). These were plain post-order
