@@ -57,3 +57,13 @@ Keep it tiny — no code, just what happened and the next step.
 - [2026-07-04 15:58] claude(lead): DEMO READINESS COMPLETE — backend fixed+deployed, guard workflow 16/16, exports verified, dev endpoints locked down, 50-guard load test 300/300 OK | files: convex/http.ts, convex/dev.ts, convex/schema.ts, convex/ai.ts, convex/aiService.ts | next: production hardening per Current_Task (Clerk, prod deployment, demo-account removal)
 - [2026-07-06 10:02] codex: resolved git rebase conflict in AI_BRAIN/team-log.md and pushed main to GitHub at 7bf3a1c | files: AI_BRAIN/team-log.md | next: none
 - [2026-07-06 10:11] codex: fixed Vercel web build by removing unused ClerkProvider/dependency; web and web-client builds pass | files: web/src/main.tsx, web/package.json, web/package-lock.json | next: Vercel redeploy
+- [2026-07-08 05:21] claude(lead): uptime monitoring decided = UptimeRobot free + email; runbook at 01_Project_Context/Uptime_Monitoring.md; confirmed /api/v1/health live 200 → user signs up + supplies 2 Vercel prod URLs
+- [2026-07-08 06:25] system: (-) team workspace ready | files: 0 | next: agents idle, awaiting dispatch
+- [2026-07-08 06:25] kilo: (20260702-090006)  [0m | files: 0 | next: see outbox/kilo.md
+- [2026-07-08 06:25] opencode: (20260702-090006)  [0m | files: 3 | next: see outbox/opencode.md
+- [2026-07-08 06:25] claude(lead): (20260708-062546) dispatched: Team check-in: the user says hello and wants a quick status response f… | files: 0 | next: agents working: antigravity, codex, opencode, kilo
+- [2026-07-08 06:25] kilo: (20260708-062546)  [0m | files: 0 | next: see outbox/kilo.md
+- [2026-07-08 06:30] antigravity: (20260702-090006) reviewed live incident notifications + reports page, verified dead submenu removal | files: 0 | next: see outbox/antigravity.md
+- [2026-07-08 06:27] antigravity: (20260702-090006) Reviewed live notifications, reports submenu, and incident detail pages. The Reports submenus have already been cleaned up, while the Header's alert badge needs | files: 15 | next: see outbox/antigravity.md
+- [2026-07-08 06:27] codex: (20260702-090006) <2-3 lines> | files: 16 | next: see outbox/codex.md
+- [2026-07-08 06:27] opencode: (20260708-062546) Opencode is ready for refactor/review tasks. Demo readiness complete (2026-07-04), production hardening phase active. Convex changes deployed to dev but uncommi | files: 6 | next: see outbox/opencode.md

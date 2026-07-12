@@ -126,7 +126,7 @@ YOUR JOB:
 
 <!-- /TASK:20260630-134736 -->
 
-<!-- TASK:20260702-090006:pending -->
+<!-- TASK:20260702-090006:done -->
 ## [2026-07-02 09:00] Web dashboard: live incident notifications (toast + real alert badge),…
 **Role:** Tests / bug finding
 

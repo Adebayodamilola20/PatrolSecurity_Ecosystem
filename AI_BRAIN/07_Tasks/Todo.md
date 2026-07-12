@@ -5,7 +5,7 @@ Granular, actionable items. Move finished items to [[Done]]. Big-picture directi
 > Tag owners with agent links: [[Claude_Code]] [[Codex_CLI]] [[Gemini_CLI]] [[OpenCode]] [[Antigravity]]
 
 ## In Progress
-- [ ] _nothing yet_
+- [ ] Uptime monitoring: UptimeRobot (free) + email alerts — runbook written ([[Uptime_Monitoring]]). Waiting on user: sign up + paste 2 Vercel prod URLs.
 
 ## Backlog (production hardening — see [[Current_Task]] for detail)
 - [ ] Switch to Convex prod deployment + repoint all 3 apps (owner: user)
@@ -14,7 +14,7 @@ Granular, actionable items. Move finished items to [[Done]]. Big-picture directi
 - [ ] Remove/disable demo accounts *@securecorp.com before real launch
 - [ ] Build + smoke-test signed release APK on real device
 - [ ] Storage cleanup cron for old export CSVs (low)
-- [ ] Uptime monitoring/alerting (low)
+- [ ] Uptime monitoring/alerting (low) → decided: UptimeRobot + email, see [[Uptime_Monitoring]]
 - [ ] Decide CSV-only vs PDF exports
 
 ## Blocked
