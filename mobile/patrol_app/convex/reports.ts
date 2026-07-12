@@ -1,6 +1,7 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import { getReportTemplate, validateTemplateFields } from "./lib/reportTemplates";
 
 export const listSubmissions = internalQuery({
   args: {
@@ -28,15 +29,21 @@ export const listSubmissions = internalQuery({
 });
 
 export const listAll = internalQuery({
-  args: { clientId: v.optional(v.id("clients")) },
+  args: {
+    clientId: v.optional(v.id("clients")),
+    type: v.optional(v.string()),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
+  },
   handler: async (ctx, args) => {
     const query = args.clientId
       ? ctx.db.query("reportSubmissions").withIndex("by_clientId_submittedAt", (q) =>
           q.eq("clientId", args.clientId),
         )
-      : ctx.db.query("reportSubmissions");
-    let subs = await query.order("desc").take(100);
+      : ctx.db.query("reportSubmissions").withIndex("by_submittedAt");
+    let subs = await query.order("desc").take(500);
     const users = await ctx.db.query("users").collect();
+    const clients = await ctx.db.query("clients").collect();
     if (args.clientId) {
       const clientUserIds = new Set(
         users.filter((u) => u.clientId === args.clientId).map((u) => u._id),
@@ -45,20 +52,84 @@ export const listAll = internalQuery({
         (s) => s.clientId === args.clientId || clientUserIds.has(s.userId),
       );
     }
+    if (args.type) subs = subs.filter((s) => s.type === args.type);
+    if (args.startDate != null) subs = subs.filter((s) => s.submittedAt >= args.startDate!);
+    if (args.endDate != null) subs = subs.filter((s) => s.submittedAt <= args.endDate!);
     return {
       reports: [],
-      submissions: subs.map((s) => ({
+      submissions: subs.slice(0, 200).map((s) => ({
         id: s.legacyId ?? s._id,
         type: s.type,
         title: s.title,
         summary: s.summary,
+        // Structured template fields — the admin "View" modal renders these.
+        details: s.details ?? {},
         status: s.status,
         siteLabel: s.siteLabel,
+        clientName: clients.find((c) => c._id === s.clientId)?.name ?? null,
         userName: users.find((u) => u._id === s.userId)?.name ?? "",
         submittedAt: new Date(s.submittedAt).toISOString(),
         emailedAt: s.emailedAt ? new Date(s.emailedAt).toISOString() : null,
       })),
     };
+  },
+});
+
+// Staff-authored report from a category template (see lib/reportTemplates).
+// Every report belongs to a client — that's what routes it into the right
+// portal inbox — and optionally to one of that client's locations.
+export const createFromTemplate = internalMutation({
+  args: {
+    userId: v.id("users"),
+    category: v.string(),
+    clientId: v.id("clients"),
+    siteId: v.optional(v.id("sites")),
+    title: v.optional(v.string()),
+    fields: v.any(),
+  },
+  handler: async (ctx, args) => {
+    const template = getReportTemplate(args.category);
+    if (!template) throw new Error(`Unknown report category: ${args.category}`);
+    const validated = validateTemplateFields(
+      template,
+      (args.fields ?? {}) as Record<string, unknown>,
+    );
+    if (!validated.ok) throw new Error(validated.error);
+
+    const client = await ctx.db.get(args.clientId);
+    if (!client) throw new Error("Client not found");
+    const site = args.siteId ? await ctx.db.get(args.siteId) : null;
+    if (args.siteId && !site) throw new Error("Location not found");
+    if (site && site.clientId !== args.clientId) {
+      throw new Error("Location does not belong to the selected client");
+    }
+
+    const title =
+      sanitize(String(args.title ?? "").trim()) ||
+      `${template.label} - ${new Date().toLocaleDateString("en-GB", {
+        day: "2-digit", month: "short", year: "numeric", timeZone: "Africa/Lagos",
+      })}`;
+    // First textarea answer doubles as the list/PDF summary line.
+    const summarySource = template.fields.find(
+      (f) => f.type === "textarea" && validated.fields[f.key],
+    );
+    const summary = summarySource ? validated.fields[summarySource.key] : template.description;
+
+    const submittedAt = Date.now();
+    const id = await ctx.db.insert("reportSubmissions", {
+      clientId: args.clientId,
+      siteId: site?._id,
+      type: template.category,
+      title,
+      summary: sanitize(summary).slice(0, 500),
+      details: validated.fields,
+      siteLabel: site?.name ?? "",
+      userId: args.userId,
+      status: "submitted",
+      submittedAt,
+      deliveryPayload: {},
+    });
+    return { id, title, type: template.category, status: "submitted" };
   },
 });
 

@@ -5,6 +5,10 @@ import { useClientData } from '../hooks/useClientData'
 import EmptyState from '../components/ui/EmptyState'
 import { formatDate } from '../utils/format'
 
+// "location-verification" → "Location Verification"
+const categoryLabel = (type: string) =>
+  type.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+
 export default function Reports() {
   const fetcher = useCallback(() => api.reports.list(), [])
   const { data, loading, error } = useClientData(fetcher)
@@ -57,7 +61,7 @@ export default function Reports() {
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">{r.title}</p>
                 <p className="truncate text-xs text-muted-foreground">
-                  {r.type} · {formatDate(new Date(r.submittedAt))}
+                  <span className="text-primary">{categoryLabel(r.type)}</span> · {formatDate(new Date(r.submittedAt))}
                 </p>
               </div>
               <button

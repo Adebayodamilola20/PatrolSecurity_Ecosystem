@@ -2372,9 +2372,62 @@ http.route({ pathPrefix: "/checkpoints/", method: "DELETE", handler: httpAction(
 http.route({ path: "/reports", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const url = new URL(request.url);
+  const startRaw = url.searchParams.get("startDate");
+  const endRaw = url.searchParams.get("endDate");
+  const startDate = startRaw ? Date.parse(startRaw) : undefined;
+  // An end DATE means "through the end of that day".
+  const endDate = endRaw ? Date.parse(endRaw) + (endRaw.length <= 10 ? 86_399_999 : 0) : undefined;
   return json(await ctx.runQuery(internal.reports.listAll, {
-    clientId: user.role === "admin" ? undefined : (_cid(user.clientId)),
+    clientId:
+      user.role === "admin"
+        ? _cid(url.searchParams.get("clientId"))
+        : _cid(user.clientId),
+    type: url.searchParams.get("type") ?? undefined,
+    startDate: startDate != null && !Number.isNaN(startDate) ? startDate : undefined,
+    endDate: endDate != null && !Number.isNaN(endDate) ? endDate : undefined,
   }));
+})});
+
+// Staff files a report from a category template and addresses it to the
+// client who owns it — that's what routes it into the right portal inbox.
+http.route({ path: "/reports", method: "POST", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  const roleErr = requireRole(user, ["admin", "supervisor"]);
+  if (roleErr) return roleErr;
+  const body = await parseJson(request);
+  const clientId = await ctx.runQuery(internal.clients.resolveId, {
+    id: String(body?.clientId ?? ""),
+  });
+  if (!clientId) return notFound("Client not found");
+  const siteId = body?.siteId
+    ? await ctx.runQuery(internal.sites.resolveId, { id: String(body.siteId) })
+    : null;
+  if (body?.siteId && !siteId) return notFound("Location not found");
+  let result;
+  try {
+    result = await ctx.runMutation(internal.reports.createFromTemplate, {
+      userId: _uid(user.convexId),
+      category: String(body?.category ?? ""),
+      clientId,
+      siteId: siteId ?? undefined,
+      title: body?.title === undefined ? undefined : String(body.title),
+      fields: body?.fields ?? {},
+    });
+  } catch (err) {
+    // Convex prefixes mutation errors with "Uncaught Error:" and a stack
+    // line — show the user only the actual validation message.
+    const raw = err instanceof Error ? err.message : "Invalid report";
+    return badRequest(raw.replace(/^Uncaught Error:\s*/, "").split("\n")[0].trim());
+  }
+  await recordAudit(ctx, user, "report.submitted", {
+    targetType: "report",
+    targetId: String(result.id),
+    details: `Filed ${result.type} report: ${result.title}`,
+    ipAddress: requestIp(request),
+  });
+  return json(result, { status: 201 });
 })});
 
 http.route({ path: "/reports/generate", method: "POST", handler: httpAction(async (ctx, request) => {
@@ -2889,7 +2942,19 @@ http.route({ path: "/client/scans", method: "GET", handler: httpAction(async (ct
   if (user.role !== "main_account") return forbidden("The client portal is for client accounts only.");
   const clientId = _cid(user.clientId);
   if (!clientId) return json([]);
-  return json(await ctx.runQuery(internal.clients.portalScans, { clientId }));
+  const url = new URL(request.url);
+  const rawCheckpoint = url.searchParams.get("checkpointId");
+  const checkpointId = rawCheckpoint
+    ? await ctx.runQuery(internal.checkpoints.resolveId, { id: rawCheckpoint })
+    : null;
+  // A checkpoint filter that doesn't resolve must return nothing, not fall
+  // back to the whole tenant feed.
+  if (rawCheckpoint && !checkpointId) return json([]);
+  return json(await ctx.runQuery(internal.clients.portalScans, {
+    clientId,
+    checkpointId: checkpointId ?? undefined,
+    limit: Number(url.searchParams.get("limit") ?? 50),
+  }));
 })});
 
 // [client-structure] Guard STATISTICS only — never identities (AGM rule):

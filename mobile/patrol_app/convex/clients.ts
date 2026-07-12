@@ -363,8 +363,36 @@ export const portalOverview = internalQuery({
 });
 
 export const portalScans = internalQuery({
-  args: { clientId: v.id("clients") },
+  args: {
+    clientId: v.id("clients"),
+    // Per-point patrol history: only scans at this QR point. Tenant-checked
+    // against the checkpoint's own clientId — a foreign id returns nothing.
+    checkpointId: v.optional(v.id("checkpoints")),
+    limit: v.optional(v.number()),
+  },
   handler: async (ctx, args) => {
+    const limit = Math.min(Math.max(args.limit ?? 50, 1), 200);
+    if (args.checkpointId) {
+      const checkpoint = await ctx.db.get(args.checkpointId);
+      if (!checkpoint || checkpoint.clientId !== args.clientId) return [];
+      const site = checkpoint.siteId ? await ctx.db.get(checkpoint.siteId) : null;
+      const scans = await ctx.db
+        .query("scans")
+        .withIndex("by_checkpointId_scannedAt", (q) =>
+          q.eq("checkpointId", args.checkpointId!),
+        )
+        .order("desc")
+        .take(limit);
+      return scans.map((s) => ({
+        id: s._id,
+        guardName: "On-duty guard",
+        checkpointName: checkpoint.name,
+        siteLabel: site?.name ?? "",
+        scannedAt: s.scannedAt,
+        gpsValid: s.gpsValid,
+      }));
+    }
+
     const sites = await ctx.db
       .query("sites")
       .withIndex("by_clientId", (q) => q.eq("clientId", args.clientId))
@@ -399,7 +427,7 @@ export const portalScans = internalQuery({
         });
       }
     }
-    return all.sort((a, b) => b.scannedAt - a.scannedAt).slice(0, 50);
+    return all.sort((a, b) => b.scannedAt - a.scannedAt).slice(0, limit);
   },
 });
 

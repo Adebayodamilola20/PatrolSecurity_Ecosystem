@@ -1,80 +1,170 @@
-import { useEffect, useState } from 'react'
-import { FileText, Download, Mail, Calendar, Plus, X, FileBarChart, Loader2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { FileText, Download, Calendar, Plus, X, Eye, Loader2, ChevronLeft } from 'lucide-react'
 import { api, apiFileUrl } from '../services/api'
-import type { ExportFile, Report } from '../types'
+import type { ExportFile } from '../types'
 import { TableSkeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
+import { REPORT_TEMPLATES, type ReportTemplate, type TemplateField } from '../lib/reportTemplates'
+import { formatDate } from '../utils/format'
 
-const statusColor: Record<string, string> = {
-  sent: 'bg-success/15 text-success',
-  submitted: 'bg-success/15 text-success',
-  generating: 'bg-primary/15 text-primary',
-  pending: 'bg-warning/15 text-warning',
-  failed: 'bg-destructive/15 text-destructive',
+interface ReportRow {
+  id: string
+  type: string
+  title: string
+  summary: string
+  details: Record<string, string>
+  status: string
+  siteLabel: string
+  clientName: string | null
+  userName: string
+  submittedAt: string
 }
 
+interface ClientOption {
+  id: string
+  convexId?: string
+  name: string
+}
+
+interface SiteOption {
+  id: string
+  convexId?: string
+  name: string
+}
+
+const categoryLabel = (type: string) =>
+  REPORT_TEMPLATES.find((t) => t.category === type)?.label ??
+  type.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+
+// Turns a stored field key back into the template's label for display.
+const fieldLabel = (type: string, key: string) =>
+  REPORT_TEMPLATES.find((t) => t.category === type)?.fields.find((f) => f.key === key)?.label ??
+  key.replace(/([a-z\d])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase())
+
 export default function Reports() {
-  const [reports, setReports] = useState<Report[]>([])
+  const [reports, setReports] = useState<ReportRow[]>([])
   const [exports, setExports] = useState<ExportFile[]>([])
+  const [clients, setClients] = useState<ClientOption[]>([])
   const [loading, setLoading] = useState(true)
-  const [showForm, setShowForm] = useState(false)
-  const [generating, setGenerating] = useState(false)
-  const [resending, setResending] = useState<string | null>(null)
   const [downloadingPdf, setDownloadingPdf] = useState<string | null>(null)
+  const [viewing, setViewing] = useState<ReportRow | null>(null)
+
+  // List filters — server-side so the archive can grow past one page.
+  const [filterType, setFilterType] = useState('')
+  const [filterClient, setFilterClient] = useState('')
+  const [filterFrom, setFilterFrom] = useState('')
+  const [filterTo, setFilterTo] = useState('')
+
+  // New-report modal state: pick a category, then fill its template.
+  const [showForm, setShowForm] = useState(false)
+  const [template, setTemplate] = useState<ReportTemplate | null>(null)
+  const [formClient, setFormClient] = useState('')
+  const [formSite, setFormSite] = useState('')
+  const [formTitle, setFormTitle] = useState('')
+  const [formFields, setFormFields] = useState<Record<string, string>>({})
+  const [clientSites, setClientSites] = useState<SiteOption[]>([])
+  const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+
+  // Excel export card (pre-existing feature, kept as-is)
   const [requestingExport, setRequestingExport] = useState(false)
   const [exportDate, setExportDate] = useState(new Date().toISOString().slice(0, 10))
-  const [form, setForm] = useState({ clientEmail: '', periodStart: '', periodEnd: '' })
   const [exportError, setExportError] = useState<string | null>(null)
 
-  const loadData = async () => {
-    const [result, exportList] = await Promise.all([
-      api.reports.list(),
-      api.scans.listDailyExports(),
-    ])
-    // The API returns { reports, submissions }: submissions are the reports
-    // guards actually file from the app — fold them into one list.
-    const submissions = (result?.submissions ?? []).map((s: any) => ({
-      id: s.id,
-      title: s.title,
-      type: s.type,
-      userName: s.userName,
-      status: s.status,
-      createdAt: s.submittedAt,
-    }))
-    setReports([...(result?.reports ?? []), ...submissions])
-    setExports(exportList)
+  const filterParams = useMemo(() => {
+    const params: Record<string, string> = {}
+    if (filterType) params.type = filterType
+    if (filterClient) params.clientId = filterClient
+    if (filterFrom) params.startDate = filterFrom
+    if (filterTo) params.endDate = filterTo
+    return params
+  }, [filterType, filterClient, filterFrom, filterTo])
+
+  const loadReports = async () => {
+    const result = await api.reports.list(filterParams)
+    setReports(result?.submissions ?? [])
   }
 
   useEffect(() => {
     setLoading(true)
-    loadData().finally(() => setLoading(false))
+    Promise.all([
+      loadReports(),
+      api.scans.listDailyExports().then(setExports),
+      api.clients.list().then(setClients),
+    ]).finally(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleGenerate = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setGenerating(true)
-    try {
-      await api.reports.generate({
-        clientEmail: form.clientEmail,
-        periodStart: form.periodStart || new Date(Date.now() - 7 * 86400000).toISOString(),
-        periodEnd: form.periodEnd || new Date().toISOString(),
-      })
-      setShowForm(false)
-      setForm({ clientEmail: '', periodStart: '', periodEnd: '' })
-      await loadData()
-    } catch {}
-    setGenerating(false)
+  // Refetch when a filter changes (initial load handles the first fetch).
+  useEffect(() => {
+    if (loading) return
+    void loadReports()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterParams])
+
+  // The location dropdown only shows the chosen client's locations.
+  useEffect(() => {
+    setFormSite('')
+    setClientSites([])
+    if (!formClient) return
+    api.sites.list({ clientId: formClient }).then((sites) => setClientSites(sites ?? []))
+  }, [formClient])
+
+  const openTemplate = (t: ReportTemplate) => {
+    setTemplate(t)
+    setFormTitle(`${t.label} - ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`)
+    // Sensible defaults: date fields start at today.
+    const defaults: Record<string, string> = {}
+    for (const f of t.fields) {
+      if (f.type === 'date') defaults[f.key] = new Date().toISOString().slice(0, 10)
+    }
+    setFormFields(defaults)
+    setFormError(null)
   }
 
-  // Authenticated fetch → browser download; a plain link can't carry the token.
-  const handleDownloadPdf = async (id: string) => {
-    setDownloadingPdf(id)
+  const closeForm = () => {
+    setShowForm(false)
+    setTemplate(null)
+    setFormClient('')
+    setFormSite('')
+    setFormFields({})
+    setFormError(null)
+  }
+
+  const submitReport = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!template) return
+    if (!formClient) {
+      setFormError('Choose the client this report belongs to.')
+      return
+    }
+    setSaving(true)
+    setFormError(null)
     try {
-      const blob = await api.reports.pdf(id)
+      await api.reports.create({
+        category: template.category,
+        clientId: formClient,
+        siteId: formSite || null,
+        title: formTitle,
+        fields: formFields,
+      })
+      closeForm()
+      await loadReports()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Could not file the report')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDownloadPdf = async (report: ReportRow) => {
+    setDownloadingPdf(report.id)
+    try {
+      const blob = await api.reports.pdf(report.id)
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `report-${id}.pdf`
+      a.download = `${report.title.replace(/[^\w\d-]+/g, '-').replace(/^-+|-+$/g, '') || 'report'}.pdf`
       a.click()
       URL.revokeObjectURL(url)
     } catch {
@@ -84,31 +174,46 @@ export default function Reports() {
     }
   }
 
-  const handleResend = async (id: string) => {
-    setResending(id)
-    try {
-      await api.reports.resend(id)
-      await loadData()
-    } catch {}
-    setResending(null)
-  }
-
   const handleRequestExport = async () => {
     if (!exportDate) return
     try {
       setExportError(null)
       setRequestingExport(true)
       const created = await api.scans.exportDaily({ date: exportDate, format: 'xlsx' })
-      await loadData()
+      const exportList = await api.scans.listDailyExports()
+      setExports(exportList)
       if (created?.downloadUrl) {
         window.open(apiFileUrl(created.downloadUrl), '_blank', 'noopener,noreferrer')
       }
     } catch (err: any) {
-      console.error('Excel export error:', err)
-      const msg = err.response?.data?.message || err.message || 'Failed to generate Excel export'
-      setExportError(msg)
+      setExportError(err.response?.data?.message || err.message || 'Failed to generate Excel export')
     } finally {
       setRequestingExport(false)
+    }
+  }
+
+  const renderField = (field: TemplateField) => {
+    const value = formFields[field.key] ?? ''
+    const set = (v: string) => setFormFields((prev) => ({ ...prev, [field.key]: v }))
+    const base = 'w-full rounded-lg border border-border bg-background px-3 py-2 text-sm'
+    switch (field.type) {
+      case 'textarea':
+        return (
+          <textarea value={value} onChange={(e) => set(e.target.value)} required={field.required}
+            placeholder={field.placeholder} className={`${base} min-h-20`} />
+        )
+      case 'select':
+        return (
+          <select value={value} onChange={(e) => set(e.target.value)} required={field.required} className={base}>
+            <option value="">Select…</option>
+            {(field.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        )
+      default:
+        return (
+          <input type={field.type} value={value} onChange={(e) => set(e.target.value)}
+            required={field.required} placeholder={field.placeholder} className={base} />
+        )
     }
   }
 
@@ -116,17 +221,140 @@ export default function Reports() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">Automated</div>
+          <div className="text-xs uppercase tracking-wider text-muted-foreground">Operations</div>
           <h1 className="text-2xl font-semibold">Client Reports</h1>
         </div>
         <button
           onClick={() => setShowForm(true)}
           className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
         >
-          <Plus className="h-4 w-4" /> Generate New
+          <Plus className="h-4 w-4" /> New Report
         </button>
       </div>
 
+      {/* New report modal: category picker → template form */}
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-border bg-card p-6">
+            {!template ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-semibold">What kind of report?</h2>
+                  <button onClick={closeForm} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">Each category loads its own template.</p>
+                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {REPORT_TEMPLATES.map((t) => (
+                    <button key={t.category} onClick={() => openTemplate(t)}
+                      className="rounded-lg border border-border bg-background/40 p-3 text-left hover:border-primary/60 hover:bg-accent">
+                      <div className="font-medium">{t.label}</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">{t.description}</div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <form onSubmit={submitReport} className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => setTemplate(null)} className="text-muted-foreground hover:text-foreground" title="Back to categories">
+                      <ChevronLeft className="h-5 w-5" />
+                    </button>
+                    <h2 className="text-lg font-semibold">{template.label}</h2>
+                  </div>
+                  <button type="button" onClick={closeForm} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="text-xs text-muted-foreground">Client (report owner) *</label>
+                    <select required value={formClient} onChange={(e) => setFormClient(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm">
+                      <option value="">Select client…</option>
+                      {clients.map((c) => <option key={c.id} value={c.convexId ?? c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">Location</label>
+                    <select value={formSite} onChange={(e) => setFormSite(e.target.value)} disabled={!formClient}
+                      className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm disabled:opacity-50">
+                      <option value="">{formClient ? 'All locations' : 'Pick a client first'}</option>
+                      {clientSites.map((s) => <option key={s.id} value={s.convexId ?? s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs text-muted-foreground">Report title</label>
+                  <input value={formTitle} onChange={(e) => setFormTitle(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {template.fields.map((field) => (
+                    <div key={field.key} className={field.type === 'textarea' ? 'md:col-span-2' : ''}>
+                      <label className="text-xs text-muted-foreground">
+                        {field.label}{field.required ? ' *' : ''}
+                      </label>
+                      <div className="mt-1">{renderField(field)}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {formError && (
+                  <div className="rounded-lg bg-destructive/15 px-3 py-2 text-sm text-destructive">{formError}</div>
+                )}
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={closeForm} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent">Cancel</button>
+                  <button disabled={saving} type="submit" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60">
+                    {saving ? 'Filing…' : 'File report'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* View modal: the filled template, field by field */}
+      {viewing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setViewing(null)}>
+          <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl border border-border bg-card p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xs uppercase tracking-wider text-primary">{categoryLabel(viewing.type)}</div>
+                <h2 className="mt-1 text-lg font-semibold">{viewing.title}</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {viewing.clientName ? `${viewing.clientName} · ` : ''}
+                  {viewing.siteLabel ? `${viewing.siteLabel} · ` : ''}
+                  {viewing.userName ? `by ${viewing.userName} · ` : ''}
+                  {formatDate(viewing.submittedAt)}
+                </p>
+              </div>
+              <button onClick={() => setViewing(null)} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="mt-4 space-y-3">
+              {Object.entries(viewing.details ?? {}).length === 0 ? (
+                <p className="text-sm text-muted-foreground">{viewing.summary}</p>
+              ) : Object.entries(viewing.details).map(([key, value]) => (
+                <div key={key} className="rounded-lg border border-border/60 bg-background/40 p-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{fieldLabel(viewing.type, key)}</div>
+                  <div className="mt-1 whitespace-pre-wrap text-sm">{String(value)}</div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-5 flex justify-end">
+              <button onClick={() => void handleDownloadPdf(viewing)} disabled={downloadingPdf === viewing.id}
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60">
+                {downloadingPdf === viewing.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                Download PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Excel daily-tour export (unchanged feature) */}
       <div className="rounded-xl border border-border bg-card p-4">
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
@@ -139,129 +367,86 @@ export default function Reports() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div>
               <label className="text-xs text-muted-foreground">Export date</label>
-              <input
-                type="date"
-                value={exportDate}
-                onChange={(e) => setExportDate(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-              />
+              <input type="date" value={exportDate} onChange={(e) => setExportDate(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
             </div>
-            <button
-              onClick={handleRequestExport}
-              disabled={requestingExport || !exportDate}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-            >
+            <button onClick={handleRequestExport} disabled={requestingExport || !exportDate}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
               <Download className="h-4 w-4" />
               {requestingExport ? 'Generating...' : 'Generate Excel'}
             </button>
           </div>
         </div>
         {exportError && (
-          <div className="mt-4 flex items-center justify-between rounded-lg bg-destructive/15 px-3 py-2 text-sm text-destructive animate-in fade-in slide-in-from-top-1 duration-200">
+          <div className="mt-4 flex items-center justify-between rounded-lg bg-destructive/15 px-3 py-2 text-sm text-destructive">
             <span>{exportError}</span>
             <button onClick={() => setExportError(null)} className="text-destructive hover:opacity-80" aria-label="Clear error">
               <X className="h-4 w-4" />
             </button>
           </div>
         )}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="rounded-xl border border-border bg-card p-4">
-          <div className="text-xs text-muted-foreground">Sent this month</div>
-          <div className="mt-2 text-2xl font-semibold">{reports.filter(r => r.status === 'sent').length}</div>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-4">
-          <div className="text-xs text-muted-foreground">Generating</div>
-          <div className="mt-2 text-2xl font-semibold">{reports.filter(r => r.status === 'generating').length}</div>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-4">
-          <div className="text-xs text-muted-foreground">Pending</div>
-          <div className="mt-2 text-2xl font-semibold">{reports.filter(r => r.status === 'pending').length}</div>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-4">
-          <div className="text-xs text-muted-foreground">Failed</div>
-          <div className="mt-2 text-2xl font-semibold">{reports.filter(r => r.status === 'failed').length}</div>
-        </div>
-      </div>
-
-      {loading ? (
-        <TableSkeleton rows={3} />
-      ) : exports.length === 0 ? (
-        <EmptyState
-          icon={<Download className="h-7 w-7" />}
-          title="No Excel exports yet"
-          description="Generate a daily tour workbook to start building the archive."
-        />
-      ) : (
-        <div className="rounded-xl border border-border bg-card">
-          <div className="border-b border-border px-4 py-3">
-            <h2 className="font-semibold">Generated Excel Exports</h2>
-          </div>
-          <div className="divide-y divide-border">
+        {exports.length > 0 && (
+          <div className="mt-4 divide-y divide-border rounded-lg border border-border">
             {exports.map((item) => (
-              <div key={item.id} className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center">
+              <div key={item.id} className="flex flex-col gap-2 p-3 lg:flex-row lg:items-center">
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium">
-                    {item.scopeLabel || 'Patrol Export'} · {item.date}
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    {item.fileName} · Requested by {item.requestedByName || 'Unknown'}
+                  <div className="text-sm font-medium">{item.scopeLabel || 'Patrol Export'} · {item.date}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {item.fileName} · {item.totals?.scans ?? 0} scans · {item.totals?.verifiedScans ?? 0} verified · {item.totals?.shifts ?? 0} shifts
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3 text-sm lg:min-w-[320px] lg:grid-cols-4">
-                  <div>
-                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Scans</div>
-                    <div className="font-medium">{item.totals?.scans ?? 0}</div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Verified</div>
-                    <div className="font-medium">{item.totals?.verifiedScans ?? 0}</div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Shifts</div>
-                    <div className="font-medium">{item.totals?.shifts ?? 0}</div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Hours</div>
-                    <div className="font-medium">{item.totals?.totalShiftHours ?? 0}</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase ${statusColor[item.status] || 'bg-primary/15 text-primary'}`}>
-                    {item.status}
-                  </span>
-                  <a
-                    href={apiFileUrl(item.downloadUrl)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="rounded-lg border border-border p-2 hover:bg-accent inline-flex items-center justify-center"
-                    title="Download Excel"
-                  >
-                    <Download className="h-4 w-4" />
-                  </a>
-                </div>
+                <a href={apiFileUrl(item.downloadUrl)} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 self-start rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-accent">
+                  <Download className="h-3.5 w-3.5" /> Excel
+                </a>
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
+      {/* Filters */}
+      <div className="rounded-xl border border-border bg-card p-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <label className="text-xs text-muted-foreground">Category</label>
+            <select value={filterType} onChange={(e) => setFilterType(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm">
+              <option value="">All categories</option>
+              {REPORT_TEMPLATES.map((t) => <option key={t.category} value={t.category}>{t.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Client</label>
+            <select value={filterClient} onChange={(e) => setFilterClient(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm">
+              <option value="">All clients</option>
+              {clients.map((c) => <option key={c.id} value={c.convexId ?? c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">From</label>
+            <input type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">To</label>
+            <input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+          </div>
+        </div>
+      </div>
+
+      {/* Report archive */}
       {loading ? (
         <TableSkeleton rows={4} />
       ) : reports.length === 0 ? (
         <EmptyState
-          icon={<FileBarChart className="h-7 w-7" />}
-          title="No reports yet"
-          description="Generate your first patrol report to send to clients."
-          action={
-            <button
-              onClick={() => setShowForm(true)}
-              className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-            >
-              <Plus className="h-4 w-4" /> Generate New
-            </button>
-          }
+          icon={<FileText className="h-7 w-7" />}
+          title="No reports found"
+          description={filterType || filterClient || filterFrom || filterTo
+            ? 'Nothing matches these filters — try widening them.'
+            : 'File your first report with “New Report”.'}
         />
       ) : (
         <div className="rounded-xl border border-border bg-card divide-y divide-border">
@@ -271,77 +456,30 @@ export default function Reports() {
                 <FileText className="h-5 w-5" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-medium truncate">{r.title || `Patrol Report — ${r.clientEmail}`}</div>
-                <div className="text-xs text-muted-foreground">
-                  {r.id.slice(0, 8).toUpperCase()} · {(r.type || r.format || 'pdf').toUpperCase()}
-                  {r.userName ? ` · ${r.userName}` : ''}
+                <div className="font-medium truncate">{r.title}</div>
+                <div className="text-xs text-muted-foreground truncate">
+                  <span className="text-primary">{categoryLabel(r.type)}</span>
+                  {r.clientName ? ` · ${r.clientName}` : ''}
+                  {r.siteLabel ? ` · ${r.siteLabel}` : ''}
+                  {r.userName ? ` · by ${r.userName}` : ''}
                 </div>
               </div>
               <div className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Calendar className="h-3.5 w-3.5" /> {r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '—'}
+                <Calendar className="h-3.5 w-3.5" /> {formatDate(r.submittedAt)}
               </div>
-              <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase ${statusColor[r.status]}`}>
-                {r.status}
-              </span>
               <div className="flex gap-1">
-                <button
-                  onClick={() => void handleDownloadPdf(r.id)}
-                  disabled={downloadingPdf === r.id}
-                  className="rounded-lg border border-border p-2 hover:bg-accent disabled:opacity-50 inline-flex items-center justify-center"
-                  title={downloadingPdf === r.id ? 'Preparing PDF...' : 'Download PDF'}
-                >
-                  {downloadingPdf === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                <button onClick={() => setViewing(r)}
+                  className="rounded-lg border border-border p-2 hover:bg-accent inline-flex items-center justify-center" title="View report">
+                  <Eye className="h-4 w-4" />
                 </button>
-                <button
-                  onClick={() => handleResend(r.id)}
-                  disabled={resending === r.id}
-                  className="rounded-lg border border-border p-2 hover:bg-accent disabled:opacity-50"
-                  title={resending === r.id ? 'Resending...' : 'Resend'}
-                >
-                  {resending === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                <button onClick={() => void handleDownloadPdf(r)} disabled={downloadingPdf === r.id}
+                  className="rounded-lg border border-border p-2 hover:bg-accent disabled:opacity-50 inline-flex items-center justify-center"
+                  title={downloadingPdf === r.id ? 'Preparing PDF...' : 'Download PDF'}>
+                  {downloadingPdf === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                 </button>
               </div>
             </div>
           ))}
-        </div>
-      )}
-
-      {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="w-full max-w-md rounded-xl border border-border bg-card p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold">Generate Report</h2>
-              <button onClick={() => setShowForm(false)} className="text-muted-foreground hover:text-foreground">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <form onSubmit={handleGenerate} className="space-y-3">
-              <div>
-                <label className="text-xs text-muted-foreground">Client Email</label>
-                <input required type="email" value={form.clientEmail} onChange={e => setForm(f => ({ ...f, clientEmail: e.target.value }))}
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-muted-foreground">Period Start</label>
-                  <input type="date" value={form.periodStart} onChange={e => setForm(f => ({ ...f, periodStart: e.target.value }))}
-                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Period End</label>
-                  <input type="date" value={form.periodEnd} onChange={e => setForm(f => ({ ...f, periodEnd: e.target.value }))}
-                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
-                </div>
-              </div>
-              <button
-                type="submit"
-                disabled={generating}
-                className="w-full rounded-lg bg-primary py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
-              >
-                {generating ? 'Generating & Emailing...' : 'Generate & Email Report'}
-              </button>
-            </form>
-          </div>
         </div>
       )}
     </div>

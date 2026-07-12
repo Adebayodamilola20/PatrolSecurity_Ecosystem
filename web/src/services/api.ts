@@ -216,7 +216,11 @@ export const api = {
       request<void>(`/checkpoints/${id}`, { method: 'DELETE' }),
   },
   reports: {
-    list: () => request<{ reports: any[]; submissions: any[] }>('/reports'),
+    list: (params?: Record<string, string>) =>
+      request<{ reports: any[]; submissions: any[] }>(`/reports?${new URLSearchParams(params || {})}`),
+    // Files a report from a category template, addressed to a client.
+    create: (data: { category: string; clientId: string; siteId?: string | null; title?: string; fields: Record<string, string> }) =>
+      request<any>('/reports', { method: 'POST', body: JSON.stringify(data) }),
     generate: (data?: any) =>
       request<any>('/reports/generate', { method: 'POST', body: JSON.stringify(data || {}) }),
     resend: (id: string) =>

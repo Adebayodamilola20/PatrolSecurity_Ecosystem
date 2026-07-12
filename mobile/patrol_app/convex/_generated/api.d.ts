@@ -32,6 +32,7 @@ import type * as lib_http from "../lib/http.js";
 import type * as lib_httpAuth from "../lib/httpAuth.js";
 import type * as lib_jwt from "../lib/jwt.js";
 import type * as lib_rateLimiter from "../lib/rateLimiter.js";
+import type * as lib_reportTemplates from "../lib/reportTemplates.js";
 import type * as missedPatrolScheduler from "../missedPatrolScheduler.js";
 import type * as missedPatrols from "../missedPatrols.js";
 import type * as notifications from "../notifications.js";
@@ -81,6 +82,7 @@ declare const fullApi: ApiFromModules<{
   "lib/httpAuth": typeof lib_httpAuth;
   "lib/jwt": typeof lib_jwt;
   "lib/rateLimiter": typeof lib_rateLimiter;
+  "lib/reportTemplates": typeof lib_reportTemplates;
   missedPatrolScheduler: typeof missedPatrolScheduler;
   missedPatrols: typeof missedPatrols;
   notifications: typeof notifications;
