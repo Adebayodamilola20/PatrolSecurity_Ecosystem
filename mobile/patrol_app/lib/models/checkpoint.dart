@@ -4,9 +4,13 @@ class Checkpoint {
   final String code;
   final String location;
   final String? siteId;
-  final double latitude;
-  final double longitude;
-  final double radiusMeters;
+  // Sub-location QR points carry no coordinates of their own — they are
+  // verified against the parent site's geofence on the server. Null here means
+  // "no own coordinates"; do NOT default these to 0, or distance maths will
+  // measure against Null Island (lat/lng 0,0) and report thousands of km.
+  final double? latitude;
+  final double? longitude;
+  final double? radiusMeters;
   final int expectedIntervalMinutes;
   final String scheduledTimeIn;
   final String scheduledTimeOut;
@@ -20,9 +24,9 @@ class Checkpoint {
     required this.code,
     this.location = '',
     this.siteId,
-    required this.latitude,
-    required this.longitude,
-    this.radiusMeters = 10,
+    this.latitude,
+    this.longitude,
+    this.radiusMeters,
     this.expectedIntervalMinutes = 60,
     this.scheduledTimeIn = '',
     this.scheduledTimeOut = '',
@@ -37,9 +41,9 @@ class Checkpoint {
     code: json['code'] ?? '',
     location: json['location'] ?? '',
     siteId: json['siteId'],
-    latitude: (json['latitude'] ?? 0).toDouble(),
-    longitude: (json['longitude'] ?? 0).toDouble(),
-    radiusMeters: (json['radiusMeters'] ?? 10).toDouble(),
+    latitude: (json['latitude'] as num?)?.toDouble(),
+    longitude: (json['longitude'] as num?)?.toDouble(),
+    radiusMeters: (json['radiusMeters'] as num?)?.toDouble(),
     expectedIntervalMinutes: (json['expectedIntervalMinutes'] ?? 60).toInt(),
     scheduledTimeIn: json['scheduledTimeIn'] ?? '',
     scheduledTimeOut: json['scheduledTimeOut'] ?? '',

@@ -33,6 +33,11 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
   bool _autoSubmitAttempted = false;
   String? _checkpointName;
   double _distance = 0;
+  // True once we have a REAL distance to show — either from a checkpoint that
+  // carries its own coordinates, or from the server's verdict after submit.
+  // Sub-location QRs have no coordinates, so before the server answers there is
+  // no honest distance to display (never show a Null-Island estimate).
+  bool _distanceKnown = false;
   bool _gpsValid = false;
   DateTime _timestamp = DateTime.now();
   Checkpoint? _checkpoint;
@@ -362,15 +367,26 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
           data['locationError'] as String? ??
           'Location unavailable. Enable GPS permission and try again.';
       _gpsValid = false;
-    } else {
+      _distanceKnown = false;
+    } else if (checkpoint.latitude != null && checkpoint.longitude != null) {
+      // Legacy checkpoint with its own coordinates: we can estimate locally.
       _distance = _haversine(
         gpsLat,
         gpsLng,
-        checkpoint.latitude,
-        checkpoint.longitude,
+        checkpoint.latitude!,
+        checkpoint.longitude!,
       );
-      final effectiveRadius = checkpoint.radiusMeters;
+      final effectiveRadius =
+          checkpoint.radiusMeters ?? strictScanRadiusMeters;
       _gpsValid = _distance <= effectiveRadius;
+      _distanceKnown = true;
+    } else {
+      // Sub-location QR with no coordinates of its own: the server verifies the
+      // guard's GPS against the parent site's geofence. There is no honest
+      // local distance yet — stay optimistic and let the server be the source
+      // of truth once the scan is submitted.
+      _distanceKnown = false;
+      _gpsValid = true;
     }
 
     setState(() => _loading = false);
@@ -454,6 +470,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
       if (ok && serverScan != null) {
         _gpsValid = serverScan.gpsValid;
         _distance = serverScan.distanceMeters;
+        _distanceKnown = true;
       }
     });
 
@@ -887,7 +904,9 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                       label: 'Distance',
                       value: widget.scanData?['gpsLatitude'] == null
                           ? 'Unavailable'
-                          : '${_distance.toStringAsFixed(0)}m',
+                          : _distanceKnown
+                          ? '${_distance.toStringAsFixed(0)}m'
+                          : 'Checking…',
                     ),
                     const Divider(height: 16),
                     Row(
@@ -902,12 +921,16 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                             Icon(
                               widget.scanData?['gpsLatitude'] == null
                                   ? Icons.location_off
+                                  : !_distanceKnown
+                                  ? Icons.gps_fixed
                                   : _gpsValid
                                   ? Icons.check_circle
                                   : Icons.warning_amber,
                               size: 16,
                               color: widget.scanData?['gpsLatitude'] == null
                                   ? Colors.orange
+                                  : !_distanceKnown
+                                  ? AppTheme.primary
                                   : _gpsValid
                                   ? AppTheme.verified
                                   : AppTheme.flagged,
@@ -916,12 +939,16 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                             Text(
                               widget.scanData?['gpsLatitude'] == null
                                   ? 'Location Required'
+                                  : !_distanceKnown
+                                  ? 'Verifying location…'
                                   : _gpsValid
                                   ? 'Within Range'
-                                  : 'Outside ${_checkpoint?.radiusMeters.toStringAsFixed(0) ?? strictScanRadiusMeters.toStringAsFixed(0)}m Limit',
+                                  : 'Outside ${(_checkpoint?.radiusMeters ?? strictScanRadiusMeters).toStringAsFixed(0)}m Limit',
                               style: TextStyle(
                                 color: widget.scanData?['gpsLatitude'] == null
                                     ? Colors.orange
+                                    : !_distanceKnown
+                                    ? AppTheme.primary
                                     : _gpsValid
                                     ? AppTheme.verified
                                     : AppTheme.flagged,
@@ -933,12 +960,13 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                       ],
                     ),
                     if (widget.scanData?['gpsLatitude'] != null &&
+                        _distanceKnown &&
                         !_gpsValid) ...[
                       const Divider(height: 16),
                       const Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          'Policy: scans must happen within 10 metres of the assigned facility checkpoint.',
+                          'Scans are verified against the assigned location’s geofence. Move closer and scan again.',
                           style: TextStyle(
                             fontSize: 12,
                             color: AppTheme.textSecondary,

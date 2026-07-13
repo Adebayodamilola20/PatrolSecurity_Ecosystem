@@ -791,11 +791,14 @@ class _DashboardTab extends StatelessWidget {
     double? nearestDistance;
 
     for (final checkpoint in checkpoints) {
+      if (checkpoint.latitude == null || checkpoint.longitude == null) {
+        continue; // sub-location QR with no own coordinates
+      }
       final distance = LocationService.calculateDistance(
         latitude,
         longitude,
-        checkpoint.latitude,
-        checkpoint.longitude,
+        checkpoint.latitude!,
+        checkpoint.longitude!,
       );
       if (nearestDistance == null || distance < nearestDistance) {
         nearest = checkpoint;

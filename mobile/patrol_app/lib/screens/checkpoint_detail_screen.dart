@@ -122,14 +122,17 @@ class CheckpointDetailScreen extends StatelessWidget {
                   _DetailRow(
                     icon: Icons.my_location,
                     label: 'GPS Coordinates',
-                    value:
-                        '${cp.latitude.toStringAsFixed(6)}, ${cp.longitude.toStringAsFixed(6)}',
+                    value: (cp.latitude != null && cp.longitude != null)
+                        ? '${cp.latitude!.toStringAsFixed(6)}, ${cp.longitude!.toStringAsFixed(6)}'
+                        : 'Verified against location geofence',
                   ),
                   const Divider(height: 20),
                   _DetailRow(
                     icon: Icons.radio_button_checked,
                     label: 'Validation Radius',
-                    value: '${cp.radiusMeters.toStringAsFixed(0)} meters',
+                    value: cp.radiusMeters != null
+                        ? '${cp.radiusMeters!.toStringAsFixed(0)} meters'
+                        : 'Location geofence',
                   ),
                   const Divider(height: 20),
                   _DetailRow(
