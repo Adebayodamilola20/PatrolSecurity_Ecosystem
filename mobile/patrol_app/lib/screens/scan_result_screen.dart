@@ -1,6 +1,10 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:vibration/vibration.dart';
 import 'package:provider/provider.dart';
 import '../models/checkpoint.dart';
 import '../models/post_order.dart';
@@ -37,6 +41,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
   final _notesCtrl = TextEditingController();
   bool _postOrdersDialogShown = false;
   bool _passOnLogDialogShown = false;
+  final AudioPlayer _feedbackPlayer = AudioPlayer();
 
   bool get _locationServiceDisabled =>
       _errorMessage?.toLowerCase().contains('location is turned off') ?? false;
@@ -44,7 +49,115 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
   @override
   void dispose() {
     _notesCtrl.dispose();
+    _feedbackPlayer.dispose();
     super.dispose();
+  }
+
+  // --- Scan feedback (sound + haptics + try-again prompt) --------------------
+
+  Future<bool> _vibrationEnabled() async {
+    try {
+      final v = await const FlutterSecureStorage().read(key: 'setting_vibration');
+      return (v ?? 'true') == 'true';
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<void> _playSound(String asset) async {
+    try {
+      await _feedbackPlayer.stop();
+      await _feedbackPlayer.play(AssetSource(asset));
+    } catch (_) {
+      // Audio is a nice-to-have; never let it break the scan flow.
+    }
+  }
+
+  // Verified: bright success chime + a short confirming tap.
+  Future<void> _verifiedFeedback() async {
+    unawaited(_playSound('sounds/success.wav'));
+    if (await _vibrationEnabled()) {
+      try {
+        await Vibration.vibrate(duration: 60);
+      } catch (_) {}
+    }
+  }
+
+  // Out of range: error buzz + a strong double vibration + a bottom prompt
+  // telling the guard to move closer and scan this location again.
+  Future<void> _flaggedFeedback() async {
+    unawaited(_playSound('sounds/error.wav'));
+    if (await _vibrationEnabled()) {
+      try {
+        await Vibration.vibrate(pattern: [0, 300, 130, 300]);
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    _showTryAgainSheet();
+  }
+
+  void _showTryAgainSheet() {
+    final name = _checkpointName ?? _checkpoint?.name ?? 'this location';
+    final distanceText = _distance > 0
+        ? "You're about ${_distance.round()} m away. "
+        : '';
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+        decoration: BoxDecoration(
+          color: Theme.of(sheetCtx).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: Colors.grey.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Icon(Icons.location_off_rounded, color: AppTheme.flagged, size: 44),
+            const SizedBox(height: 12),
+            const Text(
+              "You're not at the checkpoint",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '$distanceText Move closer to $name and scan it again.',
+              style: TextStyle(color: Colors.grey.shade600),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.flagged,
+                ),
+                onPressed: () {
+                  Navigator.pop(sheetCtx);
+                  Navigator.pushNamedAndRemoveUntil(
+                    context,
+                    AppRoutes.scanner,
+                    (route) => route.settings.name == AppRoutes.home,
+                  );
+                },
+                child: const Text('Try Again'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -344,9 +457,21 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
       }
     });
 
+    // Immediate physical feedback the moment the server answers: a success
+    // chime for a verified scan, or a buzz + "try again" prompt when the
+    // guard is out of range.
+    if (ok && serverScan != null) {
+      if (_gpsValid) {
+        unawaited(_verifiedFeedback());
+      } else {
+        await _flaggedFeedback();
+      }
+    }
+
     // Post orders are only surfaced on a VERIFIED scan. A GPS-mismatch scan is
     // not a completed checkpoint — the guard must move closer and re-scan until
     // it verifies before they receive the post order and move on.
+    if (!mounted) return;
     if (ok && _scanId != null && _gpsValid) {
       final dutyProvider = context.read<DutyProvider>();
       final matchingOrders = _matchingOrders(
