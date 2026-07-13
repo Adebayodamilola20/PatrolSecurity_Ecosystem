@@ -22,7 +22,7 @@ export default function Clients() {
   const [clients, setClients] = useState<ClientRow[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const emptyForm = { name: '', email: '', phone: '', password: '' }
+  const emptyForm = { name: '', email: '', phones: [''], password: '' }
   const [form, setForm] = useState(emptyForm)
   const [showPassword, setShowPassword] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -47,7 +47,7 @@ export default function Clients() {
       const created = await api.clients.create({
         name: form.name.trim(),
         email: form.email.trim(),
-        phone: form.phone.trim(),
+        phone: form.phones.map((p) => p.trim()).filter(Boolean).join(', '),
         password: form.password,
       })
       setShowModal(false)
@@ -159,9 +159,39 @@ export default function Clients() {
                   className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
               </div>
               <div>
-                <label className="text-xs text-muted-foreground">Phone (optional)</label>
-                <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+                <label className="text-xs text-muted-foreground">Phone number(s) (optional)</label>
+                <div className="mt-1 space-y-2">
+                  {form.phones.map((phone, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input
+                        value={phone}
+                        onChange={e => setForm(f => ({
+                          ...f,
+                          phones: f.phones.map((p, j) => (j === i ? e.target.value : p)),
+                        }))}
+                        placeholder={i === 0 ? 'Primary phone' : 'Additional phone'}
+                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                      />
+                      {form.phones.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setForm(f => ({ ...f, phones: f.phones.filter((_, j) => j !== i) }))}
+                          className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:text-destructive"
+                          title="Remove this number"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, phones: [...f.phones, ''] }))}
+                  className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:opacity-80"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add another phone number
+                </button>
               </div>
               <div>
                 <label className="text-xs text-muted-foreground">Portal Password</label>

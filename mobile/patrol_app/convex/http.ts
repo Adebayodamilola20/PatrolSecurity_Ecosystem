@@ -2931,6 +2931,11 @@ http.route({ path: "/site-assignments", method: "POST", handler: httpAction(asyn
   const userId = await ctx.runQuery(internal.users.resolveId, { id: String(body?.userId ?? "") });
   if (!userId) return notFound("User not found");
   const result = await ctx.runMutation(internal.sites.assignUser, { siteId, userId });
+  if ("conflict" in result && result.conflict) {
+    return conflict(
+      `This guard is already assigned to "${result.otherSiteName}". Unassign them from that location first before assigning them here.`,
+    );
+  }
   await recordAudit(ctx, user, "site.guard_assigned", {
     targetType: "site", targetId: siteId,
     details: `Assigned user ${userId} to site ${siteId}`,

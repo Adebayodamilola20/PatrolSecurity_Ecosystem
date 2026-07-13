@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ShieldCheck,
   ShieldAlert,
+  AlertTriangle,
 } from 'lucide-react'
 import QRCode from 'qrcode'
 import L from 'leaflet'
@@ -143,6 +144,9 @@ export default function ClientDetail() {
   const [guardPool, setGuardPool] = useState<Array<{ id: string; convexId?: string; name: string }>>([])
   const [pendingGuard, setPendingGuard] = useState<Record<string, string>>({})
   const [assignBusySiteId, setAssignBusySiteId] = useState('')
+  // A guard already posted to another location triggers a blocking popup so
+  // staff can't silently double-assign them.
+  const [assignConflict, setAssignConflict] = useState('')
 
   const load = () => {
     if (!id) return
@@ -188,7 +192,13 @@ export default function ClientDetail() {
       setPendingGuard((prev) => ({ ...prev, [site.id]: '' }))
       load()
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Could not assign the guard.')
+      const message = error instanceof Error ? error.message : 'Could not assign the guard.'
+      // Already-assigned-elsewhere gets a modal; everything else the inline banner.
+      if (/already assigned/i.test(message)) {
+        setAssignConflict(message)
+      } else {
+        setActionError(message)
+      }
     } finally {
       setAssignBusySiteId('')
     }
@@ -588,6 +598,26 @@ export default function ClientDetail() {
       {actionError ? (
         <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {actionError}
+        </div>
+      ) : null}
+
+      {assignConflict ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-sm rounded-xl border border-border bg-card">
+            <div className="flex items-center gap-2 border-b border-border px-5 py-4">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              <h2 className="font-semibold">Guard already assigned</h2>
+            </div>
+            <div className="px-5 py-4 text-sm text-muted-foreground">{assignConflict}</div>
+            <div className="flex justify-end border-t border-border px-5 py-3">
+              <button
+                onClick={() => setAssignConflict('')}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
 
