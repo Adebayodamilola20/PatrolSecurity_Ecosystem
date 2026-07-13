@@ -1,7 +1,14 @@
 export function errorResponse(message: string, status: number, details?: string) {
+  // Error responses need the same CORS headers as success responses, or the
+  // browser blocks the cross-origin read and the fetch rejects with a generic
+  // "Load failed" instead of surfacing our message (409 conflicts, 4xx, etc.).
+  const headers = new Headers();
+  headers.set("Access-Control-Allow-Origin", "*");
+  headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
   return Response.json(
     { message, ...(details ? { details } : {}), timestamp: new Date().toISOString() },
-    { status },
+    { status, headers },
   );
 }
 
