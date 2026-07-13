@@ -8,6 +8,7 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
+import { useUnreadReports } from '../../hooks/useUnreadReports'
 
 const nav = [
   { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
@@ -18,6 +19,7 @@ const nav = [
 ]
 
 export default function Sidebar() {
+  const unreadReports = useUnreadReports()
   return (
     <aside className="hidden w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex">
       <div className="flex items-center gap-2 px-5 py-5">
@@ -44,7 +46,12 @@ export default function Sidebar() {
             }
           >
             <Icon className="h-4 w-4 shrink-0" />
-            <span className="truncate">{label}</span>
+            <span className="flex-1 truncate">{label}</span>
+            {to === '/reports' && unreadReports > 0 ? (
+              <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">
+                {unreadReports > 99 ? '99+' : `+${unreadReports}`}
+              </span>
+            ) : null}
           </NavLink>
         ))}
       </nav>
