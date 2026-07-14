@@ -280,10 +280,14 @@ export const api = {
   postOrders: {
     list: (params?: Record<string, string>) =>
       request<any[]>(`/post-orders?${new URLSearchParams(params)}`),
+    // Staff management listing (guard names, created date, ack history).
+    manage: () => request<any[]>('/post-orders/manage'),
     create: (data: any) =>
       request<any>('/post-orders', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: string, data: any) =>
       request<any>(`/post-orders/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    remove: (id: string) =>
+      request<any>(`/post-orders/${id}`, { method: 'DELETE' }),
     completions: () => request<any[]>('/post-orders/completions'),
     reviewCompletion: (id: string, data: any) =>
       request<any>(`/post-orders/completions/${id}/review`, { method: 'PATCH', body: JSON.stringify(data) }),

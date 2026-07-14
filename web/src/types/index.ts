@@ -173,6 +173,8 @@ export interface PostOrder {
   siteName?: string | null
   assignedUserId?: string | null
   assignedUserName?: string | null
+  assignedUserIds?: string[]
+  assignedGuards?: { id: string; name: string }[]
   assignedRole?: string
   priority: string
   active: boolean
@@ -182,6 +184,20 @@ export interface PostOrder {
   createdByName?: string | null
   createdAt: string
   latestCompletion?: PostOrderCompletion | null
+  acknowledgementHistory?: PostOrderAck[]
+}
+
+export interface PostOrderAck {
+  id: string
+  userId: string
+  userName: string
+  status: string
+  reviewStatus: string
+  acknowledgedAt?: string | null
+  completedAt?: string | null
+  proofPhotoUrl?: string | null
+  proofNote?: string | null
+  createdAt: string
 }
 
 export interface PostOrderCompletion {

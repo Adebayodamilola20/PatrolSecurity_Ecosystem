@@ -2008,6 +2008,49 @@ http.route({
   }),
 });
 
+// Staff management listing — created date, assigned guard names, and per-order
+// acknowledgement history. Client accounts (main_account) are scoped to theirs.
+http.route({
+  path: "/post-orders/manage",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    const roleErr = requireRole(user, ["admin", "main_account", "supervisor"]);
+    if (roleErr) return roleErr;
+    return json(
+      await ctx.runQuery(internal.postOrders.listForAdmin, {
+        clientId: user.role === "admin" || user.role === "supervisor"
+          ? undefined
+          : _cid(user.clientId),
+      }),
+    );
+  }),
+});
+
+// Delete a post order (and its acknowledgement rows). Staff-only.
+http.route({
+  pathPrefix: "/post-orders/",
+  method: "DELETE",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    const roleErr = requireRole(user, ["admin", "main_account", "supervisor"]);
+    if (roleErr) return roleErr;
+    const id = lastPathPart(request);
+    const orderId = await ctx.runQuery(internal.postOrders.resolveId, { id });
+    if (!orderId) return notFound("Post order not found");
+    const result = await ctx.runMutation(internal.postOrders.remove, { orderId });
+    await recordAudit(ctx, user, "post_order.deleted", {
+      targetType: "post_order",
+      targetId: orderId,
+      details: `Deleted post order ${id}`,
+      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+    });
+    return json(result);
+  }),
+});
+
 http.route({
   pathPrefix: "/post-orders/",
   method: "POST",
@@ -2734,6 +2777,9 @@ http.route({ path: "/post-orders", method: "POST", handler: httpAction(async (ct
     checkpointId: checkpointId ?? undefined,
     siteId: siteId ?? undefined,
     assignedUserId: body?.assignedUserId ?? undefined,
+    assignedUserIds: Array.isArray(body?.assignedUserIds)
+      ? body.assignedUserIds.filter((x: unknown) => typeof x === "string" && x)
+      : undefined,
     assignedRole: (["admin","main_account","supervisor","guard"].includes(String(body?.assignedRole)) ? String(body?.assignedRole) : "guard") as any,
     priority: String(body?.priority ?? "normal"),
     active: body?.active !== false,
@@ -2765,6 +2811,31 @@ http.route({ pathPrefix: "/post-orders/", method: "PUT", handler: httpAction(asy
   if (body.instructions !== undefined) fields.instructions = String(body.instructions);
   if (body.priority !== undefined) fields.priority = String(body.priority);
   if (body.active !== undefined) fields.active = Boolean(body.active);
+  if (body.requiresAcknowledgement !== undefined) fields.requiresAcknowledgement = Boolean(body.requiresAcknowledgement);
+  if (body.requiresPhotoProof !== undefined) fields.requiresPhotoProof = Boolean(body.requiresPhotoProof);
+  if (["admin","main_account","supervisor","guard"].includes(String(body?.assignedRole))) fields.assignedRole = String(body.assignedRole);
+  if (Array.isArray(body.assignedUserIds)) {
+    fields.assignedUserIds = body.assignedUserIds.filter((x: unknown) => typeof x === "string" && x);
+  }
+  // Scope edits: resolve legacy IDs; an empty string clears the scope.
+  if (body.checkpointId !== undefined) {
+    if (!body.checkpointId) {
+      fields.checkpointId = null;
+    } else {
+      const cpId = await ctx.runQuery(internal.checkpoints.resolveId, { id: String(body.checkpointId) });
+      if (!cpId) return notFound("Sub-location not found");
+      fields.checkpointId = cpId;
+    }
+  }
+  if (body.siteId !== undefined) {
+    if (!body.siteId) {
+      fields.siteId = null;
+    } else {
+      const sId = await ctx.runQuery(internal.sites.resolveId, { id: String(body.siteId) });
+      if (!sId) return notFound("Location not found");
+      fields.siteId = sId;
+    }
+  }
   const result = await ctx.runMutation(internal.postOrders.update, { orderId, ...fields });
   await recordAudit(ctx, user, "post_order.updated", {
     targetType: "post_order",

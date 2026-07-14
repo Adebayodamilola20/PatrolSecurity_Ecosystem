@@ -425,7 +425,12 @@ export default defineSchema({
     summary: v.string(),
     instructions: v.string(),
     checkpointId: v.optional(v.id("checkpoints")),
+    // Legacy single-guard assignment. New orders use assignedUserIds (below);
+    // this stays optional so old rows keep resolving.
     assignedUserId: v.optional(v.id("users")),
+    // Multi-guard assignment: an order can be posted to several guards at once.
+    // Empty/absent = every guard the scope reaches (general duty).
+    assignedUserIds: v.optional(v.array(v.id("users"))),
     assignedRole: userRole,
     priority: v.string(),
     active: v.boolean(),

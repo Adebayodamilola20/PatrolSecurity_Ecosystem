@@ -57,6 +57,7 @@ export const create = internalMutation({
     checkpointId: v.optional(v.id("checkpoints")),
     siteId: v.optional(v.id("sites")),
     assignedUserId: v.optional(v.id("users")),
+    assignedUserIds: v.optional(v.array(v.id("users"))),
     assignedRole: v.union(v.literal("admin"), v.literal("main_account"), v.literal("supervisor"), v.literal("guard")),
     priority: v.string(),
     active: v.boolean(),
@@ -73,13 +74,23 @@ export const create = internalMutation({
     const siteId = checkpoint?.siteId ?? args.siteId;
     const site = siteId ? await ctx.db.get(siteId) : null;
     if (siteId && !site) throw new Error("Location not found");
+    // Normalize the guard list: de-dupe, drop blanks. A single legacy
+    // assignedUserId is folded in so both shapes stay consistent.
+    const guardIds = Array.from(
+      new Set([
+        ...(args.assignedUserIds ?? []),
+        ...(args.assignedUserId ? [args.assignedUserId] : []),
+      ]),
+    );
     const id = await ctx.db.insert("postOrders", {
       ...args,
+      assignedUserId: guardIds[0],
+      assignedUserIds: guardIds,
       clientId: checkpoint?.clientId ?? site?.clientId ?? creator?.clientId,
       siteId,
       createdAt: Date.now(),
     });
-    return { id, ...args, siteId, createdAt: new Date().toISOString() };
+    return { id, ...args, assignedUserIds: guardIds, siteId, createdAt: new Date().toISOString() };
   },
 });
 
@@ -91,14 +102,146 @@ export const update = internalMutation({
     instructions: v.optional(v.string()),
     priority: v.optional(v.string()),
     active: v.optional(v.boolean()),
+    checkpointId: v.optional(v.union(v.id("checkpoints"), v.null())),
+    siteId: v.optional(v.union(v.id("sites"), v.null())),
+    assignedUserIds: v.optional(v.array(v.id("users"))),
+    assignedRole: v.optional(v.union(v.literal("admin"), v.literal("main_account"), v.literal("supervisor"), v.literal("guard"))),
+    requiresAcknowledgement: v.optional(v.boolean()),
+    requiresPhotoProof: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const { orderId, ...fields } = args;
-    const clean = Object.fromEntries(
-      Object.entries(fields).filter(([, v]) => v !== undefined),
+    const { orderId, assignedUserIds, checkpointId, siteId, ...rest } = args;
+    const clean: Record<string, unknown> = Object.fromEntries(
+      Object.entries(rest).filter(([, v]) => v !== undefined),
     );
+    // Guard list edits keep the legacy single field in sync.
+    if (assignedUserIds !== undefined) {
+      const guardIds = Array.from(new Set(assignedUserIds));
+      clean.assignedUserIds = guardIds;
+      clean.assignedUserId = guardIds[0];
+    }
+    // A scope change re-derives the parent site from the chosen checkpoint.
+    if (checkpointId !== undefined) {
+      if (checkpointId === null) {
+        clean.checkpointId = undefined;
+      } else {
+        const cp = await ctx.db.get(checkpointId);
+        if (!cp) throw new Error("Sub-location not found");
+        clean.checkpointId = checkpointId;
+        clean.siteId = cp.siteId;
+        clean.clientId = cp.clientId;
+      }
+    }
+    if (siteId !== undefined && checkpointId === undefined) {
+      if (siteId === null) {
+        clean.siteId = undefined;
+      } else {
+        const site = await ctx.db.get(siteId);
+        if (!site) throw new Error("Location not found");
+        clean.siteId = siteId;
+        clean.clientId = site.clientId;
+      }
+    }
     await ctx.db.patch(orderId, clean as any);
     return await ctx.db.get(orderId);
+  },
+});
+
+// Hard-delete a post order and every acknowledgement/completion row tied to it,
+// so "clear" leaves nothing dangling behind.
+export const remove = internalMutation({
+  args: { orderId: v.id("postOrders") },
+  handler: async (ctx, args) => {
+    const completions = await ctx.db
+      .query("postOrderCompletions")
+      .collect();
+    for (const c of completions) {
+      if (c.postOrderId === args.orderId) await ctx.db.delete(c._id);
+    }
+    await ctx.db.delete(args.orderId);
+    return { id: args.orderId, deleted: true };
+  },
+});
+
+// Admin/management listing: everything the staff Post Orders page needs that the
+// guard-facing listForUser strips — real created date, the assigned guards by
+// name, and the full acknowledgement/completion history per order.
+export const listForAdmin = internalQuery({
+  args: { clientId: v.optional(v.id("clients")) },
+  handler: async (ctx, args) => {
+    let orders = await ctx.db.query("postOrders").order("desc").collect();
+    const checkpoints = await ctx.db.query("checkpoints").collect();
+    if (args.clientId) {
+      const clientCpIds = new Set(
+        checkpoints
+          .filter((cp) => cp.clientId === args.clientId)
+          .map((cp) => cp._id),
+      );
+      orders = orders.filter(
+        (o) =>
+          o.clientId === args.clientId ||
+          (o.checkpointId && clientCpIds.has(o.checkpointId)),
+      );
+    }
+    const sites = await ctx.db.query("sites").collect();
+    const users = await ctx.db.query("users").collect();
+    const completions = await ctx.db.query("postOrderCompletions").collect();
+    const userName = (id: any) => users.find((u) => u._id === id)?.name ?? null;
+    return orders.map((o) => {
+      const guardIds =
+        o.assignedUserIds && o.assignedUserIds.length
+          ? o.assignedUserIds
+          : o.assignedUserId
+            ? [o.assignedUserId]
+            : [];
+      const assignedGuards = guardIds.map((id) => ({
+        id: id as unknown as string,
+        name: userName(id) ?? "Unknown",
+      }));
+      const history = completions
+        .filter((c) => c.postOrderId === o._id)
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .map((c) => ({
+          id: c.legacyId ?? c._id,
+          userId: c.userId as unknown as string,
+          userName: userName(c.userId) ?? "Unknown",
+          status: c.status,
+          reviewStatus: c.reviewStatus,
+          acknowledgedAt: c.acknowledgedAt
+            ? new Date(c.acknowledgedAt).toISOString()
+            : null,
+          completedAt: c.completedAt
+            ? new Date(c.completedAt).toISOString()
+            : null,
+          proofPhotoUrl: c.proofPhotoUrl || null,
+          proofNote: c.proofNote || null,
+          createdAt: new Date(c.createdAt).toISOString(),
+        }));
+      return {
+        id: o.legacyId ?? o._id,
+        title: o.title,
+        summary: o.summary,
+        instructions: o.instructions,
+        checkpointId: o.checkpointId ?? null,
+        checkpointName:
+          checkpoints.find((c) => c._id === o.checkpointId)?.name ?? null,
+        siteId: o.siteId ?? null,
+        siteName: sites.find((s) => s._id === o.siteId)?.name ?? null,
+        assignedUserId: o.assignedUserId ?? null,
+        assignedUserName: userName(o.assignedUserId),
+        assignedUserIds: guardIds as unknown as string[],
+        assignedGuards,
+        assignedRole: o.assignedRole,
+        priority: o.priority,
+        active: o.active,
+        requiresAcknowledgement: o.requiresAcknowledgement,
+        requiresPhotoProof: o.requiresPhotoProof,
+        createdBy: o.createdBy as unknown as string,
+        createdByName: userName(o.createdBy),
+        createdAt: new Date(o.createdAt).toISOString(),
+        acknowledgementHistory: history,
+      };
+    });
   },
 });
 
@@ -215,7 +358,15 @@ export const listForUser = internalQuery({
         if (user.role === "main_account") {
           return order.clientId === user.clientId;
         }
-        if (order.assignedUserId && order.assignedUserId !== args.userId) {
+        // Explicit guard assignment (multi or legacy single). An order with a
+        // guard list only reaches those guards; an empty list is open duty.
+        const guardIds =
+          order.assignedUserIds && order.assignedUserIds.length
+            ? order.assignedUserIds
+            : order.assignedUserId
+              ? [order.assignedUserId]
+              : [];
+        if (guardIds.length && !guardIds.includes(args.userId)) {
           return false;
         }
         // Scoped orders only reach guards posted there: a sub-location order

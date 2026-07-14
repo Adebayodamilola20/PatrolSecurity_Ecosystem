@@ -43,6 +43,7 @@ const sensitiveActions = [
   "pass_on_log.acknowledged",
   "post_order.created",
   "post_order.updated",
+  "post_order.deleted",
   "post_order.acknowledged",
   "post_order_completion.reviewed",
   "visitor.check_in",
