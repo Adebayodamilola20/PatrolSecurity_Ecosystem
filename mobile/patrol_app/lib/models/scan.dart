@@ -1,3 +1,5 @@
+import 'post_order.dart';
+
 class Scan {
   final String id;
   final String officerId;
@@ -13,6 +15,9 @@ class Scan {
   final double distanceMeters;
   final String? photoUrl;
   final String? notes;
+  // The post orders this scan triggered, straight from the server's verdict.
+  // Only present on the response to a freshly submitted scan.
+  final List<PostOrder> postOrders;
 
   Scan({
     required this.id,
@@ -29,6 +34,7 @@ class Scan {
     required this.distanceMeters,
     this.photoUrl,
     this.notes,
+    this.postOrders = const [],
   });
 
   factory Scan.fromJson(Map<String, dynamic> json) => Scan(
@@ -46,6 +52,12 @@ class Scan {
     distanceMeters: (json['distanceMeters'] ?? 0).toDouble(),
     photoUrl: json['photoUrl'],
     notes: json['notes'],
+    postOrders: json['postOrders'] is List
+        ? (json['postOrders'] as List)
+              .whereType<Map<String, dynamic>>()
+              .map(PostOrder.fromJson)
+              .toList()
+        : const [],
   );
 
   Map<String, dynamic> toJson() => {

@@ -339,9 +339,9 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
     final scanProvider = context.read<ScanProvider>();
     final dutyProvider = context.read<DutyProvider>();
     await scanProvider.loadCheckpoints();
-    if (dutyProvider.orders.isEmpty && !dutyProvider.loading) {
-      await dutyProvider.load();
-    }
+    // Force a refresh: DutyProvider.load() is a no-op after the first call, so
+    // a post order created while the app was already open would never appear.
+    await dutyProvider.load(force: true);
 
     Checkpoint? checkpoint;
     try {
@@ -490,10 +490,20 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
     // it verifies before they receive the post order and move on.
     if (!mounted) return;
     if (ok && _scanId != null && _gpsValid) {
-      final dutyProvider = context.read<DutyProvider>();
-      final matchingOrders = _matchingOrders(
-        dutyProvider.orders,
-      ).where((o) => o.requiresAcknowledgement).toList();
+      // The server decides which orders this scan triggered — it already knows
+      // the checkpoint, its parent location, and who the order is posted to.
+      // The locally cached duty list can be stale (an order created after the
+      // app started), so only fall back to it when the server sent nothing.
+      var triggered = serverScan?.postOrders ?? const <PostOrder>[];
+      if (triggered.isEmpty) {
+        final dutyProvider = context.read<DutyProvider>();
+        await dutyProvider.load(force: true);
+        if (!mounted) return;
+        triggered = _matchingOrders(dutyProvider.orders);
+      }
+      final matchingOrders = triggered
+          .where((o) => o.requiresAcknowledgement)
+          .toList();
       if (matchingOrders.isNotEmpty) {
         await _showPostOrdersDialog(matchingOrders);
       }

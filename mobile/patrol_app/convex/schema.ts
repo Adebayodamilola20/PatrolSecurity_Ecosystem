@@ -188,6 +188,10 @@ export default defineSchema({
     siteId: v.optional(v.id("sites")),
     officerId: v.id("users"),
     checkpointId: v.id("checkpoints"),
+    // The shift this scan was taken on. A scan can only be recorded while the
+    // guard is clocked in, so this is set for every scan created after that
+    // rule landed; older rows predate it and stay optional.
+    shiftId: v.optional(v.id("shifts")),
     scannedAt: v.number(),
     receivedAt: v.number(),
     gpsLatitude: v.optional(v.number()),

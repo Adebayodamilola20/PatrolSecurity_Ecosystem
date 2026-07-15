@@ -259,6 +259,30 @@ export const create = internalMutation({
 
     const scannedAt = Date.now();
 
+    // A patrol scan is only real if the guard is on duty. Without an open shift
+    // the scan is refused outright rather than recorded — an off-duty scan must
+    // never reach a dashboard or a report as if it were patrol evidence.
+    const activeShift = await ctx.db
+      .query("shifts")
+      .withIndex("by_userId_status", (q) =>
+        q.eq("userId", args.officerId).eq("status", "active"),
+      )
+      .first();
+    if (!activeShift) {
+      await ctx.runMutation(internal.audit.record, {
+        action: "scan.rejected",
+        actorId: args.officerId,
+        actorRole: officer?.role ?? "guard",
+        targetType: "checkpoint",
+        targetId: args.checkpointId,
+        details: "Scan attempted while off duty (not clocked in)",
+        clientId,
+        siteId,
+        success: false,
+      });
+      throw new Error("Officer must clock in before scanning");
+    }
+
     if (siteId) {
       const assigned = await ctx.db
         .query("userSiteAssignments")
@@ -372,6 +396,7 @@ export const create = internalMutation({
       siteId,
       officerId: args.officerId,
       checkpointId: args.checkpointId,
+      shiftId: activeShift._id,
       scannedAt,
       receivedAt: scannedAt,
       gpsLatitude: args.gpsLatitude,
@@ -387,6 +412,7 @@ export const create = internalMutation({
       ctx,
       args.checkpointId,
       siteId,
+      args.officerId,
     );
     const requiredPostOrders = triggeredPostOrders.filter(
       (order) => order.requiresAcknowledgement,
@@ -499,6 +525,7 @@ export const create = internalMutation({
         summary: order.summary,
         instructions: order.instructions,
         priority: order.priority,
+        active: order.active,
         requiresAcknowledgement: order.requiresAcknowledgement,
         requiresPhotoProof: order.requiresPhotoProof,
       })),
@@ -506,13 +533,16 @@ export const create = internalMutation({
   },
 });
 
-// Every active post order a scan at this point puts in front of the guard:
+// Every active post order a scan at this point puts in front of THIS guard:
 // orders pinned to the exact sub-location plus orders covering the whole
-// location (siteId set, no checkpointId of their own).
+// location (siteId set, no checkpointId of their own). An order posted to
+// specific guards only reaches those guards; one with no named guard is
+// general duty and reaches whoever scans.
 async function postOrdersTriggeredByScan(
   ctx: { db: any },
   checkpointId: Id<"checkpoints">,
   siteId?: Id<"sites">,
+  officerId?: Id<"users">,
 ) {
   const forCheckpoint = await ctx.db
     .query("postOrders")
@@ -526,7 +556,17 @@ async function postOrdersTriggeredByScan(
           .collect()
       ).filter((order: any) => !order.checkpointId)
     : [];
-  return [...forCheckpoint, ...forSite].filter((order) => order.active);
+  return [...forCheckpoint, ...forSite].filter((order: any) => {
+    if (!order.active) return false;
+    if (!officerId) return true;
+    const guardIds: string[] =
+      order.assignedUserIds && order.assignedUserIds.length
+        ? order.assignedUserIds
+        : order.assignedUserId
+          ? [order.assignedUserId]
+          : [];
+    return guardIds.length === 0 || guardIds.includes(officerId);
+  });
 }
 
 export const acknowledgePostOrdersForScan = internalMutation({
@@ -553,6 +593,7 @@ export const acknowledgePostOrdersForScan = internalMutation({
       ctx,
       scan.checkpointId,
       scan.siteId,
+      args.userId,
     );
     const requiredIds = requiredOrders
       .filter((order) => order.requiresAcknowledgement)

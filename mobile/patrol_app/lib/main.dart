@@ -93,37 +93,37 @@ class PatrolApp extends StatelessWidget {
         final args = settings.arguments as Map<String, dynamic>?;
         switch (settings.name) {
           case AppRoutes.splash:
-            return _route(const SplashScreen());
+            return _route(const SplashScreen(), settings);
           case AppRoutes.login:
-            return _route(const LoginScreen());
+            return _route(const LoginScreen(), settings);
           case AppRoutes.home:
-            return _route(const HomeScreen());
+            return _route(const HomeScreen(), settings);
           case AppRoutes.scanner:
-            return _route(const ScannerScreen());
+            return _route(const ScannerScreen(), settings);
           case AppRoutes.scanResult:
             return _route(
               ScanResultScreen(
                 scanData: args?['scanData'] as Map<String, dynamic>?,
               ),
+              settings,
             );
           case AppRoutes.duties:
-            return _route(const DutiesScreen());
+            return _route(const DutiesScreen(), settings);
           case AppRoutes.history:
-            return _route(const HistoryScreen());
+            return _route(const HistoryScreen(), settings);
           case AppRoutes.scanDetail:
-            return _route(ScanDetailScreen(scanId: args?['scanId'] as String?));
+            return _route(ScanDetailScreen(scanId: args?['scanId'] as String?), settings);
           case AppRoutes.checkpoints:
-            return _route(const CheckpointsScreen());
+            return _route(const CheckpointsScreen(), settings);
           case AppRoutes.checkpointDetail:
             return _route(
               CheckpointDetailScreen(
                 checkpointId: args?['checkpointId'] as String?,
-              ),
-            );
+              ), settings);
           case AppRoutes.reports:
             return _route(ReportsScreen(
               initialTab: args?['tab'] as int?,
-            ));
+            ), settings);
           case AppRoutes.schedule:
             return _route(
               const WorkflowModuleScreen(
@@ -135,16 +135,15 @@ class PatrolApp extends StatelessWidget {
                   'Admins can review schedule coverage globally.',
                 ],
                 visibleFor: ['Admin', 'Client Account', 'Site Account'],
-              ),
-            );
+              ), settings);
           case AppRoutes.patrol:
-            return _route(const PatrolScreen());
+            return _route(const PatrolScreen(), settings);
           case AppRoutes.policy:
-            return _route(const DutiesScreen());
+            return _route(const DutiesScreen(), settings);
           case AppRoutes.truckCheck:
-            return _route(const TruckCheckScreen());
+            return _route(const TruckCheckScreen(), settings);
           case AppRoutes.visitorCheck:
-            return _route(const VisitorCheckScreen());
+            return _route(const VisitorCheckScreen(), settings);
           case AppRoutes.vacation:
             return _route(
               const WorkflowModuleScreen(
@@ -156,8 +155,7 @@ class PatrolApp extends StatelessWidget {
                   'Admins can monitor requests across clients and sites.',
                 ],
                 visibleFor: ['Admin', 'Client Account', 'Site Account'],
-              ),
-            );
+              ), settings);
           case AppRoutes.users:
             return _route(
               const WorkflowModuleScreen(
@@ -169,19 +167,21 @@ class PatrolApp extends StatelessWidget {
                   'Control active status and role visibility.',
                 ],
                 visibleFor: ['Admin'],
-              ),
-            );
+              ), settings);
           case AppRoutes.profile:
-            return _route(const ProfileScreen());
+            return _route(const ProfileScreen(), settings);
           case AppRoutes.settings:
-            return _route(const SettingsScreen());
+            return _route(const SettingsScreen(), settings);
           default:
-            return _route(const SplashScreen());
+            return _route(const SplashScreen(), settings);
         }
       },
     );
   }
 
-  MaterialPageRoute _route(Widget page) =>
-      MaterialPageRoute(builder: (_) => page);
+  // The settings MUST be carried onto the route: they hold the route name, and
+  // navigation like pushNamedAndRemoveUntil(..., until name == home) silently
+  // clears the whole stack when every route's name is null.
+  MaterialPageRoute _route(Widget page, RouteSettings settings) =>
+      MaterialPageRoute(builder: (_) => page, settings: settings);
 }

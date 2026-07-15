@@ -1450,6 +1450,9 @@ http.route({
       if (err instanceof Error && err.message.includes("not assigned to this checkpoint")) {
         return forbidden("Officer is not assigned to this checkpoint's site");
       }
+      if (err instanceof Error && err.message.includes("must clock in")) {
+        return forbidden("You must clock in before you can scan a location.");
+      }
       throw err;
     }
     return json(scan, { status: 201 });

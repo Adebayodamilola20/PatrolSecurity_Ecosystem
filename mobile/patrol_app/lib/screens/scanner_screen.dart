@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 import '../providers/duty_provider.dart';
+import '../providers/shift_provider.dart';
 import '../services/location_service.dart';
 import '../utils/routes.dart';
 import '../utils/theme.dart';
@@ -37,9 +38,25 @@ class _ScannerScreenState extends State<ScannerScreen> {
 
   Future<void> _prepareScanner() async {
     final duty = context.read<DutyProvider>();
-    if (duty.orders.isEmpty && !duty.loading) {
-      await duty.load();
+    final shift = context.read<ShiftProvider>();
+
+    // Off duty means no patrol: the server refuses to record a scan without an
+    // open shift, so stop it here with an answer the guard can act on rather
+    // than letting them scan into an error.
+    await shift.loadStatus(force: true);
+    if (!mounted) return;
+    if (!shift.onDuty) {
+      setState(() {
+        _blockedMessage =
+            'You are not clocked in. Clock in from the home screen before '
+            'scanning — scans taken off duty are not recorded.';
+        _checkingAccess = false;
+        _ready = false;
+      });
+      return;
     }
+
+    await duty.load(force: true);
     await duty.checkPendingAcknowledgements();
     if (!mounted) return;
 
@@ -103,7 +120,20 @@ class _ScannerScreenState extends State<ScannerScreen> {
         title: const Text('Scan QR Code'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+          // Popping the last route leaves an empty navigator (a black screen
+          // with no way out), so fall back to Home when there is nothing under
+          // this screen.
+          onPressed: () {
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            } else {
+              Navigator.pushNamedAndRemoveUntil(
+                context,
+                AppRoutes.home,
+                (_) => false,
+              );
+            }
+          },
         ),
         actions: [
           IconButton(
