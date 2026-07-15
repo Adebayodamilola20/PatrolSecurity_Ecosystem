@@ -30,7 +30,9 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  if (isAuthenticated) return <Navigate to="/" replace />
+  // "/" is the public landing page now, so a signed-in client belongs on the
+  // portal itself rather than back out on the marketing site.
+  if (isAuthenticated) return <Navigate to="/overview" replace />
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -38,7 +40,7 @@ export default function Login() {
     setSubmitting(true)
     try {
       await login(email.trim().toLowerCase(), password)
-      navigate('/', { replace: true })
+      navigate('/overview', { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
     } finally {

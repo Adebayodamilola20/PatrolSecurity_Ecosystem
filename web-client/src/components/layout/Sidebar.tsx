@@ -11,7 +11,7 @@ import { cn } from '../../lib/utils'
 import { useUnreadReports } from '../../hooks/useUnreadReports'
 
 const nav = [
-  { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
+  { to: '/overview', label: 'Overview', icon: LayoutDashboard, end: true },
   { to: '/guards', label: 'My Guards', icon: Users },
   { to: '/scans', label: 'Patrol Activity', icon: ScanLine },
   { to: '/locations', label: 'Locations', icon: MapPin },

@@ -1,6 +1,10 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import ClientLayout from './components/layout/ClientLayout'
+import MarketingLayout from './marketing/MarketingLayout'
+import Landing from './marketing/Landing'
+import AboutUs from './marketing/AboutUs'
+import ContactUs from './marketing/ContactUs'
 import Login from './pages/Login'
 import ForgotPassword from './pages/ForgotPassword'
 import Overview from './pages/Overview'
@@ -35,6 +39,14 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Public marketing site — the portal's front door. Its "Log in" and
+            "Get Started" CTAs lead to /login below. */}
+        <Route element={<MarketingLayout />}>
+          <Route path="/" element={<Landing />} />
+          <Route path="/about" element={<AboutUs />} />
+          <Route path="/contact" element={<ContactUs />} />
+        </Route>
+
         <Route path="/login" element={<Login />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
 
@@ -45,7 +57,8 @@ export default function App() {
             </ProtectedRoute>
           }
         >
-          <Route path="/" element={<Overview />} />
+          {/* The signed-in portal starts at /overview; "/" is the landing page. */}
+          <Route path="/overview" element={<Overview />} />
           {/* Guard identities are staff-only; clients get coverage numbers. */}
           <Route path="/guards" element={<Guards />} />
           <Route path="/scans" element={<Scans />} />
