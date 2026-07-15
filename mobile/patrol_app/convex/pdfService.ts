@@ -210,11 +210,16 @@ async function composeReportPdf(
   }
 
   // --- Evidence --------------------------------------------------------
+  // Deliberately NOT a link. Photo access is authorized per viewer and the
+  // signed URLs are short-lived, so a URL printed here would either be dead by
+  // the time anyone read it or — as it used to be — a permanent public link to
+  // evidence, baked into a document that gets emailed around.
   if (report.evidenceUrls.length > 0) {
     sectionHeading("Evidence");
-    report.evidenceUrls.forEach((url, i) => {
-      drawWrapped(`${i + 1}. ${url}`, { size: 9, color: MUTED, lineGap: 5 });
-    });
+    drawWrapped(
+      `${report.evidenceUrls.length} photo${report.evidenceUrls.length === 1 ? "" : "s"} attached — view in the dashboard under this report.`,
+      { size: 9, color: MUTED, lineGap: 5 },
+    );
   }
 
   // --- Footer on every page ----------------------------------------------

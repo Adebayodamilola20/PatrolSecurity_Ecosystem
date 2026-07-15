@@ -6,8 +6,7 @@ import { EmptyState } from '../components/ui/EmptyState'
 import { getScheduleStatus } from '../utils/patrolSchedule'
 import { formatDuration } from '../utils/format'
 import { subscribeToScans, subscribeToShiftUpdates } from '../services/websocket'
-
-const API_BASE = ''
+import { photoSrc } from '../utils/photo'
 
 type DateFilter = 'all' | 'today' | 'yesterday' | 'custom'
 
@@ -305,7 +304,7 @@ export default function Timesheets() {
         ) : (
           filtered.map((t) => {
             const scans = Array.isArray(t.scans) ? t.scans : []
-            const photoUrl = t.clockInPhoto ? `${API_BASE}${t.clockInPhoto}` : null
+            const photoUrl = photoSrc(t.clockInPhoto)
             const displayDuration = t.duration && t.duration !== '—'
               ? t.duration
               : formatDuration(t.clockIn, t.clockOut)

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Camera, CheckCircle2, ClipboardList, Clock3, Plus, X, XCircle } from 'lucide-react'
-import { API_BASE, api } from '../services/api'
+import { api } from '../services/api'
 import type { Checkpoint, PostOrder, PostOrderCompletion, User } from '../types'
 import { EmptyState } from '../components/ui/EmptyState'
 import { Skeleton } from '../components/ui/Skeleton'
 import { formatDate } from '../utils/format'
+import { photoSrc } from '../utils/photo'
 
 export default function PostOrders() {
   const [orders, setOrders] = useState<PostOrder[]>([])
@@ -300,7 +301,7 @@ export default function PostOrders() {
                   </div>
                   {completion.proofPhotoUrl ? (
                     <div className="mt-3 flex items-center gap-3">
-                      <img src={/^https?:\/\//.test(completion.proofPhotoUrl) ? completion.proofPhotoUrl : `${API_BASE.replace(/\/api\/v1$/, '')}${completion.proofPhotoUrl}`} alt="Proof" className="h-20 w-20 rounded-lg object-cover border border-border" />
+                      <img src={photoSrc(completion.proofPhotoUrl)!} alt="Proof" loading="lazy" className="h-20 w-20 rounded-lg object-cover border border-border" />
                       <div className="text-sm text-muted-foreground">
                         <div className="flex items-center gap-2"><Camera className="h-4 w-4" /> Proof photo attached</div>
                         {completion.proofNote ? <div className="mt-1">{completion.proofNote}</div> : null}

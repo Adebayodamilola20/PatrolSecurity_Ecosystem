@@ -8,6 +8,13 @@ import { signPatrolToken } from "./lib/jwt";
 import { requireAuth } from "./lib/httpAuth";
 import type { SensitiveAction } from "./audit";
 import { badRequest, conflict, errorResponse, forbidden, notFound, tooManyRequests, unauthorized } from "./lib/errors";
+import {
+  resolveFileRef,
+  resolvePhotoRef,
+  resolvePhotoRefs,
+  verifyPhotoToken,
+} from "./lib/photoRefs";
+import { getApiBaseUrl } from "./env";
 
 const _uid = (s: string): Id<"users"> => s as Id<"users">;
 const _cid = (s: string | null | undefined): Id<"clients"> | undefined => (s ?? undefined) as Id<"clients"> | undefined;
@@ -97,12 +104,14 @@ function base64ToBlob(base64: string, contentType = "image/jpeg") {
   return new Blob([bytes], { type: contentType });
 }
 
-// Storage permissions: Convex's ctx.storage.store() is inherently secure —
-// stored files are only accessible via signed URLs, never directly. The main
-// concern is validating what gets stored before allowing it in.
+// Stored files are only reachable through the authorized /photos route, never
+// directly. What matters here is refusing to keep anything that is not actually
+// an image of a sane size — a client can upload arbitrary bytes straight to
+// storage, so this check is the only thing standing behind that door.
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+const IMAGE_HEADER_BYTES = 12;
 
 async function validateImageBlob(blob: Blob): Promise<Response | null> {
   if (blob.size > MAX_IMAGE_SIZE) {
@@ -113,7 +122,18 @@ async function validateImageBlob(blob: Blob): Promise<Response | null> {
       `Unsupported file type: ${blob.type}. Allowed: ${ALLOWED_IMAGE_TYPES.join(", ")}`,
     );
   }
-  const header = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+  // Anything shorter than the longest magic number we test cannot be a valid
+  // image, and would make the byte comparisons below read past the end.
+  if (blob.size < IMAGE_HEADER_BYTES) {
+    return badRequest("File is too small to be a valid image");
+  }
+  // Read the whole buffer rather than blob.slice(): blobs handed back by
+  // Convex storage throw "offset is out of bounds" on a sliced arrayBuffer(),
+  // which the old base64 path never hit because it built its blobs in-process.
+  const header = new Uint8Array(await blob.arrayBuffer()).subarray(
+    0,
+    IMAGE_HEADER_BYTES,
+  );
   const isJpeg = header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff;
   const isPng =
     header[0] === 0x89 &&
@@ -133,6 +153,212 @@ async function validateImageBlob(blob: Blob): Promise<Response | null> {
     return badRequest("File content does not match a supported image format (JPEG, PNG, or WebP)");
   }
   return null;
+}
+
+const PHOTO_KINDS = [
+  "clock_in",
+  "clock_out",
+  "incident",
+  "maintenance",
+  "post_order_proof",
+  "handover",
+] as const;
+type PhotoKind = (typeof PHOTO_KINDS)[number];
+
+/**
+ * Inspects a blob that a client uploaded straight to storage and records it.
+ *
+ * With direct uploads the bytes arrive before we ever see them, so validation
+ * moves from "reject at the door" to "inspect and destroy": anything that is
+ * not a real image of a sane size is deleted from storage immediately rather
+ * than being left to linger, and the caller gets the same 400 as before.
+ */
+async function claimUploadedPhoto(
+  ctx: any,
+  user: { convexId: string },
+  rawStorageId: unknown,
+  kind: PhotoKind,
+): Promise<{ storageId: string } | Response> {
+  if (typeof rawStorageId !== "string" || !rawStorageId.trim()) {
+    return badRequest("storageId is required");
+  }
+  const storageId = rawStorageId.trim() as Id<"_storage">;
+
+  const blob = await ctx.storage.get(storageId);
+  if (!blob) return badRequest("Upload not found — request a new upload URL");
+
+  const invalid = await validateImageBlob(blob);
+  if (invalid) {
+    await ctx.storage.delete(storageId);
+    return invalid;
+  }
+
+  try {
+    await ctx.runMutation(internal.photos.claimAsset, {
+      storageId,
+      uploadedBy: _uid(user.convexId),
+      kind,
+      contentType: blob.type,
+      sizeBytes: blob.size,
+    });
+  } catch (err) {
+    // Someone else's upload: leave their blob alone, refuse the claim.
+    if (err instanceof Error && err.message.includes("another user")) {
+      return forbidden("Upload belongs to another user");
+    }
+    throw err;
+  }
+  return { storageId };
+}
+
+/**
+ * Compatibility path for app builds that still send base64 in the request body.
+ *
+ * The bytes take the slow route (33% inflated on the wire, buffered in this
+ * function), but the result is identical to a direct upload: a validated blob
+ * with an ownership record, and a storageId — never a permanent URL — handed
+ * back for storage. Remove once the field has upgraded; see the report.
+ */
+async function legacyStorePhoto(
+  ctx: any,
+  user: { convexId: string },
+  base64: string,
+  kind: PhotoKind,
+): Promise<string | Response> {
+  const blob = base64ToBlob(base64);
+  const invalid = await validateImageBlob(blob);
+  if (invalid) return invalid;
+  const storageId = await ctx.storage.store(blob);
+  await ctx.runMutation(internal.photos.claimAsset, {
+    storageId,
+    uploadedBy: _uid(user.convexId),
+    kind,
+    contentType: blob.type,
+    sizeBytes: blob.size,
+  });
+  return storageId as string;
+}
+
+/**
+ * Binds already-claimed photos to the record that now references them. Called
+ * after the record exists so the sweeper stops treating them as abandoned.
+ */
+async function attachPhotos(
+  ctx: any,
+  user: { convexId: string },
+  storageIds: readonly string[],
+  table: string,
+  recordId: string,
+) {
+  for (const storageId of storageIds) {
+    await ctx.runMutation(internal.photos.attachAsset, {
+      storageId: storageId as Id<"_storage">,
+      userId: _uid(user.convexId),
+      table,
+      recordId,
+    });
+  }
+}
+
+/** Viewer shape the photo-ref resolver needs. */
+function photoViewer(user: {
+  role: string;
+  clientId?: string | null;
+  convexId?: string;
+}) {
+  return {
+    role: user.role,
+    clientId: user.clientId ?? null,
+    userId: user.convexId ?? null,
+  };
+}
+
+// Columns that hold a photo ref. Kept as data rather than resolved by hand at
+// each call site: there are a dozen routes returning these shapes, and a route
+// that quietly forgets to resolve is a broken image, while a route that forgets
+// to *stop* emitting a raw ref is a leak. One list, one place to audit.
+const PHOTO_REF_FIELDS = new Set([
+  "clockInPhoto",
+  "clockOutPhoto",
+  "proofPhotoUrl",
+  "photoUrl",
+]);
+const PHOTO_REF_ARRAY_FIELDS = new Set(["photoUrls", "evidenceUrls"]);
+
+/**
+ * Walks a response payload and swaps every stored photo ref for a short-lived
+ * signed URL the viewer is allowed to load. Legacy permanent URLs pass through
+ * untouched so unmigrated rows keep rendering.
+ */
+async function withSignedPhotos<T>(
+  user: { role: string; clientId?: string | null },
+  payload: T,
+): Promise<T> {
+  const viewer = photoViewer(user);
+  const apiBaseUrl = getApiBaseUrl();
+
+  const walk = async (node: any): Promise<any> => {
+    if (Array.isArray(node)) return await Promise.all(node.map(walk));
+    if (!node || typeof node !== "object") return node;
+
+    const out: Record<string, any> = {};
+    for (const [key, value] of Object.entries(node)) {
+      if (typeof value === "string" && PHOTO_REF_FIELDS.has(key)) {
+        out[key] = await resolvePhotoRef(value, viewer, apiBaseUrl);
+      } else if (Array.isArray(value) && PHOTO_REF_ARRAY_FIELDS.has(key)) {
+        out[key] = await resolvePhotoRefs(value as string[], viewer, apiBaseUrl);
+      } else {
+        out[key] = await walk(value);
+      }
+    }
+    return out;
+  };
+
+  return (await walk(payload)) as T;
+}
+
+/** json(), with every photo ref in the payload resolved for this viewer. */
+async function jsonWithPhotos(
+  user: { role: string; clientId?: string | null; convexId?: string },
+  payload: unknown,
+  init?: ResponseInit,
+) {
+  return json(await withSignedPhotos(user, payload), init);
+}
+
+/**
+ * json(), with export downloadUrl refs resolved into signed, expiring links.
+ * Separate from the photo walker because downloadUrl is a file, not an image,
+ * and is served by /files rather than /photos.
+ */
+async function withSignedFiles<T>(
+  user: { role: string; clientId?: string | null; convexId?: string },
+  payload: T,
+): Promise<T> {
+  const viewer = photoViewer(user);
+  const apiBaseUrl = getApiBaseUrl();
+  const walk = async (node: any): Promise<any> => {
+    if (Array.isArray(node)) return await Promise.all(node.map(walk));
+    if (!node || typeof node !== "object") return node;
+    const out: Record<string, any> = {};
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "downloadUrl" && typeof value === "string") {
+        out[key] = (await resolveFileRef(value, viewer, apiBaseUrl)) ?? "";
+      } else {
+        out[key] = await walk(value);
+      }
+    }
+    return out;
+  };
+  return (await walk(payload)) as T;
+}
+
+async function jsonWithFile(
+  user: { role: string; clientId?: string | null; convexId?: string },
+  payload: unknown,
+  init?: ResponseInit,
+) {
+  return json(await withSignedFiles(user, payload), init);
 }
 
 async function maybeResolveCheckpointId(
@@ -1468,7 +1694,10 @@ http.route({
     if (!isExportRole(user.role)) {
       return forbidden("Only Admin and Main Account can review exports");
     }
-    return json(await ctx.runQuery(internal.exports.listDailyExportsForUser, { userId: _uid(user.convexId) }));
+    return await jsonWithFile(
+      user,
+      await ctx.runQuery(internal.exports.listDailyExportsForUser, { userId: _uid(user.convexId) }),
+    );
   }),
 });
 
@@ -1521,21 +1750,21 @@ http.route({
     ];
     const blob = new Blob([csvRows.join("\n")], { type: "text/csv" });
     const storageId = await ctx.storage.store(blob);
-    // Cleanup: if the export record creation below fails, the stored file
-    // becomes orphaned. Consider a periodic cron to delete stale export
-    // files from storage that are older than 7 days.
-    const downloadUrl = (await ctx.storage.getUrl(storageId)) ?? "";
+    // Store the storageId only. This used to persist ctx.storage.getUrl(),
+    // a permanent public link to a CSV of a client's entire patrol history —
+    // the same defect as the photo URLs, on more sensitive data. The link is
+    // now minted per viewer, per request, and expires.
     const fileName = `daily-tour-${date}.csv`;
     const record = await ctx.runMutation(internal.exports.createDailyExportRecord, {
       userId: _uid(user.convexId),
       date,
       scopeLabel: user.clientName ?? "All clients",
       fileName,
-      downloadUrl,
+      downloadUrl: storageId,
       storageId,
       totals,
     });
-    return json(record, { status: 201 });
+    return await jsonWithFile(user, record);
   }),
 });
 
@@ -1548,7 +1777,7 @@ http.route({
     const url = new URL(request.url);
     const startDate = url.searchParams.get("startDate");
     const endDate = url.searchParams.get("endDate");
-    return json(await ctx.runQuery(internal.shifts.listAll, {
+    return await jsonWithPhotos(user, await ctx.runQuery(internal.shifts.listAll, {
       startDate: startDate ? new Date(startDate).getTime() : undefined,
       endDate: endDate ? new Date(endDate).getTime() : undefined,
       userId: user.role === "guard" ? _uid(user.convexId) : undefined,
@@ -1563,7 +1792,10 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
-    return json(await ctx.runQuery(internal.shifts.getStatusForUser, { userId: _uid(user.convexId) }));
+    return await jsonWithPhotos(
+      user,
+      await ctx.runQuery(internal.shifts.getStatusForUser, { userId: _uid(user.convexId) }),
+    );
   }),
 });
 
@@ -1576,13 +1808,18 @@ http.route({
     const roleErr = requireRole(user, ["guard", "supervisor"]);
     if (roleErr) return roleErr;
     const body = await parseJson(request);
-    let clockInPhotoUrl: string | undefined;
-    if (typeof body?.photoBase64 === "string" && body.photoBase64) {
-      const blob = base64ToBlob(body.photoBase64);
-      const bad = await validateImageBlob(blob);
-      if (bad) return bad;
-      const storageId = await ctx.storage.store(blob);
-      clockInPhotoUrl = (await ctx.storage.getUrl(storageId)) ?? undefined;
+    // Direct upload: the phone has already put the bytes in storage and hands
+    // us the id. photoBase64 stays accepted so an un-updated app in the field
+    // keeps clocking in (see legacyStorePhoto).
+    let clockInPhotoRef: string | undefined;
+    if (typeof body?.photoStorageId === "string" && body.photoStorageId) {
+      const claimed = await claimUploadedPhoto(ctx, user, body.photoStorageId, "clock_in");
+      if (claimed instanceof Response) return claimed;
+      clockInPhotoRef = claimed.storageId;
+    } else if (typeof body?.photoBase64 === "string" && body.photoBase64) {
+      const stored = await legacyStorePhoto(ctx, user, body.photoBase64, "clock_in");
+      if (stored instanceof Response) return stored;
+      clockInPhotoRef = stored;
     }
     let result;
     try {
@@ -1591,13 +1828,16 @@ http.route({
         latitude: typeof body?.gpsLatitude === "number" ? body.gpsLatitude : undefined,
         longitude: typeof body?.gpsLongitude === "number" ? body.gpsLongitude : undefined,
         siteLabel: typeof body?.siteLabel === "string" ? body.siteLabel : undefined,
-        clockInPhoto: clockInPhotoUrl,
+        clockInPhoto: clockInPhotoRef,
       });
     } catch (err) {
       if (err instanceof Error && err.message.includes("Already clocked in")) {
         return errorResponse("Already clocked in — end current shift first", 409);
       }
       throw err;
+    }
+    if (clockInPhotoRef) {
+      await attachPhotos(ctx, user, [clockInPhotoRef], "shifts", String(result.shift.id));
     }
     await recordAudit(ctx, user, "clock_in.created", {
       details: `Clock in at ${body?.siteLabel ?? "unknown site"}`,
@@ -1617,11 +1857,25 @@ http.route({
     const activeShift = await ctx.runQuery(internal.shifts.getActiveForUser, { userId: _uid(user.convexId) });
     if (!activeShift) return notFound("No active shift found");
     const body = await parseJson(request);
+    let clockOutPhotoRef: string | undefined;
+    if (typeof body?.photoStorageId === "string" && body.photoStorageId) {
+      const claimed = await claimUploadedPhoto(ctx, user, body.photoStorageId, "clock_out");
+      if (claimed instanceof Response) return claimed;
+      clockOutPhotoRef = claimed.storageId;
+    } else if (typeof body?.photoBase64 === "string" && body.photoBase64) {
+      const stored = await legacyStorePhoto(ctx, user, body.photoBase64, "clock_out");
+      if (stored instanceof Response) return stored;
+      clockOutPhotoRef = stored;
+    }
     const result = await ctx.runMutation(internal.shifts.clockOut, {
       shiftId: activeShift._id,
       latitude: typeof body?.gpsLatitude === "number" ? body.gpsLatitude : undefined,
       longitude: typeof body?.gpsLongitude === "number" ? body.gpsLongitude : undefined,
+      clockOutPhoto: clockOutPhotoRef,
     });
+    if (clockOutPhotoRef) {
+      await attachPhotos(ctx, user, [clockOutPhotoRef], "shifts", String(activeShift._id));
+    }
     await recordAudit(ctx, user, "clock_out.created", {
       details: "Clock out",
     });
@@ -1669,16 +1923,20 @@ http.route({
     const category = INCIDENT_CATEGORIES.includes(body?.category)
       ? body.category
       : "Security Incident";
+    // Photo refs (storageIds), not URLs — the column name is historical.
     const photoUrls: string[] = [];
+    const storageIds = Array.isArray(body?.photoStorageIds) ? body.photoStorageIds : [];
+    for (const storageId of storageIds.slice(0, 5)) {
+      const claimed = await claimUploadedPhoto(ctx, user, storageId, "incident");
+      if (claimed instanceof Response) return claimed;
+      photoUrls.push(claimed.storageId);
+    }
     const photos = Array.isArray(body?.photoBase64) ? body.photoBase64 : [];
     for (const photo of photos.slice(0, 5)) {
       if (typeof photo !== "string" || !photo) continue;
-      const blob = base64ToBlob(photo);
-      const bad = await validateImageBlob(blob);
-      if (bad) return bad;
-      const storageId = await ctx.storage.store(blob);
-      const url = await ctx.storage.getUrl(storageId);
-      if (url) photoUrls.push(url);
+      const stored = await legacyStorePhoto(ctx, user, photo, "incident");
+      if (stored instanceof Response) return stored;
+      photoUrls.push(stored);
     }
     const id = await ctx.runMutation(internal.incidents.create, {
       officerId: _uid(user.convexId),
@@ -1695,6 +1953,7 @@ http.route({
           ? body.severity
           : undefined,
     });
+    await attachPhotos(ctx, user, photoUrls, "incidents", String(id));
     await recordAudit(ctx, user, "incident.created", {
       targetType: "incident",
       targetId: id as string,
@@ -1761,18 +2020,24 @@ http.route({
       return badRequest("title and issue are required");
     }
     const checkpointId = await maybeResolveCheckpointId(ctx, body?.checkpointId);
+    // Evidence refs (storageIds), not URLs — the column name is historical.
     const evidenceUrls: string[] = [];
+    const evidenceIds = Array.isArray(body?.evidenceStorageIds)
+      ? body.evidenceStorageIds
+      : [];
+    for (const storageId of evidenceIds.slice(0, 5)) {
+      const claimed = await claimUploadedPhoto(ctx, user, storageId, "maintenance");
+      if (claimed instanceof Response) return claimed;
+      evidenceUrls.push(claimed.storageId);
+    }
     const evidence = Array.isArray(body?.evidenceBase64)
       ? body.evidenceBase64
       : [];
     for (const item of evidence.slice(0, 5)) {
       if (typeof item !== "string" || !item) continue;
-      const blob = base64ToBlob(item);
-      const bad = await validateImageBlob(blob);
-      if (bad) return bad;
-      const storageId = await ctx.storage.store(blob);
-      const url = await ctx.storage.getUrl(storageId);
-      if (url) evidenceUrls.push(url);
+      const stored = await legacyStorePhoto(ctx, user, item, "maintenance");
+      if (stored instanceof Response) return stored;
+      evidenceUrls.push(stored);
     }
     const id = await ctx.runMutation(internal.reports.submit, {
       type: "maintenance",
@@ -1790,6 +2055,7 @@ http.route({
       siteLabel: typeof body?.siteLabel === "string" ? body.siteLabel : "",
       userId: _uid(user.convexId),
     });
+    await attachPhotos(ctx, user, evidenceUrls, "reportSubmissions", String(id));
     await recordAudit(ctx, user, "maintenance.created", {
       targetType: "report",
       targetId: id as string,
@@ -2007,7 +2273,10 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
-    return json(await ctx.runQuery(internal.postOrders.listForUser, { userId: _uid(user.convexId) }));
+    return await jsonWithPhotos(
+      user,
+      await ctx.runQuery(internal.postOrders.listForUser, { userId: _uid(user.convexId) }),
+    );
   }),
 });
 
@@ -2021,7 +2290,8 @@ http.route({
     if (!user) return unauthorized();
     const roleErr = requireRole(user, ["admin", "main_account", "supervisor"]);
     if (roleErr) return roleErr;
-    return json(
+    return await jsonWithPhotos(
+      user,
       await ctx.runQuery(internal.postOrders.listForAdmin, {
         clientId: user.role === "admin" || user.role === "supervisor"
           ? undefined
@@ -2076,25 +2346,35 @@ http.route({
     }
     if (action === "complete") {
       const body = await parseJson(request);
+      // Proof ref (storageId), not a URL — the field name is historical.
       let proofPhotoUrl: string | undefined;
-      if (typeof body?.photoBase64 === "string" && body.photoBase64) {
-        const blob = base64ToBlob(body.photoBase64);
-        const bad = await validateImageBlob(blob);
-        if (bad) return bad;
-        const storageId = await ctx.storage.store(blob);
-        proofPhotoUrl = (await ctx.storage.getUrl(storageId)) ?? undefined;
+      if (typeof body?.photoStorageId === "string" && body.photoStorageId) {
+        const claimed = await claimUploadedPhoto(ctx, user, body.photoStorageId, "post_order_proof");
+        if (claimed instanceof Response) return claimed;
+        proofPhotoUrl = claimed.storageId;
+      } else if (typeof body?.photoBase64 === "string" && body.photoBase64) {
+        const stored = await legacyStorePhoto(ctx, user, body.photoBase64, "post_order_proof");
+        if (stored instanceof Response) return stored;
+        proofPhotoUrl = stored;
       }
-      return json(
-        await ctx.runMutation(internal.postOrders.complete, {
-          orderId,
-          userId: _uid(user.convexId),
-          proofNote: typeof body?.proofNote === "string" ? body.proofNote : undefined,
-          gpsLatitude: typeof body?.gpsLatitude === "number" ? body.gpsLatitude : undefined,
-          gpsLongitude: typeof body?.gpsLongitude === "number" ? body.gpsLongitude : undefined,
-          proofPhotoUrl,
-        }),
-        { status: 201 },
-      );
+      const completion = await ctx.runMutation(internal.postOrders.complete, {
+        orderId,
+        userId: _uid(user.convexId),
+        proofNote: typeof body?.proofNote === "string" ? body.proofNote : undefined,
+        gpsLatitude: typeof body?.gpsLatitude === "number" ? body.gpsLatitude : undefined,
+        gpsLongitude: typeof body?.gpsLongitude === "number" ? body.gpsLongitude : undefined,
+        proofPhotoUrl,
+      });
+      if (proofPhotoUrl) {
+        await attachPhotos(
+          ctx,
+          user,
+          [proofPhotoUrl],
+          "postOrderCompletions",
+          String((completion as any)?.id ?? orderId),
+        );
+      }
+      return json(completion, { status: 201 });
     }
     return notFound("Post order route not found");
   }),
@@ -2106,7 +2386,10 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
-    return json(await ctx.runQuery(internal.handovers.listPendingForUser, { userId: _uid(user.convexId) }));
+    return await jsonWithPhotos(
+      user,
+      await ctx.runQuery(internal.handovers.listPendingForUser, { userId: _uid(user.convexId) }),
+    );
   }),
 });
 
@@ -2122,13 +2405,16 @@ http.route({
     const summary = String(body?.summary ?? "").trim();
     if (!summary) return badRequest("summary is required");
     const checkpointId = await maybeResolveCheckpointId(ctx, body?.checkpointId);
+    // Photo ref (storageId), not a URL — the field name is historical.
     let photoUrl: string | undefined;
-    if (typeof body?.photoBase64 === "string" && body.photoBase64) {
-      const blob = base64ToBlob(body.photoBase64);
-      const bad = await validateImageBlob(blob);
-      if (bad) return bad;
-      const storageId = await ctx.storage.store(blob);
-      photoUrl = (await ctx.storage.getUrl(storageId)) ?? undefined;
+    if (typeof body?.photoStorageId === "string" && body.photoStorageId) {
+      const claimed = await claimUploadedPhoto(ctx, user, body.photoStorageId, "handover");
+      if (claimed instanceof Response) return claimed;
+      photoUrl = claimed.storageId;
+    } else if (typeof body?.photoBase64 === "string" && body.photoBase64) {
+      const stored = await legacyStorePhoto(ctx, user, body.photoBase64, "handover");
+      if (stored instanceof Response) return stored;
+      photoUrl = stored;
     }
     const result = await ctx.runMutation(internal.handovers.create, {
       userId: _uid(user.convexId),
@@ -2140,6 +2426,9 @@ http.route({
       checkpointId,
       photoUrl,
     });
+    if (photoUrl) {
+      await attachPhotos(ctx, user, [photoUrl], "handovers", String(result.id));
+    }
     await recordAudit(ctx, user, "handover.created", {
       targetType: "handover",
       targetId: result.id as unknown as string,
@@ -2424,7 +2713,7 @@ http.route({ path: "/reports", method: "GET", handler: httpAction(async (ctx, re
   const startDate = startRaw ? Date.parse(startRaw) : undefined;
   // An end DATE means "through the end of that day".
   const endDate = endRaw ? Date.parse(endRaw) + (endRaw.length <= 10 ? 86_399_999 : 0) : undefined;
-  return json(await ctx.runQuery(internal.reports.listAll, {
+  return await jsonWithPhotos(user, await ctx.runQuery(internal.reports.listAll, {
     clientId:
       user.role === "admin"
         ? _cid(url.searchParams.get("clientId"))
@@ -2636,7 +2925,7 @@ http.route({ path: "/incidents", method: "GET", handler: httpAction(async (ctx, 
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
   const url = new URL(request.url);
-  return json(await ctx.runQuery(internal.incidents.listForApi, {
+  return await jsonWithPhotos(user, await ctx.runQuery(internal.incidents.listForApi, {
     status: url.searchParams.get("status") ?? undefined,
     severity: url.searchParams.get("severity") ?? undefined,
     officerId: (url.searchParams.get("officerId") ?? undefined) as Id<"users"> | undefined,
@@ -2704,7 +2993,7 @@ http.route({ path: "/timesheets", method: "GET", handler: httpAction(async (ctx,
     };
   });
 
-  return json(result);
+  return await jsonWithPhotos(user, result);
 })});
 
 http.route({ path: "/timesheets/summary", method: "GET", handler: httpAction(async (ctx, request) => {
@@ -2753,7 +3042,7 @@ http.route({ path: "/timesheets/summary", method: "GET", handler: httpAction(asy
 http.route({ path: "/post-orders/completions", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
-  return json(await ctx.runQuery(internal.postOrders.listCompletions, {
+  return await jsonWithPhotos(user, await ctx.runQuery(internal.postOrders.listCompletions, {
     clientId: user.role === "admin" ? undefined : (_cid(user.clientId)),
   }));
 })});
@@ -2877,7 +3166,7 @@ http.route({ pathPrefix: "/post-orders/completions/", method: "PATCH", handler: 
 http.route({ path: "/handovers", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
-  return json(await ctx.runQuery(internal.handovers.listAll, {
+  return await jsonWithPhotos(user, await ctx.runQuery(internal.handovers.listAll, {
     clientId: user.role === "admin" ? undefined : (_cid(user.clientId)),
   }));
 })});
@@ -3192,5 +3481,126 @@ http.route({ pathPrefix: "/sites/", method: "PUT", handler: httpAction(async (ct
     patrolGracePeriodMinutes: body.patrolGracePeriodMinutes === undefined ? undefined : Number(body.patrolGracePeriodMinutes),
   }));
 })});
+
+// --- Photos: direct upload + authorized read ------------------------------
+//
+// Bytes never travel through this API. The client asks for a one-shot upload
+// URL, PUTs the file straight to storage, then hands back the storageId for
+// validation. Reading goes the other way: a storageId is only ever exchanged
+// for a short-lived signed URL by a handler that has already authorized the
+// viewer, and /photos verifies that signature before streaming anything.
+
+http.route({
+  path: "/uploads/url",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    // Every role that can create a record carrying a photo. Client accounts
+    // (main_account) submit nothing from the field and get no upload capability.
+    const roleErr = requireRole(user, ["guard", "supervisor", "admin"]);
+    if (roleErr) return roleErr;
+    return json({ uploadUrl: await ctx.storage.generateUploadUrl() });
+  }),
+});
+
+http.route({
+  path: "/uploads/claim",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    const roleErr = requireRole(user, ["guard", "supervisor", "admin"]);
+    if (roleErr) return roleErr;
+    const body = await parseJson(request);
+    const kind = PHOTO_KINDS.includes(body?.kind) ? (body.kind as PhotoKind) : null;
+    if (!kind) {
+      return badRequest(`kind must be one of: ${PHOTO_KINDS.join(", ")}`);
+    }
+    const claimed = await claimUploadedPhoto(ctx, user, body?.storageId, kind);
+    if (claimed instanceof Response) return claimed;
+    return json({ storageId: claimed.storageId }, { status: 201 });
+  }),
+});
+
+http.route({
+  pathPrefix: "/photos/",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    // Authorization rides in the signed token rather than a Bearer header: an
+    // <img> tag cannot set headers, and the alternative — handing out Convex's
+    // permanent public storage URLs — is what this whole change exists to kill.
+    const storageId = lastPathPart(request);
+    if (!storageId) return notFound("Photo not found");
+    const token = new URL(request.url).searchParams.get("token");
+    if (!token) return unauthorized();
+
+    const claims = await verifyPhotoToken(token);
+    if (!claims) return unauthorized();
+    // The token names the one blob it may read; the path cannot widen it.
+    if (claims.sid !== storageId) return forbidden("Token does not cover this photo");
+
+    // Defence in depth: even with a valid token, re-check the asset's owner, so
+    // a bug in any single read path cannot leak one client's photos to another.
+    // Assets predating this table carry no owner and fall back to the token
+    // check alone.
+    const asset = await ctx.runQuery(internal.photos.assetByStorageId, {
+      storageId: storageId as Id<"_storage">,
+    });
+    if (asset?.clientId) {
+      const isStaff = claims.role === "admin" || claims.role === "supervisor";
+      const sameTenant =
+        !!claims.cid && String(asset.clientId) === String(claims.cid);
+      // A guard usually has no clientId at all — they belong to a tenant only
+      // via their site — so "I took this photo" is the check that applies to
+      // them. Without it every guard would be refused their own evidence.
+      const isUploader =
+        !!claims.uid && String(asset.uploadedBy) === String(claims.uid);
+      if (!isStaff && !sameTenant && !isUploader) {
+        return forbidden("Photo belongs to another organization");
+      }
+    }
+
+    const blob = await ctx.storage.get(storageId as Id<"_storage">);
+    if (!blob) return notFound("Photo not found");
+    return new Response(blob, {
+      headers: {
+        "Content-Type": asset?.contentType || blob.type || "image/jpeg",
+        // Private: the URL is a short-lived capability, so it must not be held
+        // in a shared cache. The browser may keep it for the token's lifetime.
+        "Cache-Control": "private, max-age=600",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  }),
+});
+
+// Exports (CSV/XLSX of patrol data) live in the same storage as photos and were
+// previously handed out as permanent public URLs. Same capability model, but a
+// download rather than an inline image.
+http.route({
+  pathPrefix: "/files/",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const storageId = lastPathPart(request);
+    if (!storageId) return notFound("File not found");
+    const token = new URL(request.url).searchParams.get("token");
+    if (!token) return unauthorized();
+    const claims = await verifyPhotoToken(token);
+    if (!claims) return unauthorized();
+    if (claims.sid !== storageId) return forbidden("Token does not cover this file");
+
+    const blob = await ctx.storage.get(storageId as Id<"_storage">);
+    if (!blob) return notFound("File not found");
+    return new Response(blob, {
+      headers: {
+        "Content-Type": blob.type || "application/octet-stream",
+        "Content-Disposition": "attachment",
+        "Cache-Control": "private, max-age=300",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  }),
+});
 
 export default http;

@@ -3,24 +3,7 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
-
-function distanceMeters(
-  latitudeA: number,
-  longitudeA: number,
-  latitudeB: number,
-  longitudeB: number,
-) {
-  const earthRadius = 6371000;
-  const dLat = ((latitudeB - latitudeA) * Math.PI) / 180;
-  const dLon = ((longitudeB - longitudeA) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((latitudeA * Math.PI) / 180) *
-      Math.cos((latitudeB * Math.PI) / 180) *
-      Math.sin(dLon / 2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return Math.round(earthRadius * c);
-}
+import { distanceMeters } from "./lib/geo";
 
 async function validateSiteGeofence(
   ctx: MutationCtx,
@@ -298,6 +281,9 @@ export const clockOut = internalMutation({
     shiftId: v.id("shifts"),
     latitude: v.optional(v.number()),
     longitude: v.optional(v.number()),
+    // Photo ref (storageId), optional — parity with clock-in for sites that
+    // require proof at both ends of a shift.
+    clockOutPhoto: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db.get(args.shiftId);
@@ -319,6 +305,7 @@ export const clockOut = internalMutation({
       clockOutLongitude: args.longitude,
       clockOutGpsValid: geofence.gpsValid,
       clockOutDistanceMeters: geofence.distanceMeters,
+      ...(args.clockOutPhoto ? { clockOutPhoto: args.clockOutPhoto } : {}),
     });
 
     await ctx.runMutation(internal.activity.record, {

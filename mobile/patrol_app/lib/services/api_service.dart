@@ -7,8 +7,6 @@ import '../utils/constants.dart';
 
 dynamic _decodeJsonOnWorker(String source) => jsonDecode(source);
 
-String _base64EncodeOnWorker(Uint8List bytes) => base64Encode(bytes);
-
 class TokenExpiredException implements Exception {
   final String message;
   const TokenExpiredException([
@@ -38,12 +36,81 @@ class ApiService {
     return decoded as T;
   }
 
-  static Future<String> _readFileAsBase64(File file) async {
-    final bytes = await file.readAsBytes();
-    if (bytes.lengthInBytes > 128 * 1024) {
-      return compute(_base64EncodeOnWorker, bytes);
+  // --- Photo uploads --------------------------------------------------------
+  //
+  // Photos never travel through the API. The bytes go straight from the phone
+  // to object storage over a one-shot upload URL; the API only ever handles the
+  // resulting storageId. That keeps a 5MB image off the request path (base64
+  // also inflated it by a third) and out of the function's memory.
+
+  /// Guesses the content type from the file extension. The server re-derives and
+  /// re-validates this from the bytes themselves, so a wrong guess here is
+  /// rejected rather than trusted.
+  static String _contentTypeFor(File file) {
+    final path = file.path.toLowerCase();
+    if (path.endsWith('.png')) return 'image/png';
+    if (path.endsWith('.webp')) return 'image/webp';
+    return 'image/jpeg';
+  }
+
+  /// Uploads one image directly to storage and returns its storageId, already
+  /// validated and claimed server-side.
+  ///
+  /// Throws if the image is rejected (too large, not a real image), so callers
+  /// surface the problem at capture time rather than on submit.
+  static Future<String> uploadPhoto(File file, {required String kind}) async {
+    _ensureHttps();
+    final headers = await _headers();
+
+    // 1. One-shot upload URL, scoped to this authenticated user.
+    final urlRes = await _client
+        .post(Uri.parse('$baseUrl/uploads/url'), headers: headers)
+        .timeout(_timeout);
+    if (urlRes.statusCode != 200) {
+      throw _apiException(urlRes, 'Could not start photo upload');
     }
-    return base64Encode(bytes);
+    final uploadUrl = (await _decodeBody<Map<String, dynamic>>(urlRes.body))['uploadUrl'] as String;
+
+    // 2. Bytes go straight to storage — not through our API.
+    final bytes = await file.readAsBytes();
+    final uploadRes = await _client
+        .post(
+          Uri.parse(uploadUrl),
+          headers: {'Content-Type': _contentTypeFor(file)},
+          body: bytes,
+        )
+        .timeout(const Duration(seconds: 120));
+    if (uploadRes.statusCode != 200) {
+      throw Exception('Photo upload failed (${uploadRes.statusCode})');
+    }
+    final storageId =
+        (await _decodeBody<Map<String, dynamic>>(uploadRes.body))['storageId'] as String;
+
+    // 3. Server inspects the bytes and records ownership. An image that fails
+    //    validation is deleted from storage before this returns.
+    final claimRes = await _client
+        .post(
+          Uri.parse('$baseUrl/uploads/claim'),
+          headers: headers,
+          body: jsonEncode({'storageId': storageId, 'kind': kind}),
+        )
+        .timeout(_timeout);
+    if (claimRes.statusCode != 201) {
+      throw _apiException(claimRes, 'Photo was rejected');
+    }
+    return storageId;
+  }
+
+  /// uploadPhoto for a list, preserving order.
+  static Future<List<String>> uploadPhotos(
+    List<File> files, {
+    required String kind,
+  }) async {
+    final ids = <String>[];
+    for (final file in files) {
+      ids.add(await uploadPhoto(file, kind: kind));
+    }
+    return ids;
   }
 
   static void _ensureHttps() {
@@ -397,11 +464,10 @@ class ApiService {
       'category': category,
     };
     if (photos != null && photos.isNotEmpty) {
-      final photoBase64 = <String>[];
-      for (final photo in photos.take(5)) {
-        photoBase64.add(await _readFileAsBase64(photo));
-      }
-      body['photoBase64'] = photoBase64;
+      body['photoStorageIds'] = await uploadPhotos(
+        photos.take(5).toList(),
+        kind: 'incident',
+      );
     }
     final res = await _client
         .post(
@@ -462,11 +528,10 @@ class ApiService {
       'checkpointId': checkpointId,
     };
     if (evidence != null && evidence.isNotEmpty) {
-      final evidenceBase64 = <String>[];
-      for (final item in evidence.take(5)) {
-        evidenceBase64.add(await _readFileAsBase64(item));
-      }
-      body['evidenceBase64'] = evidenceBase64;
+      body['evidenceStorageIds'] = await uploadPhotos(
+        evidence.take(5).toList(),
+        kind: 'maintenance',
+      );
     }
     final res = await _client
         .post(
@@ -821,7 +886,7 @@ class ApiService {
     double? gpsLongitude,
   }) async {
     _ensureHttps();
-    final photoBase64 = await _readFileAsBase64(photo);
+    final storageId = await uploadPhoto(photo, kind: 'post_order_proof');
     final res = await _client
         .post(
           Uri.parse('$baseUrl/post-orders/$orderId/complete'),
@@ -830,10 +895,7 @@ class ApiService {
             'proofNote': proofNote,
             'gpsLatitude': gpsLatitude,
             'gpsLongitude': gpsLongitude,
-            'photoBase64': photoBase64,
-            'photoName': photo.uri.pathSegments.isNotEmpty
-                ? photo.uri.pathSegments.last
-                : 'proof.jpg',
+            'photoStorageId': storageId,
           }),
         )
         .timeout(_timeout);
@@ -863,14 +925,9 @@ class ApiService {
     File? photo,
   }) async {
     _ensureHttps();
-    String? photoBase64;
-    String? photoName;
-    if (photo != null) {
-      photoBase64 = await _readFileAsBase64(photo);
-      photoName = photo.uri.pathSegments.isNotEmpty
-          ? photo.uri.pathSegments.last
-          : 'handover.jpg';
-    }
+    final storageId = photo == null
+        ? null
+        : await uploadPhoto(photo, kind: 'handover');
 
     final res = await _client
         .post(
@@ -882,8 +939,7 @@ class ApiService {
             'equipmentStatus': equipmentStatus,
             'siteLabel': siteLabel,
             'checkpointId': checkpointId,
-            'photoBase64': photoBase64,
-            'photoName': photoName,
+            'photoStorageId': storageId,
           }),
         )
         .timeout(_timeout);

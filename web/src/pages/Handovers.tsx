@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
+import { Camera } from 'lucide-react'
 import { api } from '../services/api'
 import type { Handover } from '../types'
 import { EmptyState } from '../components/ui/EmptyState'
 import { Skeleton } from '../components/ui/Skeleton'
 import { formatDate } from '../utils/format'
+import { photoSrc } from '../utils/photo'
 import { ClipboardCheck } from 'lucide-react'
 
 const statuses = ['pending', 'accepted', 'closed'] as const
@@ -86,8 +88,18 @@ export default function Handovers() {
                   <div>{handover.equipmentStatus || 'No update'}</div>
                 </div>
               </div>
-              {handover.photoUrl ? (
-                <div className="mt-3 text-sm text-muted-foreground">Photo attached: {handover.photoUrl}</div>
+              {photoSrc(handover.photoUrl) ? (
+                <div className="mt-3">
+                  <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Camera className="h-3.5 w-3.5" /> Photo attached
+                  </div>
+                  <img
+                    src={photoSrc(handover.photoUrl)!}
+                    alt="Handover"
+                    loading="lazy"
+                    className="h-24 w-24 rounded-lg border border-border object-cover"
+                  />
+                </div>
               ) : null}
               <div className="mt-4 flex gap-2">
                 {statuses.map((status) => (

@@ -2,24 +2,7 @@ import { internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
-
-function distanceMeters(
-  latitudeA: number,
-  longitudeA: number,
-  latitudeB: number,
-  longitudeB: number,
-) {
-  const earthRadius = 6371000;
-  const dLat = ((latitudeB - latitudeA) * Math.PI) / 180;
-  const dLon = ((longitudeB - longitudeA) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((latitudeA * Math.PI) / 180) *
-      Math.cos((latitudeB * Math.PI) / 180) *
-      Math.sin(dLon / 2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return Math.round(earthRadius * c);
-}
+import { distanceMeters } from "./lib/geo";
 
 export const list = internalQuery({
   args: {
@@ -424,16 +407,10 @@ export const create = internalMutation({
       });
     }
 
-    if (args.gpsLatitude != null && args.gpsLongitude != null) {
-      await ctx.db.insert("officerPositions", {
-        clientId,
-        siteId,
-        userId: args.officerId,
-        latitude: args.gpsLatitude,
-        longitude: args.gpsLongitude,
-        capturedAt: scannedAt,
-      });
-    }
+    // No officerPositions row is written here. The scan itself already stores
+    // gpsLatitude/gpsLongitude/scannedAt, and the on-duty tracker records the
+    // guard's position independently — inserting a third copy of the same fix
+    // only inflated the largest table in the system.
 
     const recentScans = await ctx.db
       .query("scans")

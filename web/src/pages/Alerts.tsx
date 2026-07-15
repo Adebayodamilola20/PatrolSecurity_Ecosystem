@@ -6,6 +6,7 @@ import { useAuthStore } from '../stores/useAuthStore'
 import { useAlertStore } from '../stores/useAlertStore'
 import type { Incident, MissedPatrol } from '../types'
 import { formatDate } from '../utils/format'
+import { photoSrc } from '../utils/photo'
 
 const severityIcon: Record<string, typeof AlertTriangle> = {
   critical: AlertCircle,
@@ -221,7 +222,9 @@ export default function Alerts() {
             const Icon = severityIcon[inc.severity] || Info
             const color = severityColor[inc.severity]
             const expanded = expandedId === inc.id
-            const photos = inc.photoUrls ?? []
+            const photos = (inc.photoUrls ?? [])
+              .map((url) => photoSrc(url))
+              .filter((url): url is string => !!url)
             const hasCoords = inc.latitude != null && inc.longitude != null
             const locationLabel = [inc.checkpointName, inc.siteName].filter(Boolean).join(' — ')
             return (

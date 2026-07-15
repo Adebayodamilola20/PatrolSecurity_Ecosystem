@@ -29,6 +29,23 @@ const handoverStatus = v.union(
   v.literal("closed"),
 );
 
+/**
+ * A reference to an image in Convex file storage.
+ *
+ * Holds a storageId — NOT a URL. Permanent storage URLs must never be persisted:
+ * they are publicly fetchable by anyone who obtains the string, forever, with no
+ * authorization check. Callers resolve a ref into a short-lived signed URL at
+ * read time, after the viewer has been authorized (see convex/lib/photoRefs.ts).
+ *
+ * Rows written before that rule existed may still contain an absolute
+ * "https://...convex.cloud/api/storage/..." URL; the resolver passes those
+ * through so unmigrated production data keeps rendering, and
+ * `photoMigration.migrateLegacyPhotoUrls` converts them in place. The column
+ * type is unchanged (both forms are strings), so no data rewrite is required to
+ * deploy this.
+ */
+const photoRef = v.string();
+
 const activityType = v.union(
   v.literal("clock_in"),
   v.literal("clock_out"),
@@ -160,7 +177,9 @@ export default defineSchema({
     status: shiftStatus,
     clockIn: v.number(),
     clockOut: v.optional(v.number()),
-    clockInPhoto: v.string(),
+    // Photo refs (storageId), not URLs. See photoRef above.
+    clockInPhoto: photoRef,
+    clockOutPhoto: v.optional(photoRef),
     clockInLatitude: v.optional(v.number()),
     clockInLongitude: v.optional(v.number()),
     clockInGpsValid: v.optional(v.boolean()),
@@ -273,7 +292,8 @@ export default defineSchema({
     ),
     title: v.string(),
     description: v.string(),
-    photoUrls: v.optional(v.array(v.string())),
+    // Photo refs (storageIds), not URLs. See photoRef above.
+    photoUrls: v.optional(v.array(photoRef)),
     severity: incidentSeverity,
     status: incidentStatus,
     reportedAt: v.number(),
@@ -297,7 +317,8 @@ export default defineSchema({
     summary: v.string(),
     details: v.any(),
     equipmentName: v.optional(v.string()),
-    evidenceUrls: v.optional(v.array(v.string())),
+    // Photo refs (storageIds), not URLs. See photoRef above.
+    evidenceUrls: v.optional(v.array(photoRef)),
     gpsLatitude: v.optional(v.number()),
     gpsLongitude: v.optional(v.number()),
     checkpointId: v.optional(v.id("checkpoints")),
@@ -461,7 +482,8 @@ export default defineSchema({
     status: v.union(v.literal("acknowledged"), v.literal("completed")),
     acknowledgedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
-    proofPhotoUrl: v.string(),
+    // Photo ref (storageId), not a URL. See photoRef above.
+    proofPhotoUrl: photoRef,
     proofNote: v.string(),
     proofGpsLatitude: v.optional(v.number()),
     proofGpsLongitude: v.optional(v.number()),
@@ -625,7 +647,8 @@ export default defineSchema({
     summary: v.string(),
     openIssues: v.string(),
     equipmentStatus: v.string(),
-    photoUrl: v.string(),
+    // Photo ref (storageId), not a URL. See photoRef above.
+    photoUrl: photoRef,
     status: handoverStatus,
     acceptedNote: v.string(),
     createdAt: v.number(),
@@ -683,4 +706,40 @@ export default defineSchema({
     .index("by_siteId", ["siteId"])
     .index("by_officerId", ["officerId"])
     .index("by_status", ["status"]),
+
+  // Ownership record for every blob in Convex file storage.
+  //
+  // Photo columns elsewhere hold a *reference* to a blob, not a URL. Storage
+  // itself has no notion of who a file belongs to, so this table is what makes
+  // "can this viewer see this photo?" answerable at serve time, and what lets
+  // the orphan sweeper tell an in-use blob from an abandoned upload.
+  photoAssets: defineTable({
+    storageId: v.id("_storage"),
+    // Tenant the photo belongs to. Null only for uploads whose owning record is
+    // not written yet (see attachedAt) or for a user with no client.
+    clientId: v.optional(v.id("clients")),
+    siteId: v.optional(v.id("sites")),
+    uploadedBy: v.id("users"),
+    kind: v.union(
+      v.literal("clock_in"),
+      v.literal("clock_out"),
+      v.literal("incident"),
+      v.literal("maintenance"),
+      v.literal("post_order_proof"),
+      v.literal("handover"),
+    ),
+    contentType: v.string(),
+    sizeBytes: v.number(),
+    // Set once the blob is referenced by a real record. An asset that is still
+    // unattached after the orphan TTL is deleted, blob and all.
+    attachedAt: v.optional(v.number()),
+    attachedTable: v.optional(v.string()),
+    attachedId: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_storageId", ["storageId"])
+    .index("by_clientId", ["clientId"])
+    .index("by_uploadedBy", ["uploadedBy"])
+    .index("by_attachedAt", ["attachedAt"])
+    .index("by_createdAt", ["createdAt"]),
 });
