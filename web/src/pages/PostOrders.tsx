@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Camera, CheckCircle2, ClipboardList, Clock3, Plus, X, XCircle } from 'lucide-react'
 import { API_BASE, api } from '../services/api'
 import type { Checkpoint, PostOrder, PostOrderCompletion, User } from '../types'
@@ -30,7 +30,9 @@ export default function PostOrders() {
     assignedRole: 'guard',
     priority: 'normal',
     active: true,
-    requiresAcknowledgement: false,
+    // Acknowledgement is not optional: an order a guard is shown is an order
+    // they have to confirm they read, so it always pops up on scan.
+    requiresAcknowledgement: true,
     requiresPhotoProof: true,
   })
 
@@ -71,15 +73,6 @@ export default function PostOrders() {
     void load()
   }, [])
 
-  const toggleFormGuard = (id: string) => {
-    setForm((f) => ({
-      ...f,
-      assignedUserIds: f.assignedUserIds.includes(id)
-        ? f.assignedUserIds.filter((g) => g !== id)
-        : [...f.assignedUserIds, id],
-    }))
-  }
-
   const createOrder = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
@@ -103,7 +96,7 @@ export default function PostOrders() {
         assignedRole: 'guard',
         priority: 'normal',
         active: true,
-        requiresAcknowledgement: false,
+        requiresAcknowledgement: true,
         requiresPhotoProof: true,
       })
       await load()
@@ -191,28 +184,21 @@ export default function PostOrders() {
 
             {/* Multiple guards can be posted to one order. None selected = every
                 guard the location/sub-location reaches. */}
-            <div>
-              <div className="mb-2 text-sm font-medium">Assign guards <span className="text-muted-foreground font-normal">({form.assignedUserIds.length || 'none'} selected — leave empty for all guards at this location)</span></div>
-              <div className="max-h-40 overflow-y-auto rounded-lg border border-border bg-background p-2 grid grid-cols-1 sm:grid-cols-2 gap-1">
-                {users.length === 0 ? (
-                  <div className="text-sm text-muted-foreground px-1 py-2">No guards available.</div>
-                ) : users.map((user) => (
-                  <label key={user.id} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent cursor-pointer">
-                    <input type="checkbox" checked={form.assignedUserIds.includes(user.id)} onChange={() => toggleFormGuard(user.id)} />
-                    <span>{user.name}</span>
-                    {user.role === 'supervisor' && <span className="text-[10px] uppercase text-muted-foreground">Supervisor</span>}
-                  </label>
-                ))}
-              </div>
-            </div>
+            <GuardPicker
+              guards={users}
+              selected={form.assignedUserIds}
+              onChange={(ids) => setForm((f) => ({ ...f, assignedUserIds: ids }))}
+            />
 
             <textarea required value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} placeholder="Detailed instructions" className="min-h-32 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
             <div className="flex flex-wrap gap-4 text-sm">
               <label className="flex items-center gap-2"><input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} /> Active</label>
-              <label className="flex items-center gap-2"><input type="checkbox" checked={form.requiresAcknowledgement} onChange={(e) => setForm({ ...form, requiresAcknowledgement: e.target.checked })} /> Pop up &amp; require acknowledgement on scan</label>
               <label className="flex items-center gap-2"><input type="checkbox" checked={form.requiresPhotoProof} onChange={(e) => setForm({ ...form, requiresPhotoProof: e.target.checked })} /> Requires proof photo</label>
             </div>
-            {form.requiresAcknowledgement && !form.checkpointId && !form.siteId && (
+            <div className="text-xs text-muted-foreground">
+              Every post order pops up on scan and must be acknowledged by the guard.
+            </div>
+            {!form.checkpointId && !form.siteId && (
               <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
                 Heads up: this order isn't tied to a location, so it won't pop up on any scan. Pick a location or sub-location above.
               </div>
@@ -341,6 +327,131 @@ export default function PostOrders() {
   )
 }
 
+/**
+ * Multi-select guard dropdown with a search box — the roster can get long
+ * enough that a flat checkbox list stops being usable.
+ */
+function GuardPicker({
+  guards,
+  selected,
+  onChange,
+  label = 'Assign guards',
+}: {
+  guards: User[]
+  selected: string[]
+  onChange: (ids: string[]) => void
+  label?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDocClick = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDocClick)
+    document.addEventListener('keydown', onEsc)
+    return () => {
+      document.removeEventListener('mousedown', onDocClick)
+      document.removeEventListener('keydown', onEsc)
+    }
+  }, [open])
+
+  const toggle = (id: string) =>
+    onChange(selected.includes(id) ? selected.filter((g) => g !== id) : [...selected, id])
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return guards
+    return guards.filter((g) => g.name.toLowerCase().includes(q) || g.email?.toLowerCase().includes(q))
+  }, [guards, query])
+
+  const chosen = guards.filter((g) => selected.includes(g.id))
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <div className="mb-2 text-sm font-medium">
+        {label}{' '}
+        <span className="font-normal text-muted-foreground">
+          (leave empty for every guard at this location)
+        </span>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-2 text-left text-sm hover:border-primary/50"
+      >
+        <span className={chosen.length ? 'text-foreground' : 'text-muted-foreground'}>
+          {chosen.length === 0
+            ? 'All guards at this location'
+            : `${chosen.length} guard${chosen.length === 1 ? '' : 's'} selected`}
+        </span>
+        <span className="text-xs text-muted-foreground">{open ? 'Close' : 'Select'}</span>
+      </button>
+
+      {chosen.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {chosen.map((g) => (
+            <span key={g.id} className="inline-flex items-center gap-1 rounded-full bg-primary/10 py-1 pl-2.5 pr-1 text-xs text-primary">
+              {g.name}
+              <button
+                type="button"
+                onClick={() => toggle(g.id)}
+                title={`Remove ${g.name}`}
+                className="rounded-full p-0.5 hover:bg-primary/20"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {open && (
+        <div className="absolute z-10 mt-2 w-full rounded-lg border border-border bg-card shadow-lg">
+          <div className="border-b border-border p-2">
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search guards by name or email"
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="max-h-56 overflow-y-auto p-1">
+            {filtered.length === 0 ? (
+              <div className="px-3 py-4 text-sm text-muted-foreground">
+                {guards.length === 0 ? 'No guards available.' : `No guard matches "${query}".`}
+              </div>
+            ) : filtered.map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() => toggle(g.id)}
+                className="flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-accent"
+              >
+                <span className="flex items-center gap-2">
+                  {g.name}
+                  {g.role === 'supervisor' && (
+                    <span className="text-[10px] uppercase text-muted-foreground">Supervisor</span>
+                  )}
+                </span>
+                {selected.includes(g.id) && <CheckCircle2 className="h-4 w-4 text-primary" />}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function PostOrderDetail({
   order,
   guards,
@@ -363,24 +474,20 @@ function PostOrderDetail({
     [order],
   )
   const [selected, setSelected] = useState<string[]>(initialGuards)
-  const [requiresAck, setRequiresAck] = useState(order.requiresAcknowledgement)
   const [active, setActive] = useState(order.active)
   const [saving, setSaving] = useState(false)
 
   const dirty =
-    requiresAck !== order.requiresAcknowledgement ||
     active !== order.active ||
     selected.slice().sort().join(',') !== initialGuards.slice().sort().join(',')
-
-  const toggle = (id: string) =>
-    setSelected((s) => (s.includes(id) ? s.filter((g) => g !== id) : [...s, id]))
 
   const save = async () => {
     setSaving(true)
     try {
       await api.postOrders.update(order.id, {
         assignedUserIds: selected,
-        requiresAcknowledgement: requiresAck,
+        // Always on — also repairs legacy orders that were saved without it.
+        requiresAcknowledgement: true,
         active,
       })
       await onSaved()
@@ -414,24 +521,11 @@ function PostOrderDetail({
         <div className="rounded-lg border border-border/60 bg-background/40 p-3 text-sm whitespace-pre-wrap">{order.instructions}</div>
 
         {/* Reassign: add or remove guards on this order. */}
-        <div>
-          <div className="mb-2 text-sm font-medium">Assigned guards <span className="font-normal text-muted-foreground">({selected.length || 'none'} — none means every guard at this location)</span></div>
-          <div className="max-h-44 overflow-y-auto rounded-lg border border-border bg-background p-2 grid grid-cols-1 sm:grid-cols-2 gap-1">
-            {guards.length === 0 ? (
-              <div className="px-1 py-2 text-sm text-muted-foreground">No guards available.</div>
-            ) : guards.map((g) => (
-              <label key={g.id} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent cursor-pointer">
-                <input type="checkbox" checked={selected.includes(g.id)} onChange={() => toggle(g.id)} />
-                <span>{g.name}</span>
-                {g.role === 'supervisor' && <span className="text-[10px] uppercase text-muted-foreground">Supervisor</span>}
-              </label>
-            ))}
-          </div>
-        </div>
+        <GuardPicker guards={guards} selected={selected} onChange={setSelected} label="Assigned guards" />
 
-        <div className="flex flex-wrap gap-4 text-sm">
+        <div className="flex flex-wrap items-center gap-4 text-sm">
           <label className="flex items-center gap-2"><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Active</label>
-          <label className="flex items-center gap-2"><input type="checkbox" checked={requiresAck} onChange={(e) => setRequiresAck(e.target.checked)} /> Pop up &amp; require acknowledgement on scan</label>
+          <span className="text-xs text-muted-foreground">Pops up on scan and must be acknowledged.</span>
         </div>
 
         {/* Who acknowledged this order, and when. */}
