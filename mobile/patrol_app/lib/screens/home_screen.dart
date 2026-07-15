@@ -12,6 +12,7 @@ import '../utils/access_control.dart';
 import '../utils/routes.dart';
 import '../utils/sign_out.dart';
 import '../utils/theme.dart';
+import '../widgets/duty_prompts.dart';
 import '../widgets/scan_tile.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -239,6 +240,13 @@ class _HomeScreenState extends State<HomeScreen> {
   void _openScannerOrExplain(BuildContext context) {
     if (!canSubmitPatrol(context.read<AuthProvider>().user)) {
       Navigator.pushNamed(context, AppRoutes.patrol);
+      return;
+    }
+    // Answer here instead of walking the officer to the scanner just to turn
+    // them away. The scanner re-checks on arrival for anything that reaches it
+    // another way, and the server refuses off-duty scans regardless.
+    if (!context.read<ShiftProvider>().onDuty) {
+      showClockInRequired(context);
       return;
     }
     Navigator.pushNamed(context, AppRoutes.scanner);
@@ -997,31 +1005,7 @@ class _DashboardTab extends StatelessWidget {
                 child: ElevatedButton.icon(
                   onPressed: shift.loading
                       ? null
-                      : () async {
-                          final wasOnDuty = shift.onDuty;
-                          final ok = wasOnDuty
-                              ? await shift.clockOut()
-                              : await shift.clockIn();
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  ok
-                                      ? (wasOnDuty
-                                            ? 'Clocked out successfully'
-                                            : 'Clocked in successfully')
-                                      : (shift.error ??
-                                            'Action failed. Check your connection and try again.'),
-                                ),
-                                backgroundColor: ok
-                                    ? (wasOnDuty
-                                          ? AppTheme.textSecondary
-                                          : AppTheme.verified)
-                                    : AppTheme.error,
-                              ),
-                            );
-                          }
-                        },
+                      : () => handleDutyToggle(context),
                   icon: Icon(
                     shift.onDuty ? Icons.logout : Icons.login,
                     size: 20,
