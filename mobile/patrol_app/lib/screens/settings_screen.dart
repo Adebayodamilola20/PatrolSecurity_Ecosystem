@@ -4,8 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/scan_provider.dart';
-import '../providers/shift_provider.dart';
-import '../utils/routes.dart';
+import '../utils/sign_out.dart';
 import '../utils/theme.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -1074,14 +1073,7 @@ class _LogoutButton extends StatelessWidget {
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
-              context.read<ScanProvider>().clearData();
-              context.read<ShiftProvider>().clearData();
-              context.read<AuthProvider>().logout();
-              Navigator.pushNamedAndRemoveUntil(
-                context,
-                AppRoutes.login,
-                (_) => false,
-              );
+              signOutAndReturnToLogin(context);
             },
             style: FilledButton.styleFrom(backgroundColor: AppTheme.error),
             child: const Text('Sign Out'),

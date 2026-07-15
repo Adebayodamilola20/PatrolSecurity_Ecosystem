@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/scan_provider.dart';
-import '../providers/shift_provider.dart';
 import '../utils/routes.dart';
+import '../utils/sign_out.dart';
 import '../utils/theme.dart';
 
 class ProfileScreen extends StatelessWidget {
@@ -170,18 +170,7 @@ class ProfileScreen extends StatelessWidget {
             width: double.infinity,
             height: 50,
             child: ElevatedButton.icon(
-              onPressed: () async {
-                context.read<ScanProvider>().clearData();
-                context.read<ShiftProvider>().clearData();
-                await auth.logout();
-                if (context.mounted) {
-                  Navigator.pushNamedAndRemoveUntil(
-                    context,
-                    AppRoutes.login,
-                    (_) => false,
-                  );
-                }
-              },
+              onPressed: () => signOutAndReturnToLogin(context),
               icon: const Icon(Icons.logout),
               label: const Text('Sign Out'),
               style: ElevatedButton.styleFrom(

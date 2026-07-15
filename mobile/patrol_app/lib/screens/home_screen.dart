@@ -10,6 +10,7 @@ import '../services/location_service.dart';
 import '../models/user.dart';
 import '../utils/access_control.dart';
 import '../utils/routes.dart';
+import '../utils/sign_out.dart';
 import '../utils/theme.dart';
 import '../widgets/scan_tile.dart';
 
@@ -243,15 +244,6 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.pushNamed(context, AppRoutes.scanner);
   }
 
-  Future<void> _signOut(BuildContext context) async {
-    final navigator = Navigator.of(context);
-    context.read<ScanProvider>().clearData();
-    context.read<ShiftProvider>().clearData();
-    context.read<DutyProvider>().clearData();
-    await context.read<AuthProvider>().logout();
-    navigator.pushNamedAndRemoveUntil(AppRoutes.login, (_) => false);
-  }
-
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().user;
@@ -330,7 +322,7 @@ class _HomeScreenState extends State<HomeScreen> {
         destructive: true,
         onTap: () {
           Navigator.pop(context);
-          _signOut(context);
+          signOutAndReturnToLogin(context);
         },
       ),
     ];
