@@ -3532,4 +3532,76 @@ http.route({
   }),
 });
 
+// A client account with no tenant attached has no data to aggregate. Shaped
+// like a real (empty) result so the UI renders zeroes instead of an error.
+const EMPTY_ANALYTICS = {
+  range: { since: 0, until: 0, days: 0 },
+  truncated: false,
+  totals: {
+    patrols: 0, verifiedPatrols: 0, verificationRate: null, incidents: 0,
+    openIncidents: 0, reports: 0, shifts: 0, dutyHours: 0, avgShiftHours: null,
+    activeGuards: 0, sites: 0,
+  },
+  series: [],
+  sites: [],
+  incidentsBySeverity: [],
+  incidentsByCategory: [],
+  topGuards: [],
+};
+
+// Patrol analytics for the staff dashboard. Staff only: client accounts sign in
+// through the portal and use /client/analytics, and requireAuth rejects portal
+// tokens here regardless. A tenant-bound caller is still pinned to its own
+// client and cannot widen scope via ?clientId, matching what /sites enforces.
+http.route({ path: "/analytics", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  const roleErr = requireRole(user, ["admin", "supervisor"]);
+  if (roleErr) return roleErr;
+
+  const url = new URL(request.url);
+  const clientId = user.clientId
+    ? _cid(user.clientId)
+    : _cid(url.searchParams.get("clientId"));
+
+  const rawSite = url.searchParams.get("siteId");
+  const siteId = rawSite
+    ? await ctx.runQuery(internal.sites.resolveId, { id: rawSite })
+    : null;
+  // An unresolvable site filter must return that site's (empty) analytics, not
+  // silently widen to everything.
+  if (rawSite && !siteId) return notFound("Site not found");
+
+  return json(await ctx.runQuery(internal.analytics.summary, {
+    clientId,
+    siteId: siteId ?? undefined,
+    days: Number(url.searchParams.get("days") ?? 30),
+    includeGuards: true,
+  }));
+})});
+
+// [client-structure] Portal analytics — same aggregates, tenant-pinned, and
+// never carrying guard identities (AGM rule).
+http.route({ path: "/client/analytics", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request, { allowClientPortal: true });
+  if (!user) return unauthorized();
+  if (user.role !== "main_account") return forbidden("The client portal is for client accounts only.");
+  const clientId = _cid(user.clientId);
+  if (!clientId) return json(EMPTY_ANALYTICS);
+
+  const url = new URL(request.url);
+  const rawSite = url.searchParams.get("siteId");
+  const siteId = rawSite
+    ? await ctx.runQuery(internal.sites.resolveId, { id: rawSite })
+    : null;
+  if (rawSite && !siteId) return notFound("Site not found");
+
+  return json(await ctx.runQuery(internal.analytics.summary, {
+    clientId,
+    siteId: siteId ?? undefined,
+    days: Number(url.searchParams.get("days") ?? 30),
+    includeGuards: false,
+  }));
+})});
+
 export default http;

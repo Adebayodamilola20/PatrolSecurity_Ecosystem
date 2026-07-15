@@ -17,6 +17,7 @@ import {
   User,
   Bot,
   Activity,
+  BarChart3,
 } from 'lucide-react'
 import { useAuthStore, useCanManageUsers, useCanViewAlerts } from '../../stores/useAuthStore'
 import { useAlertStore } from '../../stores/useAlertStore'
@@ -57,6 +58,9 @@ function useNav() {
   items.push({ to: '/handovers', label: 'Handovers', icon: ClipboardCheck })
   items.push({ to: '/pass-on-logs', label: 'Pass-On Logs', icon: ClipboardList })
   items.push({ to: '/activity-summary', label: 'Activity Summary', icon: Activity })
+  if (role === 'admin' || role === 'supervisor') {
+    items.push({ to: '/analytics', label: 'Analytics', icon: BarChart3 })
+  }
   items.push({ to: '/ai-assistant', label: 'AI Assistant', icon: Bot })
 
   if (role === 'admin' || role === 'main_account') {

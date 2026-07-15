@@ -11,6 +11,7 @@
 import type * as activity from "../activity.js";
 import type * as ai from "../ai.js";
 import type * as aiService from "../aiService.js";
+import type * as analytics from "../analytics.js";
 import type * as audit from "../audit.js";
 import type * as checkpoints from "../checkpoints.js";
 import type * as clients from "../clients.js";
@@ -66,6 +67,7 @@ declare const fullApi: ApiFromModules<{
   activity: typeof activity;
   ai: typeof ai;
   aiService: typeof aiService;
+  analytics: typeof analytics;
   audit: typeof audit;
   checkpoints: typeof checkpoints;
   clients: typeof clients;

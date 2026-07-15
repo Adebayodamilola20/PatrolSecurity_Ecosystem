@@ -256,3 +256,47 @@ export interface Handover {
   createdAt: string
   acceptedAt?: string | null
 }
+
+/**
+ * Patrol analytics from /analytics. Every figure is aggregated from real
+ * scans, shifts, incidents and reports — nothing is estimated or projected.
+ */
+export interface AnalyticsSeriesPoint {
+  date: string
+  patrols: number
+  verified: number
+  incidents: number
+}
+
+export interface AnalyticsSiteRow {
+  id: string
+  name: string
+  patrols: number
+  verified: number
+  verificationRate: number | null
+  lastScanAt: number | null
+}
+
+export interface AnalyticsSummary {
+  range: { since: number; until: number; days: number }
+  /** True when the window hit the backend row cap and figures are partial. */
+  truncated: boolean
+  totals: {
+    patrols: number
+    verifiedPatrols: number
+    verificationRate: number | null
+    incidents: number
+    openIncidents: number
+    reports: number
+    shifts: number
+    dutyHours: number
+    avgShiftHours: number | null
+    activeGuards: number
+    sites: number
+  }
+  series: AnalyticsSeriesPoint[]
+  sites: AnalyticsSiteRow[]
+  incidentsBySeverity: { severity: string; count: number }[]
+  incidentsByCategory: { category: string; count: number }[]
+  topGuards: { id: string; name: string; patrols: number }[]
+}

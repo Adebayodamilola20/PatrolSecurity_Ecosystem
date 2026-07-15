@@ -1,6 +1,7 @@
 import { internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import bcrypt from "bcryptjs";
 import { distanceMeters } from "./lib/geo";
 import { signPhotoToken, verifyPhotoToken, storageIdFromLegacyUrl, isLegacyUrlRef } from "./lib/photoRefs";
 
@@ -276,6 +277,70 @@ export const cleanupTestArtifacts = internalMutation({
     }
 
     return { removed, count: removed.length };
+  },
+});
+
+/**
+ * Creates a throwaway client-portal login so the /client/* routes can be
+ * exercised over real HTTP without knowing (or resetting) a real client's
+ * password. Always pair with `deleteTempPortalUser`.
+ *
+ * The email prefix is what makes the deletion safe — see below.
+ */
+export const TEMP_USER_PREFIX = "selftest+";
+
+export const createTempPortalUser = internalMutation({
+  args: { clientId: v.id("clients"), email: v.string(), password: v.string() },
+  handler: async (ctx, args) => {
+    if (!args.email.startsWith(TEMP_USER_PREFIX)) {
+      throw new Error(`Test logins must use the ${TEMP_USER_PREFIX} prefix`);
+    }
+    const existing = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .unique();
+    if (existing) await ctx.db.delete(existing._id);
+
+    return await ctx.db.insert("users", {
+      name: "Self-test portal user",
+      email: args.email,
+      // hashSync, not hash: the async variant schedules via setTimeout, which
+      // Convex forbids inside a mutation (http.ts can use it — actions may).
+      passwordHash: bcrypt.hashSync(args.password, 10),
+      role: "main_account" as const,
+      phone: "",
+      active: true,
+      clientId: args.clientId,
+      liveTracking: false,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+/**
+ * Deletes a login created by `createTempPortalUser`, along with any sessions it
+ * opened. Refuses anything without the test prefix so a mistyped id can never
+ * take out a real account.
+ */
+export const deleteTempPortalUser = internalMutation({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    if (!args.email.startsWith(TEMP_USER_PREFIX)) {
+      throw new Error(`Refusing to delete a non-test account: ${args.email}`);
+    }
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .unique();
+    if (!user) return { deleted: false, sessions: 0 };
+
+    const tokens = await ctx.db
+      .query("refreshTokens")
+      .withIndex("by_userId", (q) => q.eq("userId", user._id))
+      .collect();
+    for (const token of tokens) await ctx.db.delete(token._id);
+    await ctx.db.delete(user._id);
+    return { deleted: true, sessions: tokens.length };
   },
 });
 

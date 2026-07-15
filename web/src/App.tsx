@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import DashboardLayout from './components/layout/DashboardLayout'
 import CookieConsent from './components/CookieConsent'
@@ -28,6 +28,10 @@ import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
 import { useAuthStore, useCanViewLiveTracking, type UserRole } from './stores/useAuthStore'
 import { useIdleLogout } from './hooks/useIdleLogout'
+
+// Analytics pulls in the charting library; loading it on demand keeps it out
+// of the bundle every other page pays for.
+const Analytics = lazy(() => import('./pages/Analytics'))
 
 const roleHomePath: Record<UserRole, string> = {
   admin: '/',
@@ -113,6 +117,7 @@ export default function App() {
           <Route path="/handovers" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Handovers /></RoleRoute>} />
           <Route path="/pass-on-logs" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><PassOnLogs /></RoleRoute>} />
           <Route path="/activity-summary" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><ActivitySummary /></RoleRoute>} />
+          <Route path="/analytics" element={<RoleRoute allowedRoles={['admin', 'supervisor']}><Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading analytics…</div>}><Analytics /></Suspense></RoleRoute>} />
           <Route path="/ai-assistant" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><AiAssistant /></RoleRoute>} />
         </Route>
 

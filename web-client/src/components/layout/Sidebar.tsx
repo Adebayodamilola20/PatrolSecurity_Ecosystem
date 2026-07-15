@@ -5,6 +5,7 @@ import {
   ScanLine,
   MapPin,
   FileText,
+  BarChart3,
   ShieldCheck,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
@@ -15,6 +16,7 @@ const nav = [
   { to: '/guards', label: 'My Guards', icon: Users },
   { to: '/scans', label: 'Patrol Activity', icon: ScanLine },
   { to: '/locations', label: 'Locations', icon: MapPin },
+  { to: '/analytics', label: 'Analytics', icon: BarChart3 },
   { to: '/reports', label: 'Reports', icon: FileText },
 ]
 

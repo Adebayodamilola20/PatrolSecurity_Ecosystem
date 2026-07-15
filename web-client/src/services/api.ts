@@ -215,6 +215,16 @@ export const api = {
     // Authenticated download of the (guard-anonymized) report PDF.
     pdf: (id: string) => requestBlob(`/client/reports/${id}/pdf`),
   },
+  // Aggregates over the tenant's own patrol record. `siteId` narrows to one
+  // location; omit it for every location on the account.
+  analytics: {
+    summary: (params?: { days?: number; siteId?: string }) => {
+      const qs = new URLSearchParams()
+      if (params?.days) qs.set('days', String(params.days))
+      if (params?.siteId) qs.set('siteId', params.siteId)
+      return request<AnalyticsSummary>(`/client/analytics?${qs}`)
+    },
+  },
 }
 
 // Lightweight local types re-exported for convenience; see ../types for the
@@ -227,4 +237,5 @@ import type {
   ClientCheckpoint,
   ClientSiteDetail,
   ClientReport,
+  AnalyticsSummary,
 } from '../types'

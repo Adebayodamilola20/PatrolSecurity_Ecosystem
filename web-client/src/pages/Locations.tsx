@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { MapPin, ShieldCheck, ShieldAlert, Download, History, Loader2, ChevronUp } from 'lucide-react'
+import { MapPin, ShieldCheck, ShieldAlert, Download, History, Loader2, ChevronUp, Building2 } from 'lucide-react'
 import QRCode from 'qrcode'
 import { api } from '../services/api'
 import { useClientData } from '../hooks/useClientData'
@@ -120,11 +120,16 @@ function VerifiedBadge({ point }: { point: ClientSubLocation }) {
 export default function Locations() {
   const fetcher = useCallback(() => api.sites.list(), [])
   const { data, loading, error } = useClientData(fetcher)
-  const sites = data?.sites ?? []
+  const allSites = data?.sites ?? []
   // Which QR points have their patrol history expanded.
   const [openHistory, setOpenHistory] = useState<Record<string, boolean>>({})
   const toggleHistory = (pointId: string) =>
     setOpenHistory((prev) => ({ ...prev, [pointId]: !prev[pointId] }))
+
+  // Branch picker. '' means every location. Accounts with a single location
+  // have nothing to choose between, so the control stays hidden for them.
+  const [selectedSite, setSelectedSite] = useState('')
+  const sites = selectedSite ? allSites.filter((s) => s.id === selectedSite) : allSites
 
   return (
     <div className="space-y-5">
@@ -134,6 +139,31 @@ export default function Locations() {
           Your protected locations and the patrol points inside each of them. These are managed by your security provider.
         </p>
       </div>
+
+      {allSites.length > 1 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5">
+          <label className="flex items-center gap-2">
+            <span className="sr-only">Filter by location</span>
+            <Building2 className="h-4 w-4 shrink-0 text-primary" />
+            <select
+              value={selectedSite}
+              onChange={(e) => setSelectedSite(e.target.value)}
+              className="min-w-52 rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
+            >
+              <option value="">All Locations</option>
+              {allSites.map((site) => (
+                <option key={site.id} value={site.id}>{site.name}</option>
+              ))}
+            </select>
+          </label>
+          <p className="text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">Showing:</span>{' '}
+            {selectedSite
+              ? 'One location and its patrol points.'
+              : `All ${allSites.length} of your locations and their patrol points.`}
+          </p>
+        </div>
+      ) : null}
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>

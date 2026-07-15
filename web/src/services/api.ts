@@ -1,3 +1,5 @@
+import type { AnalyticsSummary } from '../types'
+
 const DEFAULT_API_BASE = '/api/v1'
 
 function normalizeApiBase(rawUrl: string | undefined) {
@@ -331,6 +333,17 @@ export const api = {
     exportCsv: (params?: Record<string, string>) => {
       const qs = params ? `?${new URLSearchParams(params)}` : ''
       return `${API_BASE}/activity-summary/export${qs}`
+    },
+  },
+  // Aggregates over real scans, shifts, incidents and reports. `clientId` and
+  // `siteId` narrow the scope; omit both for the whole organisation.
+  analytics: {
+    summary: (params?: { days?: number; clientId?: string; siteId?: string }) => {
+      const qs = new URLSearchParams()
+      if (params?.days) qs.set('days', String(params.days))
+      if (params?.clientId) qs.set('clientId', params.clientId)
+      if (params?.siteId) qs.set('siteId', params.siteId)
+      return request<AnalyticsSummary>(`/analytics?${qs}`)
     },
   },
   ai: {

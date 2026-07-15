@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import ClientLayout from './components/layout/ClientLayout'
 import MarketingLayout from './marketing/MarketingLayout'
@@ -14,6 +14,10 @@ import Locations from './pages/Locations'
 import Reports from './pages/Reports'
 import { useClientAuthStore } from './stores/useClientAuthStore'
 import { useIdleLogout } from './hooks/useIdleLogout'
+
+// Analytics pulls in the charting library; loading it on demand keeps it out
+// of the bundle every other page pays for.
+const Analytics = lazy(() => import('./pages/Analytics'))
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useClientAuthStore((s) => s.isAuthenticated)
@@ -66,6 +70,14 @@ export default function App() {
           {/* Old flat checkpoints view is superseded by the grouped Locations view. */}
           <Route path="/checkpoints" element={<Navigate to="/locations" replace />} />
           <Route path="/reports" element={<Reports />} />
+          <Route
+            path="/analytics"
+            element={
+              <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading analytics…</div>}>
+                <Analytics />
+              </Suspense>
+            }
+          />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
