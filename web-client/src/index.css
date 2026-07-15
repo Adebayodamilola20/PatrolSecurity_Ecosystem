@@ -137,21 +137,21 @@
   }
 }
 
-/* ---- Marketing site (Lumina) ----
+/* ---- Marketing site (Evergreen) ----
    The standalone template set its typeface and black surface on `body`, which
    here would repaint the whole portal. Both are scoped to the marketing root
    instead; the portal's tokens and typography are untouched. */
-.lumina-site {
+.evergreen-site {
   font-family: "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
 }
 
 /* The portal breaks long words and hyphenates everywhere so guard names and
    addresses can't overflow a narrow card. Marketing headlines are hand-broken
    and get mangled by that, so it stops at the marketing root. */
-.lumina-site,
-.lumina-site h1, .lumina-site h2, .lumina-site h3, .lumina-site h4,
-.lumina-site h5, .lumina-site h6, .lumina-site p, .lumina-site span,
-.lumina-site a, .lumina-site button, .lumina-site li, .lumina-site div {
+.evergreen-site,
+.evergreen-site h1, .evergreen-site h2, .evergreen-site h3, .evergreen-site h4,
+.evergreen-site h5, .evergreen-site h6, .evergreen-site p, .evergreen-site span,
+.evergreen-site a, .evergreen-site button, .evergreen-site li, .evergreen-site div {
   hyphens: none;
   word-break: normal;
   overflow-wrap: normal;

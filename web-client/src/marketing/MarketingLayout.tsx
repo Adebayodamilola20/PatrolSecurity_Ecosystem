@@ -34,27 +34,27 @@ export default function MarketingLayout() {
     }, [pathname]);
 
     return (
-        <div className="lumina-site min-h-screen bg-black text-white selection:bg-fuchsia-500/30 selection:text-fuchsia-200 overflow-x-hidden relative">
+        <div className="evergreen-site min-h-screen bg-white text-slate-900 selection:bg-teal-500/30 selection:text-teal-200 overflow-x-hidden relative">
             <ReactLenis root options={{ lerp: 0.05, duration: 1.5, smoothWheel: true }}>
 
                 {/* 1. NAVBAR */}
-                <nav className="fixed top-0 left-0 w-full z-50 bg-black/50 backdrop-blur-md border-b border-white/10 transform-gpu">
+                <nav className="fixed top-0 left-0 w-full z-50 bg-white/70 backdrop-blur-md border-b border-slate-200 transform-gpu">
                     <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-                        <Link to="/" className="flex items-center gap-2 font-semibold text-lg tracking-tight text-white cursor-pointer">
-                            <div className="w-6 h-6 bg-white rounded-md flex items-center justify-center">
-                                <div className="w-2 h-2 bg-black rounded-sm" />
+                        <Link to="/" className="flex items-center gap-2 font-semibold text-lg tracking-tight text-slate-900 cursor-pointer">
+                            <div className="w-6 h-6 bg-slate-900 rounded-md flex items-center justify-center">
+                                <div className="w-2 h-2 bg-white rounded-sm" />
                             </div>
-                            Lumina
+                            Evergreen
                         </Link>
 
-                        <div className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-400">
-                            <a href="#features" className="hover:text-white transition-colors">Features</a>
-                            <a href="#how-it-works" className="hover:text-white transition-colors">How it Works</a>
-                            <a href="#pricing" className="hover:text-white transition-colors">Pricing</a>
+                        <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-600">
+                            <a href="#features" className="hover:text-slate-900 transition-colors">Features</a>
+                            <a href="#how-it-works" className="hover:text-slate-900 transition-colors">How it Works</a>
+                            <a href="#pricing" className="hover:text-slate-900 transition-colors">Pricing</a>
 
                             {/* 🔥 The New "Pages" Dropdown */}
                             <div className="relative group py-4">
-                                <button className="flex items-center gap-1 hover:text-white transition-colors">
+                                <button className="flex items-center gap-1 hover:text-slate-900 transition-colors">
                                     Pages <ChevronDown className="w-3 h-3 group-hover:rotate-180 transition-transform duration-300" />
                                 </button>
 
@@ -63,22 +63,22 @@ export default function MarketingLayout() {
                                     {/* Invisible bridge to keep hover active */}
                                     <div className="absolute -top-4 left-0 w-full h-4"></div>
 
-                                    <div className="bg-[#0a0a0a]/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_20px_40px_rgba(0,0,0,0.8)] p-2 flex flex-col gap-1 relative overflow-hidden">
-                                        <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-white/5 to-transparent pointer-events-none" />
+                                    <div className="bg-white/90 backdrop-blur-xl border border-slate-200 rounded-2xl shadow-[0_20px_40px_rgba(15,23,42,0.12)] p-2 flex flex-col gap-1 relative overflow-hidden">
+                                        <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-slate-100 to-transparent pointer-events-none" />
 
-                                        <Link to="/about" className="relative z-10 px-4 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/10 rounded-xl transition-all flex items-center gap-2 group/item">
-                                            <div className="w-1.5 h-1.5 rounded-full bg-fuchsia-500 opacity-0 group-hover/item:opacity-100 transition-opacity" />
+                                        <Link to="/about" className="relative z-10 px-4 py-2.5 text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-all flex items-center gap-2 group/item">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-teal-500 opacity-0 group-hover/item:opacity-100 transition-opacity" />
                                             About Us
                                         </Link>
-                                        <Link to="/contact" className="relative z-10 px-4 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/10 rounded-xl transition-all flex items-center gap-2 group/item">
+                                        <Link to="/contact" className="relative z-10 px-4 py-2.5 text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-all flex items-center gap-2 group/item">
                                             <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 opacity-0 group-hover/item:opacity-100 transition-opacity" />
                                             Contact
                                         </Link>
-                                        <Link to="/login" className="relative z-10 px-4 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/10 rounded-xl transition-all flex items-center gap-2 group/item">
-                                            <div className="w-1.5 h-1.5 rounded-full bg-purple-500 opacity-0 group-hover/item:opacity-100 transition-opacity" />
+                                        <Link to="/login" className="relative z-10 px-4 py-2.5 text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-all flex items-center gap-2 group/item">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-teal-500 opacity-0 group-hover/item:opacity-100 transition-opacity" />
                                             Sign In
                                         </Link>
-                                        <Link to="/login" className="relative z-10 px-4 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-white/10 rounded-xl transition-all flex items-center gap-2 group/item">
+                                        <Link to="/login" className="relative z-10 px-4 py-2.5 text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-all flex items-center gap-2 group/item">
                                             <div className="w-1.5 h-1.5 rounded-full bg-blue-500 opacity-0 group-hover/item:opacity-100 transition-opacity" />
                                             Sign Up
                                         </Link>
@@ -88,14 +88,14 @@ export default function MarketingLayout() {
                         </div>
 
                         <div className="hidden md:flex items-center gap-4">
-                            <Link to="/login" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Log in</Link>
-                            <Link to="/login" className="bg-gradient-to-r from-fuchsia-600 to-cyan-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity shadow-[0_0_15px_rgba(168,85,247,0.3)]">
+                            <Link to="/login" className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors">Log in</Link>
+                            <Link to="/login" className="bg-gradient-to-r from-teal-600 to-cyan-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity shadow-[0_0_15px_rgba(20,184,166,0.3)]">
                                 Get Started
                             </Link>
                         </div>
                         <button 
                             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} 
-                            className="md:hidden text-gray-400 hover:text-white transition-colors focus:outline-none"
+                            className="md:hidden text-slate-600 hover:text-slate-900 transition-colors focus:outline-none"
                         >
                             {isMobileMenuOpen ? (
                                 <X className="w-5 h-5" />
@@ -113,58 +113,58 @@ export default function MarketingLayout() {
                                 animate={{ height: 'auto', opacity: 1 }}
                                 exit={{ height: 0, opacity: 0 }}
                                 transition={{ duration: 0.3, ease: "easeInOut" }}
-                                className="md:hidden border-t border-white/10 bg-[#0a0a0a]/95 backdrop-blur-xl overflow-hidden"
+                                className="md:hidden border-t border-slate-200 bg-white/95 backdrop-blur-xl overflow-hidden"
                             >
                                 <div className="px-6 py-4 flex flex-col gap-4">
                                     <a 
                                         href="#features" 
                                         onClick={() => setIsMobileMenuOpen(false)}
-                                        className="text-sm font-medium text-gray-400 hover:text-white transition-colors py-1"
+                                        className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors py-1"
                                     >
                                         Features
                                     </a>
                                     <a 
                                         href="#how-it-works" 
                                         onClick={() => setIsMobileMenuOpen(false)}
-                                        className="text-sm font-medium text-gray-400 hover:text-white transition-colors py-1"
+                                        className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors py-1"
                                     >
                                         How it Works
                                     </a>
                                     <a 
                                         href="#pricing" 
                                         onClick={() => setIsMobileMenuOpen(false)}
-                                        className="text-sm font-medium text-gray-400 hover:text-white transition-colors py-1"
+                                        className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors py-1"
                                     >
                                         Pricing
                                     </a>
                                     
-                                    <div className="h-[1px] w-full bg-white/10 my-1" />
+                                    <div className="h-[1px] w-full bg-slate-100 my-1" />
                                     
                                     <Link 
                                         to="/about" 
                                         onClick={() => setIsMobileMenuOpen(false)}
-                                        className="text-sm font-medium text-gray-400 hover:text-white transition-colors py-1"
+                                        className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors py-1"
                                     >
                                         About Us
                                     </Link>
                                     <Link 
                                         to="/contact" 
                                         onClick={() => setIsMobileMenuOpen(false)}
-                                        className="text-sm font-medium text-gray-400 hover:text-white transition-colors py-1"
+                                        className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors py-1"
                                     >
                                         Contact
                                     </Link>
                                     <Link 
                                         to="/login" 
                                         onClick={() => setIsMobileMenuOpen(false)}
-                                        className="text-sm font-medium text-gray-400 hover:text-white transition-colors py-1"
+                                        className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors py-1"
                                     >
                                         Sign In
                                     </Link>
                                     <Link 
                                         to="/login" 
                                         onClick={() => setIsMobileMenuOpen(false)}
-                                        className="bg-gradient-to-r from-fuchsia-600 to-cyan-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:opacity-90 transition-opacity shadow-[0_0_15px_rgba(168,85,247,0.3)] text-center mt-2"
+                                        className="bg-gradient-to-r from-teal-600 to-cyan-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:opacity-90 transition-opacity shadow-[0_0_15px_rgba(20,184,166,0.3)] text-center mt-2"
                                     >
                                         Get Started
                                     </Link>
@@ -183,25 +183,25 @@ export default function MarketingLayout() {
 
 
                 {/* 8. FOOTER */}
-                <footer className="bg-black relative overflow-hidden pt-24 pb-10 border-t border-white/10">
+                <footer className="bg-white relative overflow-hidden pt-24 pb-10 border-t border-slate-200">
                     <div className="max-w-7xl mx-auto px-6 relative z-10">
                         {/* Top Row (Brand & Nav) */}
-                        <div className="flex flex-col md:flex-row justify-between items-center gap-6 border-b border-white/10 pb-8 mb-12">
-                            <div className="flex items-center gap-2 font-semibold text-xl tracking-tight text-white">
-                                <div className="w-6 h-6 bg-white rounded-md flex items-center justify-center">
-                                    <div className="w-2 h-2 bg-black rounded-sm" />
+                        <div className="flex flex-col md:flex-row justify-between items-center gap-6 border-b border-slate-200 pb-8 mb-12">
+                            <div className="flex items-center gap-2 font-semibold text-xl tracking-tight text-slate-900">
+                                <div className="w-6 h-6 bg-slate-900 rounded-md flex items-center justify-center">
+                                    <div className="w-2 h-2 bg-white rounded-sm" />
                                 </div>
-                                Lumina
+                                Evergreen
                             </div>
 
-                            <div className="hidden md:flex items-center gap-8 text-sm text-gray-400">
-                                <a href="#" className="hover:text-white transition-colors">About</a>
-                                <a href="#" className="hover:text-white transition-colors">Features</a>
-                                <a href="#" className="hover:text-white transition-colors">Pricing</a>
-                                <a href="#" className="hover:text-white transition-colors">Contact</a>
+                            <div className="hidden md:flex items-center gap-8 text-sm text-slate-600">
+                                <a href="#" className="hover:text-slate-900 transition-colors">About</a>
+                                <a href="#" className="hover:text-slate-900 transition-colors">Features</a>
+                                <a href="#" className="hover:text-slate-900 transition-colors">Pricing</a>
+                                <a href="#" className="hover:text-slate-900 transition-colors">Contact</a>
                             </div>
 
-                            <Link to="/login" className="bg-white/5 border border-white/10 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-white/10 transition-colors">
+                            <Link to="/login" className="bg-slate-50 border border-slate-200 text-slate-900 px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-100 transition-colors">
                                 Get Started
                             </Link>
                         </div>
@@ -209,61 +209,61 @@ export default function MarketingLayout() {
                         {/* Main Link Grid (4 Columns) */}
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 z-10 relative">
                             <div>
-                                <h4 className="text-white font-semibold mb-6">Navigation</h4>
+                                <h4 className="text-slate-900 font-semibold mb-6">Navigation</h4>
                                 <ul className="space-y-4 text-sm">
-                                    <li><a href="#" className="text-gray-400 hover:text-white transition-colors flex items-center gap-1">Home</a></li>
-                                    <li><a href="#" className="text-gray-400 hover:text-white transition-colors flex items-center gap-1">Features</a></li>
-                                    <li><a href="#" className="text-gray-400 hover:text-white transition-colors flex items-center gap-1">Pricing</a></li>
-                                    <li><a href="#" className="text-gray-400 hover:text-white transition-colors flex items-center gap-1">About Us</a></li>
+                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Home</a></li>
+                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Features</a></li>
+                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Pricing</a></li>
+                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">About Us</a></li>
                                 </ul>
                             </div>
 
                             <div>
-                                <h4 className="text-white font-semibold mb-6">Documentation</h4>
+                                <h4 className="text-slate-900 font-semibold mb-6">Documentation</h4>
                                 <ul className="space-y-4 text-sm">
-                                    <li><a href="#" className="text-gray-400 hover:text-white transition-colors flex items-center gap-1">Getting Started</a></li>
-                                    <li><a href="#" className="text-gray-400 hover:text-white transition-colors flex items-center gap-1">API Reference <span className="text-[10px] opacity-50">↗</span></a></li>
-                                    <li><a href="#" className="text-gray-400 hover:text-white transition-colors flex items-center gap-1">Integrations</a></li>
-                                    <li><a href="#" className="text-gray-400 hover:text-white transition-colors flex items-center gap-1">Guides</a></li>
+                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Getting Started</a></li>
+                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">API Reference <span className="text-[10px] opacity-50">↗</span></a></li>
+                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Integrations</a></li>
+                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Guides</a></li>
                                 </ul>
                             </div>
 
                             <div>
-                                <h4 className="text-white font-semibold mb-6">Legal</h4>
+                                <h4 className="text-slate-900 font-semibold mb-6">Legal</h4>
                                 <ul className="space-y-4 text-sm">
-                                    <li><a href="#" className="text-gray-400 hover:text-white transition-colors flex items-center gap-1">Privacy Policy</a></li>
-                                    <li><a href="#" className="text-gray-400 hover:text-white transition-colors flex items-center gap-1">Terms of Service</a></li>
-                                    <li><a href="#" className="text-gray-400 hover:text-white transition-colors flex items-center gap-1">Cookie Policy</a></li>
-                                    <li><a href="#" className="text-gray-400 hover:text-white transition-colors flex items-center gap-1">Security</a></li>
+                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Privacy Policy</a></li>
+                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Terms of Service</a></li>
+                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Cookie Policy</a></li>
+                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Security</a></li>
                                 </ul>
                             </div>
 
                             <div>
-                                <h4 className="text-white font-semibold mb-6">Social Connect</h4>
+                                <h4 className="text-slate-900 font-semibold mb-6">Social Connect</h4>
                                 <ul className="space-y-4 text-sm">
-                                    <li><a href="#" className="text-gray-400 hover:text-white transition-colors flex items-center gap-1">Twitter <span className="text-[10px] opacity-50">↗</span></a></li>
-                                    <li><a href="#" className="text-gray-400 hover:text-white transition-colors flex items-center gap-1">GitHub <span className="text-[10px] opacity-50">↗</span></a></li>
-                                    <li><a href="#" className="text-gray-400 hover:text-white transition-colors flex items-center gap-1">Discord <span className="text-[10px] opacity-50">↗</span></a></li>
-                                    <li><a href="#" className="text-gray-400 hover:text-white transition-colors flex items-center gap-1">LinkedIn <span className="text-[10px] opacity-50">↗</span></a></li>
+                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Twitter <span className="text-[10px] opacity-50">↗</span></a></li>
+                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">GitHub <span className="text-[10px] opacity-50">↗</span></a></li>
+                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Discord <span className="text-[10px] opacity-50">↗</span></a></li>
+                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">LinkedIn <span className="text-[10px] opacity-50">↗</span></a></li>
                                 </ul>
                             </div>
                         </div>
 
                         {/* Copyright Bar */}
-                        <div className="bg-white/5 rounded-2xl py-4 px-6 mt-16 z-10 relative flex flex-col md:flex-row justify-between items-center text-sm text-gray-500 gap-4">
-                            <p>© 2026 Lumina. All copyrights reserved.</p>
+                        <div className="bg-slate-50 rounded-2xl py-4 px-6 mt-16 z-10 relative flex flex-col md:flex-row justify-between items-center text-sm text-slate-500 gap-4">
+                            <p>© 2026 Evergreen. All copyrights reserved.</p>
                             <p>Designed by Yacine</p>
                         </div>
                     </div>
 
                     {/* Giant Watermark Background */}
-                    <div className="absolute bottom-[-15%] left-1/2 -translate-x-1/2 text-[18vw] font-black text-white/[0.02] select-none pointer-events-none tracking-tighter whitespace-nowrap z-0">
-                        Lumina
+                    <div className="absolute bottom-[-15%] left-1/2 -translate-x-1/2 text-[18vw] font-black text-slate-900/[0.04] select-none pointer-events-none tracking-tighter whitespace-nowrap z-0">
+                        Evergreen
                     </div>
                 </footer>
 
                 {/* 9. THE MAGIC SCROLL VIGNETTE (OPTIMIZED 🚀) */}
-                <div className="fixed bottom-0 left-0 w-full h-24 pointer-events-none z-50 bg-gradient-to-t from-black via-black/80 to-transparent transform-gpu will-change-transform" />
+                <div className="fixed bottom-0 left-0 w-full h-24 pointer-events-none z-50 bg-gradient-to-t from-white via-white/80 to-transparent transform-gpu will-change-transform" />
 
             </ReactLenis>
         </div>
