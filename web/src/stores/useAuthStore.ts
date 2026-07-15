@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { api, ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY, USER_STORAGE_KEY } from '../services/api'
 import { connectSocket, disconnectSocket } from '../services/websocket'
+import { IDLE_ACTIVITY_KEY } from '../hooks/useIdleLogout'
 import type { Site } from '../types'
 
 export type UserRole = 'admin' | 'main_account' | 'supervisor' | 'guard'
@@ -51,6 +52,9 @@ function clearSession() {
   localStorage.removeItem(ACCESS_TOKEN_KEY)
   localStorage.removeItem(REFRESH_TOKEN_KEY)
   localStorage.removeItem(USER_STORAGE_KEY)
+  // Drop the idle stamp too: leaving a stale one behind would make the next
+  // sign-in look like it had already been idle for hours.
+  localStorage.removeItem(IDLE_ACTIVITY_KEY)
 }
 
 const saved = loadFromStorage()

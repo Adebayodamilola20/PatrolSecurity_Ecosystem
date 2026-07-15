@@ -9,6 +9,7 @@ import Scans from './pages/Scans'
 import Locations from './pages/Locations'
 import Reports from './pages/Reports'
 import { useClientAuthStore } from './stores/useClientAuthStore'
+import { useIdleLogout } from './hooks/useIdleLogout'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useClientAuthStore((s) => s.isAuthenticated)
@@ -20,10 +21,16 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   const hydrate = useClientAuthStore((s) => s.hydrate)
+  const isAuthenticated = useClientAuthStore((s) => s.isAuthenticated)
+  const logout = useClientAuthStore((s) => s.logout)
 
   useEffect(() => {
     hydrate()
   }, [hydrate])
+
+  // Lock the portal after 20 minutes unattended. logout() flips
+  // isAuthenticated, which ProtectedRoute turns into a redirect to /login.
+  useIdleLogout(isAuthenticated, logout)
 
   return (
     <BrowserRouter>

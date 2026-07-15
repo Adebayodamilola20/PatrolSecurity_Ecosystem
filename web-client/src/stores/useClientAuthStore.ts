@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { api, TOKEN_KEY, REFRESH_KEY, USER_KEY } from '../services/api'
+import { IDLE_ACTIVITY_KEY } from '../hooks/useIdleLogout'
 import type { ClientUser } from '../types'
 
 // Normalizes role strings like "Main-Account" / "client_main_account" -> "main_account".
@@ -43,6 +44,9 @@ function clearSession() {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(REFRESH_KEY)
   localStorage.removeItem(USER_KEY)
+  // Drop the idle stamp too: leaving a stale one behind would make the next
+  // sign-in look like it had already been idle for hours.
+  localStorage.removeItem(IDLE_ACTIVITY_KEY)
 }
 
 const saved = loadFromStorage()

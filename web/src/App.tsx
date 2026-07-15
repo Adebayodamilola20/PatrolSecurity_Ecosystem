@@ -27,6 +27,7 @@ import Login from './pages/Login'
 import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
 import { useAuthStore, useCanViewLiveTracking, type UserRole } from './stores/useAuthStore'
+import { useIdleLogout } from './hooks/useIdleLogout'
 
 const roleHomePath: Record<UserRole, string> = {
   admin: '/',
@@ -65,10 +66,16 @@ function MonitoringGuard({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   const hydrate = useAuthStore((s) => s.hydrate)
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const logout = useAuthStore((s) => s.logout)
 
   useEffect(() => {
     hydrate()
   }, [hydrate])
+
+  // Lock the dashboard after 20 minutes unattended. logout() flips
+  // isAuthenticated, which ProtectedRoute turns into a redirect to /login.
+  useIdleLogout(isAuthenticated, logout)
 
   return (
     <BrowserRouter>
