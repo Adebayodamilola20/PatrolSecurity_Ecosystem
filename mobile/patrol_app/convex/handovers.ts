@@ -32,7 +32,7 @@ export const listAll = internalQuery({
       toUserName: users.find((u) => u._id === h.toUserId)?.name ?? null,
       openIssues: h.openIssues,
       equipmentStatus: h.equipmentStatus,
-      photoUrl: h.photoUrl || null,
+      photoUrl: h.photoStorageId || null,
       createdAt: new Date(h.createdAt).toISOString(),
       acceptedAt: h.acceptedAt ? new Date(h.acceptedAt).toISOString() : null,
     }));
@@ -77,7 +77,7 @@ export const listPendingForUser = internalQuery({
           users.find((user) => user._id === handover.toUserId)?.name ?? null,
         openIssues: handover.openIssues,
         equipmentStatus: handover.equipmentStatus,
-        photoUrl: handover.photoUrl || null,
+        photoUrl: handover.photoStorageId || null,
         createdAt: new Date(handover.createdAt).toISOString(),
       }));
   },
@@ -91,7 +91,7 @@ export const create = internalMutation({
     equipmentStatus: v.optional(v.string()),
     siteLabel: v.optional(v.string()),
     checkpointId: v.optional(v.id("checkpoints")),
-    photoUrl: v.optional(v.string()),
+    photoStorageId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const activeShift = await ctx.db
@@ -115,7 +115,7 @@ export const create = internalMutation({
       summary: args.summary,
       openIssues: args.openIssues ?? "",
       equipmentStatus: args.equipmentStatus ?? "",
-      photoUrl: args.photoUrl ?? "",
+      photoStorageId: args.photoStorageId,
       status: "pending",
       acceptedNote: "",
       createdAt: now,
@@ -130,7 +130,7 @@ export const create = internalMutation({
       toUserName: null,
       openIssues: args.openIssues ?? "",
       equipmentStatus: args.equipmentStatus ?? "",
-      photoUrl: args.photoUrl ?? null,
+      photoUrl: args.photoStorageId ?? null,
       createdAt: new Date(now).toISOString(),
     };
   },
@@ -169,7 +169,7 @@ export const accept = internalMutation({
             users.find((user) => user._id === args.userId)?.name ?? null,
           openIssues: handover.openIssues,
           equipmentStatus: handover.equipmentStatus,
-          photoUrl: handover.photoUrl || null,
+          photoUrl: handover.photoStorageId || null,
           createdAt: new Date(handover.createdAt).toISOString(),
         }
       : null;

@@ -292,8 +292,9 @@ export default defineSchema({
     ),
     title: v.string(),
     description: v.string(),
-    // Photo refs (storageIds), not URLs. See photoRef above.
-    photoUrls: v.optional(v.array(photoRef)),
+    // Storage refs. The API still serves these to clients as `photoUrls`
+    // (signed URLs, minted per viewer) — only the column is renamed.
+    photoStorageIds: v.optional(v.array(photoRef)),
     severity: incidentSeverity,
     status: incidentStatus,
     reportedAt: v.number(),
@@ -317,8 +318,8 @@ export default defineSchema({
     summary: v.string(),
     details: v.any(),
     equipmentName: v.optional(v.string()),
-    // Photo refs (storageIds), not URLs. See photoRef above.
-    evidenceUrls: v.optional(v.array(photoRef)),
+    // Storage refs; served to clients as `evidenceUrls` (signed URLs).
+    evidenceStorageIds: v.optional(v.array(photoRef)),
     gpsLatitude: v.optional(v.number()),
     gpsLongitude: v.optional(v.number()),
     checkpointId: v.optional(v.id("checkpoints")),
@@ -482,8 +483,9 @@ export default defineSchema({
     status: v.union(v.literal("acknowledged"), v.literal("completed")),
     acknowledgedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
-    // Photo ref (storageId), not a URL. See photoRef above.
-    proofPhotoUrl: photoRef,
+    // Storage ref; served to clients as `proofPhotoUrl` (signed URL). Absent
+    // when the completion was a plain acknowledgement with no photo.
+    proofPhotoStorageId: v.optional(photoRef),
     proofNote: v.string(),
     proofGpsLatitude: v.optional(v.number()),
     proofGpsLongitude: v.optional(v.number()),
@@ -647,8 +649,8 @@ export default defineSchema({
     summary: v.string(),
     openIssues: v.string(),
     equipmentStatus: v.string(),
-    // Photo ref (storageId), not a URL. See photoRef above.
-    photoUrl: photoRef,
+    // Storage ref; served to clients as `photoUrl` (signed URL).
+    photoStorageId: v.optional(photoRef),
     status: handoverStatus,
     acceptedNote: v.string(),
     createdAt: v.number(),

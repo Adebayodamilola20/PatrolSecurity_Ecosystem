@@ -213,7 +213,7 @@ export const listForAdmin = internalQuery({
           completedAt: c.completedAt
             ? new Date(c.completedAt).toISOString()
             : null,
-          proofPhotoUrl: c.proofPhotoUrl || null,
+          proofPhotoUrl: c.proofPhotoStorageId || null,
           proofNote: c.proofNote || null,
           createdAt: new Date(c.createdAt).toISOString(),
         }));
@@ -302,7 +302,7 @@ export const listCompletions = internalQuery({
       acknowledgedAt: c.acknowledgedAt
         ? new Date(c.acknowledgedAt).toISOString()
         : null,
-      proofPhotoUrl: c.proofPhotoUrl || null,
+      proofPhotoUrl: c.proofPhotoStorageId || null,
       proofNote: c.proofNote,
       createdAt: new Date(c.createdAt).toISOString(),
     }));
@@ -415,7 +415,7 @@ export const listForUser = internalQuery({
                 acknowledgedAt: latestCompletion.acknowledgedAt
                   ? new Date(latestCompletion.acknowledgedAt).toISOString()
                   : null,
-                proofPhotoUrl: latestCompletion.proofPhotoUrl || null,
+                proofPhotoUrl: latestCompletion.proofPhotoStorageId || null,
                 proofNote: latestCompletion.proofNote || null,
               }
             : null,
@@ -449,7 +449,6 @@ export const acknowledge = internalMutation({
       checkpointId: order.checkpointId,
       status: "acknowledged",
       acknowledgedAt: now,
-      proofPhotoUrl: "",
       proofNote: "",
       reviewStatus: "pending",
       reviewNote: "",
@@ -496,7 +495,7 @@ export const complete = internalMutation({
     proofNote: v.optional(v.string()),
     gpsLatitude: v.optional(v.number()),
     gpsLongitude: v.optional(v.number()),
-    proofPhotoUrl: v.optional(v.string()),
+    proofPhotoStorageId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -517,7 +516,7 @@ export const complete = internalMutation({
       checkpointId: order.checkpointId,
       status: "completed",
       completedAt: now,
-      proofPhotoUrl: args.proofPhotoUrl ?? "",
+      proofPhotoStorageId: args.proofPhotoStorageId,
       proofNote: args.proofNote ?? "",
       proofGpsLatitude: args.gpsLatitude,
       proofGpsLongitude: args.gpsLongitude,
@@ -556,7 +555,7 @@ export const complete = internalMutation({
       reviewStatus: "pending",
       completedAt: new Date(now).toISOString(),
       acknowledgedAt: null,
-      proofPhotoUrl: args.proofPhotoUrl ?? null,
+      proofPhotoUrl: args.proofPhotoStorageId ?? null,
       proofNote: args.proofNote ?? null,
     };
   },

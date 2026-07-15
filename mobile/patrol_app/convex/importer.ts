@@ -391,7 +391,7 @@ export const upsertPostOrderCompletion = internalMutation({
       completedAt: record.completedAt
         ? Date.parse(record.completedAt)
         : undefined,
-      proofPhotoUrl: record.proofPhotoUrl ?? "",
+      proofPhotoStorageId: record.proofPhotoUrl || undefined,
       proofNote: record.proofNote ?? "",
       proofGpsLatitude: record.proofGpsLatitude ?? undefined,
       proofGpsLongitude: record.proofGpsLongitude ?? undefined,
@@ -423,7 +423,7 @@ export const upsertHandover = internalMutation({
       summary: record.summary ?? "",
       openIssues: record.openIssues ?? "",
       equipmentStatus: record.equipmentStatus ?? "",
-      photoUrl: record.photoUrl ?? "",
+      photoStorageId: record.photoUrl || undefined,
       status: record.status ?? "pending",
       acceptedNote: record.acceptedNote ?? "",
       createdAt: record.createdAt ? Date.parse(record.createdAt) : Date.now(),

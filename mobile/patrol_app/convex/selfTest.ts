@@ -249,7 +249,7 @@ export const cleanupTestArtifacts = internalMutation({
     const incidents = await ctx.db.query("incidents").take(200);
     for (const incident of incidents) {
       if (!incident.title.startsWith("ARCH TEST")) continue;
-      for (const ref of incident.photoUrls ?? []) {
+      for (const ref of incident.photoStorageIds ?? []) {
         const asset = await ctx.db
           .query("photoAssets")
           .withIndex("by_storageId", (q) => q.eq("storageId", ref as any))

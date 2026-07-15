@@ -96,9 +96,16 @@ export function getOrphanUploadTtlMs() {
   return positiveNumberEnv("UPLOAD_ORPHAN_TTL_HOURS", 24) * 60 * 60 * 1000;
 }
 
-/** Lifetime of a signed photo-view URL handed to an authorized client. */
+/**
+ * Lifetime of a signed photo/file URL handed to an authorized client.
+ *
+ * 10 minutes: long enough for a slow mobile connection to open an evidence
+ * gallery, short enough that a URL leaked from a screenshot or chat log dies
+ * before it is useful. The viewer re-fetching the list mints fresh URLs, so a
+ * shorter TTL costs users nothing. Override with PHOTO_URL_TTL_SECONDS.
+ */
 export function getPhotoUrlTtlSeconds() {
-  return positiveNumberEnv("PHOTO_URL_TTL_SECONDS", 900);
+  return positiveNumberEnv("PHOTO_URL_TTL_SECONDS", 600);
 }
 
 export function validateEnv() {

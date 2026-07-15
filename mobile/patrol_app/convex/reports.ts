@@ -254,7 +254,9 @@ export const getForPdf = internalQuery({
       summary: report.summary,
       details: report.details,
       equipmentName: report.equipmentName ?? null,
-      evidenceUrls: report.evidenceUrls ?? [],
+      // API field name is stable (`evidenceUrls`): storage refs here, signed
+      // into per-viewer URLs by the walker in http.ts on the way out.
+      evidenceUrls: report.evidenceStorageIds ?? [],
       gpsLatitude: report.gpsLatitude ?? null,
       gpsLongitude: report.gpsLongitude ?? null,
       siteLabel: report.siteLabel,
@@ -342,7 +344,7 @@ export const submit = internalMutation({
     summary: v.string(),
     details: v.any(),
     equipmentName: v.optional(v.string()),
-    evidenceUrls: v.optional(v.array(v.string())),
+    evidenceStorageIds: v.optional(v.array(v.string())),
     gpsLatitude: v.optional(v.number()),
     gpsLongitude: v.optional(v.number()),
     checkpointId: v.optional(v.id("checkpoints")),
@@ -396,7 +398,7 @@ export const submit = internalMutation({
       summary,
       details: args.details,
       equipmentName: args.equipmentName,
-      evidenceUrls: args.evidenceUrls,
+      evidenceStorageIds: args.evidenceStorageIds,
       gpsLatitude: args.gpsLatitude,
       gpsLongitude: args.gpsLongitude,
       checkpointId: args.checkpointId,

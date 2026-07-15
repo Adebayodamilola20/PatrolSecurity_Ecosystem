@@ -98,12 +98,6 @@ function lastPathPart(request: Request, offset = 0) {
   return parts[parts.length - 1 - offset] ?? null;
 }
 
-function base64ToBlob(base64: string, contentType = "image/jpeg") {
-  const binary = atob(base64);
-  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-  return new Blob([bytes], { type: contentType });
-}
-
 // Stored files are only reachable through the authorized /photos route, never
 // directly. What matters here is refusing to keep anything that is not actually
 // an image of a sane size — a client can upload arbitrary bytes straight to
@@ -209,34 +203,6 @@ async function claimUploadedPhoto(
     throw err;
   }
   return { storageId };
-}
-
-/**
- * Compatibility path for app builds that still send base64 in the request body.
- *
- * The bytes take the slow route (33% inflated on the wire, buffered in this
- * function), but the result is identical to a direct upload: a validated blob
- * with an ownership record, and a storageId — never a permanent URL — handed
- * back for storage. Remove once the field has upgraded; see the report.
- */
-async function legacyStorePhoto(
-  ctx: any,
-  user: { convexId: string },
-  base64: string,
-  kind: PhotoKind,
-): Promise<string | Response> {
-  const blob = base64ToBlob(base64);
-  const invalid = await validateImageBlob(blob);
-  if (invalid) return invalid;
-  const storageId = await ctx.storage.store(blob);
-  await ctx.runMutation(internal.photos.claimAsset, {
-    storageId,
-    uploadedBy: _uid(user.convexId),
-    kind,
-    contentType: blob.type,
-    sizeBytes: blob.size,
-  });
-  return storageId as string;
 }
 
 /**
@@ -1809,17 +1775,12 @@ http.route({
     if (roleErr) return roleErr;
     const body = await parseJson(request);
     // Direct upload: the phone has already put the bytes in storage and hands
-    // us the id. photoBase64 stays accepted so an un-updated app in the field
-    // keeps clocking in (see legacyStorePhoto).
+    // us the id to validate and claim.
     let clockInPhotoRef: string | undefined;
     if (typeof body?.photoStorageId === "string" && body.photoStorageId) {
       const claimed = await claimUploadedPhoto(ctx, user, body.photoStorageId, "clock_in");
       if (claimed instanceof Response) return claimed;
       clockInPhotoRef = claimed.storageId;
-    } else if (typeof body?.photoBase64 === "string" && body.photoBase64) {
-      const stored = await legacyStorePhoto(ctx, user, body.photoBase64, "clock_in");
-      if (stored instanceof Response) return stored;
-      clockInPhotoRef = stored;
     }
     let result;
     try {
@@ -1862,10 +1823,6 @@ http.route({
       const claimed = await claimUploadedPhoto(ctx, user, body.photoStorageId, "clock_out");
       if (claimed instanceof Response) return claimed;
       clockOutPhotoRef = claimed.storageId;
-    } else if (typeof body?.photoBase64 === "string" && body.photoBase64) {
-      const stored = await legacyStorePhoto(ctx, user, body.photoBase64, "clock_out");
-      if (stored instanceof Response) return stored;
-      clockOutPhotoRef = stored;
     }
     const result = await ctx.runMutation(internal.shifts.clockOut, {
       shiftId: activeShift._id,
@@ -1923,20 +1880,12 @@ http.route({
     const category = INCIDENT_CATEGORIES.includes(body?.category)
       ? body.category
       : "Security Incident";
-    // Photo refs (storageIds), not URLs — the column name is historical.
-    const photoUrls: string[] = [];
+    const photoStorageIds: string[] = [];
     const storageIds = Array.isArray(body?.photoStorageIds) ? body.photoStorageIds : [];
     for (const storageId of storageIds.slice(0, 5)) {
       const claimed = await claimUploadedPhoto(ctx, user, storageId, "incident");
       if (claimed instanceof Response) return claimed;
-      photoUrls.push(claimed.storageId);
-    }
-    const photos = Array.isArray(body?.photoBase64) ? body.photoBase64 : [];
-    for (const photo of photos.slice(0, 5)) {
-      if (typeof photo !== "string" || !photo) continue;
-      const stored = await legacyStorePhoto(ctx, user, photo, "incident");
-      if (stored instanceof Response) return stored;
-      photoUrls.push(stored);
+      photoStorageIds.push(claimed.storageId);
     }
     const id = await ctx.runMutation(internal.incidents.create, {
       officerId: _uid(user.convexId),
@@ -1944,7 +1893,7 @@ http.route({
       category,
       title,
       description: typeof body?.description === "string" ? body.description : undefined,
-      photoUrls,
+      photoStorageIds,
       severity:
         body?.severity === "low" ||
         body?.severity === "medium" ||
@@ -1953,7 +1902,7 @@ http.route({
           ? body.severity
           : undefined,
     });
-    await attachPhotos(ctx, user, photoUrls, "incidents", String(id));
+    await attachPhotos(ctx, user, photoStorageIds, "incidents", String(id));
     await recordAudit(ctx, user, "incident.created", {
       targetType: "incident",
       targetId: id as string,
@@ -2020,24 +1969,14 @@ http.route({
       return badRequest("title and issue are required");
     }
     const checkpointId = await maybeResolveCheckpointId(ctx, body?.checkpointId);
-    // Evidence refs (storageIds), not URLs — the column name is historical.
-    const evidenceUrls: string[] = [];
+    const evidenceStorageIds: string[] = [];
     const evidenceIds = Array.isArray(body?.evidenceStorageIds)
       ? body.evidenceStorageIds
       : [];
     for (const storageId of evidenceIds.slice(0, 5)) {
       const claimed = await claimUploadedPhoto(ctx, user, storageId, "maintenance");
       if (claimed instanceof Response) return claimed;
-      evidenceUrls.push(claimed.storageId);
-    }
-    const evidence = Array.isArray(body?.evidenceBase64)
-      ? body.evidenceBase64
-      : [];
-    for (const item of evidence.slice(0, 5)) {
-      if (typeof item !== "string" || !item) continue;
-      const stored = await legacyStorePhoto(ctx, user, item, "maintenance");
-      if (stored instanceof Response) return stored;
-      evidenceUrls.push(stored);
+      evidenceStorageIds.push(claimed.storageId);
     }
     const id = await ctx.runMutation(internal.reports.submit, {
       type: "maintenance",
@@ -2048,14 +1987,14 @@ http.route({
         severity: body?.severity ?? "medium",
       },
       equipmentName: typeof body?.equipment === "string" ? body.equipment : typeof body?.assetName === "string" ? body.assetName : undefined,
-      evidenceUrls,
+      evidenceStorageIds,
       gpsLatitude: typeof body?.gpsLatitude === "number" ? body.gpsLatitude : undefined,
       gpsLongitude: typeof body?.gpsLongitude === "number" ? body.gpsLongitude : undefined,
       checkpointId,
       siteLabel: typeof body?.siteLabel === "string" ? body.siteLabel : "",
       userId: _uid(user.convexId),
     });
-    await attachPhotos(ctx, user, evidenceUrls, "reportSubmissions", String(id));
+    await attachPhotos(ctx, user, evidenceStorageIds, "reportSubmissions", String(id));
     await recordAudit(ctx, user, "maintenance.created", {
       targetType: "report",
       targetId: id as string,
@@ -2346,16 +2285,11 @@ http.route({
     }
     if (action === "complete") {
       const body = await parseJson(request);
-      // Proof ref (storageId), not a URL — the field name is historical.
-      let proofPhotoUrl: string | undefined;
+      let proofPhotoStorageId: string | undefined;
       if (typeof body?.photoStorageId === "string" && body.photoStorageId) {
         const claimed = await claimUploadedPhoto(ctx, user, body.photoStorageId, "post_order_proof");
         if (claimed instanceof Response) return claimed;
-        proofPhotoUrl = claimed.storageId;
-      } else if (typeof body?.photoBase64 === "string" && body.photoBase64) {
-        const stored = await legacyStorePhoto(ctx, user, body.photoBase64, "post_order_proof");
-        if (stored instanceof Response) return stored;
-        proofPhotoUrl = stored;
+        proofPhotoStorageId = claimed.storageId;
       }
       const completion = await ctx.runMutation(internal.postOrders.complete, {
         orderId,
@@ -2363,18 +2297,18 @@ http.route({
         proofNote: typeof body?.proofNote === "string" ? body.proofNote : undefined,
         gpsLatitude: typeof body?.gpsLatitude === "number" ? body.gpsLatitude : undefined,
         gpsLongitude: typeof body?.gpsLongitude === "number" ? body.gpsLongitude : undefined,
-        proofPhotoUrl,
+        proofPhotoStorageId,
       });
-      if (proofPhotoUrl) {
+      if (proofPhotoStorageId) {
         await attachPhotos(
           ctx,
           user,
-          [proofPhotoUrl],
+          [proofPhotoStorageId],
           "postOrderCompletions",
           String((completion as any)?.id ?? orderId),
         );
       }
-      return json(completion, { status: 201 });
+      return await jsonWithPhotos(user, completion, { status: 201 });
     }
     return notFound("Post order route not found");
   }),
@@ -2405,16 +2339,11 @@ http.route({
     const summary = String(body?.summary ?? "").trim();
     if (!summary) return badRequest("summary is required");
     const checkpointId = await maybeResolveCheckpointId(ctx, body?.checkpointId);
-    // Photo ref (storageId), not a URL — the field name is historical.
-    let photoUrl: string | undefined;
+    let photoStorageId: string | undefined;
     if (typeof body?.photoStorageId === "string" && body.photoStorageId) {
       const claimed = await claimUploadedPhoto(ctx, user, body.photoStorageId, "handover");
       if (claimed instanceof Response) return claimed;
-      photoUrl = claimed.storageId;
-    } else if (typeof body?.photoBase64 === "string" && body.photoBase64) {
-      const stored = await legacyStorePhoto(ctx, user, body.photoBase64, "handover");
-      if (stored instanceof Response) return stored;
-      photoUrl = stored;
+      photoStorageId = claimed.storageId;
     }
     const result = await ctx.runMutation(internal.handovers.create, {
       userId: _uid(user.convexId),
@@ -2423,11 +2352,11 @@ http.route({
       equipmentStatus:
         typeof body?.equipmentStatus === "string" ? body.equipmentStatus : undefined,
       siteLabel: typeof body?.siteLabel === "string" ? body.siteLabel : undefined,
+      photoStorageId,
       checkpointId,
-      photoUrl,
     });
-    if (photoUrl) {
-      await attachPhotos(ctx, user, [photoUrl], "handovers", String(result.id));
+    if (photoStorageId) {
+      await attachPhotos(ctx, user, [photoStorageId], "handovers", String(result.id));
     }
     await recordAudit(ctx, user, "handover.created", {
       targetType: "handover",

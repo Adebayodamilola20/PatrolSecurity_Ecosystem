@@ -621,7 +621,6 @@ export const acknowledgePostOrdersForScan = internalMutation({
         checkpointId: scan.checkpointId,
         status: "acknowledged",
         acknowledgedAt: now,
-        proofPhotoUrl: "",
         proofNote: "",
         reviewStatus: "pending",
         reviewNote: "",

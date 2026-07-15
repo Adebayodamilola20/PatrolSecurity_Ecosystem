@@ -45,7 +45,6 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
   String? _scanId;
   final _notesCtrl = TextEditingController();
   bool _postOrdersDialogShown = false;
-  bool _passOnLogDialogShown = false;
   final AudioPlayer _feedbackPlayer = AudioPlayer();
 
   bool get _locationServiceDisabled =>

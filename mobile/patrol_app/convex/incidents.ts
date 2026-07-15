@@ -103,7 +103,9 @@ export const listForApi = internalQuery({
         title: i.title,
         category: i.category ?? "Security Incident",
         description: i.description,
-        photoUrls: i.photoUrls ?? [],
+        // API field name is stable (`photoUrls`): the walker in http.ts turns
+        // these storage refs into signed URLs before they leave the server.
+        photoUrls: i.photoStorageIds ?? [],
         severity: i.severity,
         status: i.status,
         officerId: i.officerId,
@@ -183,7 +185,7 @@ export const create = internalMutation({
     category: v.optional(incidentCategory),
     title: v.string(),
     description: v.optional(v.string()),
-    photoUrls: v.optional(v.array(v.string())),
+    photoStorageIds: v.optional(v.array(v.string())),
     severity: v.optional(
       v.union(
         v.literal("low"),
@@ -207,7 +209,7 @@ export const create = internalMutation({
       category: args.category ?? "Security Incident",
       title: args.title,
       description: args.description ?? "",
-      photoUrls: args.photoUrls ?? [],
+      photoStorageIds: args.photoStorageIds ?? [],
       severity: args.severity ?? "low",
       status: "open",
       reportedAt,

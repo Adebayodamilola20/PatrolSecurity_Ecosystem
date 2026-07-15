@@ -81,9 +81,9 @@ export const migrateLegacyPhotoUrls = internalMutation({
       }
     }
 
-    // incidents.photoUrls[]
+    // incidents.photoStorageIds[]
     for (const row of await ctx.db.query("incidents").take(limit)) {
-      const refs = row.photoUrls ?? [];
+      const refs = row.photoStorageIds ?? [];
       if (!refs.length) continue;
       let changed = false;
       const next = refs.map((ref) => {
@@ -91,12 +91,14 @@ export const migrateLegacyPhotoUrls = internalMutation({
         if (converted) changed = true;
         return converted ?? ref;
       });
-      if (changed && !dryRun) await ctx.db.patch(row._id, { photoUrls: next });
+      if (changed && !dryRun) {
+        await ctx.db.patch(row._id, { photoStorageIds: next });
+      }
     }
 
-    // reportSubmissions.evidenceUrls[]
+    // reportSubmissions.evidenceStorageIds[]
     for (const row of await ctx.db.query("reportSubmissions").take(limit)) {
-      const refs = row.evidenceUrls ?? [];
+      const refs = row.evidenceStorageIds ?? [];
       if (!refs.length) continue;
       let changed = false;
       const next = refs.map((ref) => {
@@ -105,20 +107,27 @@ export const migrateLegacyPhotoUrls = internalMutation({
         return converted ?? ref;
       });
       if (changed && !dryRun) {
-        await ctx.db.patch(row._id, { evidenceUrls: next });
+        await ctx.db.patch(row._id, { evidenceStorageIds: next });
       }
     }
 
-    // postOrderCompletions.proofPhotoUrl
+    // postOrderCompletions.proofPhotoStorageId
     for (const row of await ctx.db.query("postOrderCompletions").take(limit)) {
-      const next = convertRef(row.proofPhotoUrl ?? "", report.postOrderCompletions);
-      if (next && !dryRun) await ctx.db.patch(row._id, { proofPhotoUrl: next });
+      const next = convertRef(
+        row.proofPhotoStorageId ?? "",
+        report.postOrderCompletions,
+      );
+      if (next && !dryRun) {
+        await ctx.db.patch(row._id, { proofPhotoStorageId: next });
+      }
     }
 
-    // handovers.photoUrl
+    // handovers.photoStorageId
     for (const row of await ctx.db.query("handovers").take(limit)) {
-      const next = convertRef(row.photoUrl ?? "", report.handovers);
-      if (next && !dryRun) await ctx.db.patch(row._id, { photoUrl: next });
+      const next = convertRef(row.photoStorageId ?? "", report.handovers);
+      if (next && !dryRun) {
+        await ctx.db.patch(row._id, { photoStorageId: next });
+      }
     }
 
     const totals = Object.values(report).reduce(
@@ -215,14 +224,14 @@ export const backfillPhotoAssets = internalMutation({
 
     for (const row of await ctx.db.query("incidents").take(limit)) {
       const owner = { clientId: row.clientId, siteId: row.siteId, userId: row.officerId };
-      for (const ref of row.photoUrls ?? []) {
+      for (const ref of row.photoStorageIds ?? []) {
         await register(ref, "incident", owner, "incidents", row._id, row.reportedAt);
       }
     }
 
     for (const row of await ctx.db.query("reportSubmissions").take(limit)) {
       const owner = { clientId: row.clientId, siteId: row.siteId, userId: row.userId };
-      for (const ref of row.evidenceUrls ?? []) {
+      for (const ref of row.evidenceStorageIds ?? []) {
         await register(ref, "maintenance", owner, "reportSubmissions", row._id, row.submittedAt);
       }
     }
@@ -230,7 +239,7 @@ export const backfillPhotoAssets = internalMutation({
     for (const row of await ctx.db.query("postOrderCompletions").take(limit)) {
       const owner = { clientId: row.clientId, siteId: row.siteId, userId: row.userId };
       await register(
-        row.proofPhotoUrl,
+        row.proofPhotoStorageId,
         "post_order_proof",
         owner,
         "postOrderCompletions",
@@ -241,10 +250,104 @@ export const backfillPhotoAssets = internalMutation({
 
     for (const row of await ctx.db.query("handovers").take(limit)) {
       const owner = { clientId: row.clientId, siteId: row.siteId, userId: row.fromUserId };
-      await register(row.photoUrl, "handover", owner, "handovers", row._id, row.createdAt);
+      await register(row.photoStorageId, "handover", owner, "handovers", row._id, row.createdAt);
     }
 
     return { dryRun, created, existing, skippedLegacyUrl };
+  },
+});
+
+/**
+ * Moves storage refs out of the URL-named columns into the *StorageId(s)
+ * columns, then clears the old field so it can be dropped from the schema.
+ *
+ * The old names were lies once the columns stopped holding URLs; queries read
+ * only the new names, so any row left unmigrated renders without its photo —
+ * run this immediately after deploying the rename. Legacy permanent URLs are
+ * converted to storageIds as they move; a URL we don't recognise is carried
+ * over verbatim (the read path still passes those through).
+ *
+ * Idempotent: a second run finds no old fields and does nothing.
+ *
+ *   npx convex run photoMigration:renameStorageRefColumns '{"dryRun":true}'
+ *   npx convex run photoMigration:renameStorageRefColumns '{}'
+ */
+export const renameStorageRefColumns = internalMutation({
+  args: { dryRun: v.optional(v.boolean()), batchSize: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const dryRun = args.dryRun ?? false;
+    const limit = args.batchSize ?? 500;
+    const moved: Record<string, number> = {
+      incidents: 0,
+      reportSubmissions: 0,
+      postOrderCompletions: 0,
+      handovers: 0,
+    };
+    const noop = (): Tally => empty();
+
+    const convertOne = (ref: string): string => {
+      const converted = convertRef(ref, noop());
+      return converted ?? ref;
+    };
+
+    // The deprecated columns are no longer in the schema, so rows are read
+    // through a cast. On an unmigrated database, deploying this code requires
+    // temporarily re-declaring the old columns as optional (see the docblock)
+    // so schema validation accepts the existing rows.
+    for (const raw of await ctx.db.query("incidents").take(limit)) {
+      const row = raw as typeof raw & { photoUrls?: string[] };
+      if (row.photoUrls === undefined) continue;
+      moved.incidents += 1;
+      if (dryRun) continue;
+      await ctx.db.patch(row._id, {
+        // Never clobber a value already written under the new name.
+        photoStorageIds:
+          row.photoStorageIds ?? row.photoUrls.map(convertOne),
+        photoUrls: undefined,
+      } as any);
+    }
+
+    for (const raw of await ctx.db.query("reportSubmissions").take(limit)) {
+      const row = raw as typeof raw & { evidenceUrls?: string[] };
+      if (row.evidenceUrls === undefined) continue;
+      moved.reportSubmissions += 1;
+      if (dryRun) continue;
+      await ctx.db.patch(row._id, {
+        evidenceStorageIds:
+          row.evidenceStorageIds ?? row.evidenceUrls.map(convertOne),
+        evidenceUrls: undefined,
+      } as any);
+    }
+
+    for (const raw of await ctx.db.query("postOrderCompletions").take(limit)) {
+      const row = raw as typeof raw & { proofPhotoUrl?: string };
+      if (row.proofPhotoUrl === undefined) continue;
+      moved.postOrderCompletions += 1;
+      if (dryRun) continue;
+      await ctx.db.patch(row._id, {
+        // "" meant "no photo" under the old scheme; the new column is simply
+        // absent in that case.
+        proofPhotoStorageId:
+          row.proofPhotoStorageId ??
+          (row.proofPhotoUrl ? convertOne(row.proofPhotoUrl) : undefined),
+        proofPhotoUrl: undefined,
+      } as any);
+    }
+
+    for (const raw of await ctx.db.query("handovers").take(limit)) {
+      const row = raw as typeof raw & { photoUrl?: string };
+      if (row.photoUrl === undefined) continue;
+      moved.handovers += 1;
+      if (dryRun) continue;
+      await ctx.db.patch(row._id, {
+        photoStorageId:
+          row.photoStorageId ??
+          (row.photoUrl ? convertOne(row.photoUrl) : undefined),
+        photoUrl: undefined,
+      } as any);
+    }
+
+    return { dryRun, moved };
   },
 });
 
