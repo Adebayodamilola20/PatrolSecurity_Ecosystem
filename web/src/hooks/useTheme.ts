@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 
-const STORAGE_KEY = 'patrol_theme'
+/*
+ * v2: the old key was written on every mount, not just on an explicit toggle,
+ * so every existing session has "dark" stored whether or not anyone chose it.
+ * A new key retires those values and lets the light default actually reach them.
+ */
+const STORAGE_KEY = 'patrol_theme_v2'
 
 function getInitialTheme(): 'dark' | 'light' {
   const stored = localStorage.getItem(STORAGE_KEY)
   if (stored === 'light' || stored === 'dark') return stored
-  return 'dark'
+  return 'light'
 }
 
 function applyTheme(theme: 'dark' | 'light') {
@@ -45,7 +50,5 @@ export function useTheme() {
 }
 
 export function initTheme() {
-  const stored = localStorage.getItem(STORAGE_KEY)
-  const theme = stored === 'light' || stored === 'dark' ? stored : 'dark'
-  applyTheme(theme)
+  applyTheme(getInitialTheme())
 }

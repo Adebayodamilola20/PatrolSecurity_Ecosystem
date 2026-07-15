@@ -104,7 +104,7 @@ export default function CheckpointDetail() {
       const qrUrl = `${window.location.origin}/checkpoints/${cp.id}`
       QRCodeLib.toCanvas(qrRef.current, qrUrl, {
         width: 132, margin: 1,
-        color: { dark: '#ffffff', light: '#111827' },
+        color: { dark: '#111827', light: '#ffffff' },
       }).catch(() => {})
     }
   }, [cp])
@@ -113,7 +113,7 @@ export default function CheckpointDetail() {
     if (!cp) return
     try {
       const url = await QRCodeLib.toDataURL(`${window.location.origin}/checkpoints/${cp.id}`, {
-        width: 300, margin: 2, color: { dark: '#ffffff', light: '#111827' },
+        width: 300, margin: 2, color: { dark: '#111827', light: '#ffffff' },
       })
       const a = document.createElement('a')
       a.href = url

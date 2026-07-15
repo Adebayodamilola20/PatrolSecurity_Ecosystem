@@ -75,7 +75,7 @@ function QRCell({ data }: { data: string }) {
     if (ref.current) {
       QRCode.toCanvas(ref.current, data, {
         width: 120, margin: 1,
-        color: { dark: '#ffffff', light: '#111827' },
+        color: { dark: '#111827', light: '#ffffff' },
       }).catch(() => {})
     }
   }, [data])
@@ -534,7 +534,7 @@ export default function Checkpoints() {
                   <button
                     onClick={async () => {
                       try {
-                        const dlUrl = await QRCode.toDataURL(qrData, { width: 300, margin: 2, color: { dark: '#ffffff', light: '#111827' } })
+                        const dlUrl = await QRCode.toDataURL(qrData, { width: 300, margin: 2, color: { dark: '#111827', light: '#ffffff' } })
                         const a = document.createElement('a')
                         a.href = dlUrl
                         a.download = `${cp.code}-qrcode.png`
