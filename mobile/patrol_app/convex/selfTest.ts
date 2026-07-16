@@ -318,6 +318,82 @@ export const createTempPortalUser = internalMutation({
 });
 
 /**
+ * A staff login for exercising routes the portal is locked out of. Same prefix
+ * guard as the portal user: the deleter refuses anything without it, so a test
+ * can never be pointed at a real account.
+ */
+export const createTempStaffUser = internalMutation({
+  args: { email: v.string(), password: v.string() },
+  handler: async (ctx, args) => {
+    if (!args.email.startsWith(TEMP_USER_PREFIX)) {
+      throw new Error(`Test logins must use the ${TEMP_USER_PREFIX} prefix`);
+    }
+    const existing = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .unique();
+    if (existing) await ctx.db.delete(existing._id);
+
+    return await ctx.db.insert("users", {
+      name: "Self-test staff user",
+      email: args.email,
+      passwordHash: bcrypt.hashSync(args.password, 10),
+      role: "admin" as const,
+      phone: "",
+      active: true,
+      liveTracking: false,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+export const TEMP_SITE_PREFIX = "selftest-site ";
+
+/**
+ * A disposable location to edit, so geofence tests never move a real client's
+ * fence. Deliberately not routed through the /sites POST handler: this must not
+ * mint the primary checkpoint and QR code a real location gets.
+ */
+export const createTempSite = internalMutation({
+  args: { clientId: v.id("clients"), name: v.string() },
+  handler: async (ctx, args) => {
+    if (!args.name.startsWith(TEMP_SITE_PREFIX)) {
+      throw new Error(`Test sites must use the "${TEMP_SITE_PREFIX}" prefix`);
+    }
+    return await ctx.db.insert("sites", {
+      name: args.name,
+      location: "self-test",
+      address: "self-test",
+      latitude: 6.5,
+      longitude: 3.4,
+      radiusMeters: 100,
+      clientId: args.clientId,
+      active: true,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+/** Removes a `createTempSite` location and the audit trail the test produced. */
+export const deleteTempSite = internalMutation({
+  args: { siteId: v.id("sites") },
+  handler: async (ctx, args) => {
+    const site = await ctx.db.get(args.siteId);
+    if (!site) return { deleted: false, auditRows: 0 };
+    if (!site.name.startsWith(TEMP_SITE_PREFIX)) {
+      throw new Error(`Refusing to delete a real location: ${site.name}`);
+    }
+    const audits = await ctx.db
+      .query("auditLogs")
+      .filter((q) => q.eq(q.field("siteId"), args.siteId))
+      .collect();
+    for (const row of audits) await ctx.db.delete(row._id);
+    await ctx.db.delete(args.siteId);
+    return { deleted: true, auditRows: audits.length };
+  },
+});
+
+/**
  * Deletes a login created by `createTempPortalUser`, along with any sessions it
  * opened. Refuses anything without the test prefix so a mistyped id can never
  * take out a real account.

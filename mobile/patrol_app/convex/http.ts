@@ -3400,7 +3400,7 @@ http.route({ pathPrefix: "/sites/", method: "PUT", handler: httpAction(async (ct
     return forbidden("Site access denied");
   }
   const body = await parseJson(request);
-  return json(await ctx.runMutation(internal.sites.update, {
+  const updated = await ctx.runMutation(internal.sites.update, {
     siteId, name: body.name, location: body.location, active: body.active,
     address: body.address === undefined ? undefined : String(body.address),
     latitude: body.latitude === undefined || body.latitude === null ? undefined : Number(body.latitude),
@@ -3408,7 +3408,50 @@ http.route({ pathPrefix: "/sites/", method: "PUT", handler: httpAction(async (ct
     radiusMeters: body.radiusMeters === undefined || body.radiusMeters === null ? undefined : Number(body.radiusMeters),
     patrolIntervalMinutes: body.patrolIntervalMinutes === undefined ? undefined : Number(body.patrolIntervalMinutes),
     patrolGracePeriodMinutes: body.patrolGracePeriodMinutes === undefined ? undefined : Number(body.patrolGracePeriodMinutes),
-  }));
+  });
+  if (!updated) return notFound("Site not found");
+
+  // The geofence decides whether a scan counts as verified evidence, and a
+  // scan stores the distance it measured rather than recomputing it later.
+  // Move the coordinates or the radius and every scan taken before the move
+  // is left reporting a distance to somewhere the location no longer is —
+  // with nothing on the record to say why. So the before/after values are
+  // named here, not just the fact that an edit happened: without them the
+  // only way to explain an old distance is to guess the old geofence from
+  // the arithmetic. `site.updated` was already a declared sensitive action;
+  // it had simply never been emitted.
+  const changes: string[] = [];
+  const geofenceMoved =
+    updated.latitude !== site.latitude ||
+    updated.longitude !== site.longitude ||
+    updated.radiusMeters !== site.radiusMeters;
+  if (updated.name !== site.name) changes.push(`name: "${site.name}" -> "${updated.name}"`);
+  if (updated.location !== site.location) changes.push(`location: "${site.location}" -> "${updated.location}"`);
+  if (updated.address !== site.address) changes.push(`address: "${site.address ?? ""}" -> "${updated.address ?? ""}"`);
+  if (updated.latitude !== site.latitude || updated.longitude !== site.longitude) {
+    changes.push(`coordinates: ${site.latitude ?? "none"},${site.longitude ?? "none"} -> ${updated.latitude ?? "none"},${updated.longitude ?? "none"}`);
+  }
+  if (updated.radiusMeters !== site.radiusMeters) {
+    changes.push(`geofence radius: ${site.radiusMeters ?? "default"}m -> ${updated.radiusMeters ?? "default"}m`);
+  }
+  if (updated.active !== site.active) changes.push(`active: ${site.active} -> ${updated.active}`);
+  if (updated.patrolIntervalMinutes !== site.patrolIntervalMinutes) {
+    changes.push(`patrol interval: ${site.patrolIntervalMinutes ?? "none"} -> ${updated.patrolIntervalMinutes ?? "none"}`);
+  }
+  if (updated.patrolGracePeriodMinutes !== site.patrolGracePeriodMinutes) {
+    changes.push(`patrol grace: ${site.patrolGracePeriodMinutes ?? "none"} -> ${updated.patrolGracePeriodMinutes ?? "none"}`);
+  }
+
+  if (changes.length > 0) {
+    await recordAudit(ctx, user, "site.updated", {
+      targetType: "site",
+      targetId: String(site.id),
+      siteId: String(siteId),
+      details: `Updated site ${site.name}${geofenceMoved ? " [geofence moved]" : ""}: ${changes.join("; ")}`,
+      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+    });
+  }
+  return json(updated);
 })});
 
 // --- Photos: direct upload + authorized read ------------------------------
