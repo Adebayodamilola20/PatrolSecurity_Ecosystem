@@ -11,17 +11,20 @@ import { Link, Outlet, useLocation } from 'react-router-dom';
 import { Menu, X, ChevronDown, ArrowRight } from 'lucide-react';
 
 // Nav mirrors the shape competitors in this category use — Blog, Solutions,
-// Docs, Pricing, FAQ, Contact — over our own chrome. Solutions jumps to the
-// landing sections rather than separate pages.
+// Docs, Pricing, FAQ, Contact — over our own chrome. The Solutions dropdown
+// deep-links into the dedicated /solutions page (each row has a matching id).
 const SOLUTIONS_MENU = [
-    { label: 'Control room', to: '/#control-room', dot: 'bg-teal-500' },
-    { label: 'Guard app', to: '/#solutions', dot: 'bg-cyan-500' },
-    { label: 'Client portal', to: '/#solutions', dot: 'bg-teal-500' },
-    { label: 'Site management', to: '/#solutions', dot: 'bg-cyan-500' },
+    { label: 'Guard management', to: '/solutions#guard-management', dot: 'bg-teal-500' },
+    { label: 'GPS tracking', to: '/solutions#gps-tracking', dot: 'bg-cyan-500' },
+    { label: 'Emergency response', to: '/solutions#emergency-response', dot: 'bg-teal-500' },
+    { label: 'Patrol verification', to: '/solutions#patrol-verification', dot: 'bg-cyan-500' },
+    { label: 'Control room', to: '/solutions#control-room', dot: 'bg-teal-500' },
+    { label: 'Access control', to: '/solutions#access-control', dot: 'bg-cyan-500' },
 ];
 
 const MOBILE_LINKS = [
     { label: 'Blog', to: '/blog' },
+    { label: 'Solutions', to: '/solutions' },
     { label: 'Docs', to: '/docs' },
     { label: 'Pricing', to: '/#pricing' },
     { label: 'FAQ', to: '/#faq' },
@@ -80,9 +83,9 @@ export default function MarketingLayout() {
 
                             {/* Solutions dropdown — our glass card, jumping to the landing sections. */}
                             <div className="relative group py-4">
-                                <button className="flex items-center gap-1 hover:text-slate-900 transition-colors">
+                                <Link to="/solutions" className="flex items-center gap-1 hover:text-slate-900 transition-colors">
                                     Solutions <ChevronDown className="w-3 h-3 group-hover:rotate-180 transition-transform duration-300" />
-                                </button>
+                                </Link>
 
                                 <div className="absolute top-full left-1/2 -translate-x-1/2 mt-0 w-56 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 transform translate-y-2 group-hover:translate-y-0 z-50">
                                     {/* Invisible bridge to keep hover active */}
@@ -103,7 +106,7 @@ export default function MarketingLayout() {
                                         ))}
 
                                         <div className="h-[1px] w-full bg-slate-200 my-1 relative z-10" />
-                                        <Link to="/#solutions" className="relative z-10 px-4 py-2.5 text-sm font-medium text-teal-600 hover:bg-slate-100 rounded-xl transition-all flex items-center gap-1.5">
+                                        <Link to="/solutions" className="relative z-10 px-4 py-2.5 text-sm font-medium text-teal-600 hover:bg-slate-100 rounded-xl transition-all flex items-center gap-1.5">
                                             View all solutions <ArrowRight className="w-3 h-3" />
                                         </Link>
                                     </div>
@@ -273,8 +276,11 @@ export default function MarketingLayout() {
                         </div>
                     </div>
 
-                    {/* Giant Watermark Background */}
-                    <div className="absolute bottom-[-15%] left-1/2 -translate-x-1/2 text-[18vw] font-black text-slate-900/[0.04] select-none pointer-events-none tracking-tighter whitespace-nowrap z-0">
+                    {/* Giant Evergreen watermark. Sits low and faint behind the
+                        footer; teal tint + a readable opacity so it actually shows
+                        on white (the old slate-900/[0.04] was invisible), and
+                        pulled up from -15% so it isn't clipped off the bottom. */}
+                    <div className="absolute bottom-[-4%] left-1/2 -translate-x-1/2 text-[19vw] font-black text-teal-950/[0.07] select-none pointer-events-none tracking-tighter whitespace-nowrap z-0">
                         Evergreen
                     </div>
                 </footer>

@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import ClientLayout from './components/layout/ClientLayout'
 import MarketingLayout from './marketing/MarketingLayout'
 import Landing from './marketing/Landing'
+import Solutions from './marketing/Solutions'
 import AboutUs from './marketing/AboutUs'
 import ContactUs from './marketing/ContactUs'
 import ComingSoon from './marketing/ComingSoon'
@@ -48,6 +49,7 @@ export default function App() {
             "Get Started" CTAs lead to /login below. */}
         <Route element={<MarketingLayout />}>
           <Route path="/" element={<Landing />} />
+          <Route path="/solutions" element={<Solutions />} />
           <Route path="/about" element={<AboutUs />} />
           <Route path="/contact" element={<ContactUs />} />
           {/* In the nav, not yet written — a real page beats bouncing off the
