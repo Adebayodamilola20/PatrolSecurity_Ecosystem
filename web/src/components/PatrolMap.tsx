@@ -118,6 +118,10 @@ export function PatrolMap() {
   const scanMarkersRef = useRef<any[]>([])
   const liveOfficersRef = useRef<Map<string, LiveOfficer>>(new Map())
   const respondingRef = useRef<Set<string>>(new Set())
+  // The map is auto-centred only once, on first load. After that the guard's
+  // manual pan/zoom is left alone — re-fitting on every poll used to yank the
+  // view back out to the whole country.
+  const didFitRef = useRef(false)
 
   const [officers, setOfficers] = useState<OfficerRow[]>([])
   const [counts, setCounts] = useState({
@@ -254,7 +258,11 @@ export function PatrolMap() {
           .filter(Boolean),
       )
 
-      const bounds = new maps.LatLngBounds()
+      // Two separate extents: guards get priority for the opening view so it
+      // lands at street level where the action is, not zoomed out to fit every
+      // checkpoint in the country.
+      const officerBounds = new maps.LatLngBounds()
+      const checkpointBounds = new maps.LatLngBounds()
 
       checkpoints.forEach((checkpoint) => {
         // Sub-locations have no coordinates of their own, so they can't be
@@ -280,7 +288,7 @@ export function PatrolMap() {
           }).open({ map, anchor: marker })
         })
         checkpointMarkersRef.current.push(marker)
-        bounds.extend(marker.getPosition())
+        checkpointBounds.extend(marker.getPosition())
       })
 
       const activeOfficerIds = new Set(
@@ -337,7 +345,7 @@ export function PatrolMap() {
         }
         upsertOfficerMarker(maps, map, officer)
         const marker = officerMarkersRef.current.get(id)
-        if (marker) bounds.extend(marker.getPosition())
+        if (marker) officerBounds.extend(marker.getPosition())
       })
 
       scans
@@ -361,8 +369,24 @@ export function PatrolMap() {
           scanMarkersRef.current.push(marker)
         })
 
-      if (!bounds.isEmpty()) {
-        map.fitBounds(bounds, 80)
+      // Auto-centre once. Prefer the guards; fall back to checkpoints only when
+      // nobody is on duty. Clamp the zoom so a lone marker doesn't zoom to the
+      // rooftop and a wide spread doesn't zoom out past street level.
+      if (!didFitRef.current) {
+        const target = !officerBounds.isEmpty()
+          ? { bounds: officerBounds, min: 14, max: 16 }
+          : !checkpointBounds.isEmpty()
+            ? { bounds: checkpointBounds, min: 13, max: 16 }
+            : null
+        if (target) {
+          map.fitBounds(target.bounds, 80)
+          maps.event.addListenerOnce(map, 'idle', () => {
+            const zoom = map.getZoom()
+            if (zoom > target.max) map.setZoom(target.max)
+            else if (zoom < target.min) map.setZoom(target.min)
+          })
+          didFitRef.current = true
+        }
       }
 
       const guards = users.filter((user) => user.role === 'guard')
