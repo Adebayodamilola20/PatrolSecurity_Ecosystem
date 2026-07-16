@@ -5,6 +5,7 @@ import MarketingLayout from './marketing/MarketingLayout'
 import Landing from './marketing/Landing'
 import AboutUs from './marketing/AboutUs'
 import ContactUs from './marketing/ContactUs'
+import ComingSoon from './marketing/ComingSoon'
 import Login from './pages/Login'
 import ForgotPassword from './pages/ForgotPassword'
 import Overview from './pages/Overview'
@@ -49,6 +50,16 @@ export default function App() {
           <Route path="/" element={<Landing />} />
           <Route path="/about" element={<AboutUs />} />
           <Route path="/contact" element={<ContactUs />} />
+          {/* In the nav, not yet written — a real page beats bouncing off the
+              catch-all back to home. */}
+          <Route
+            path="/blog"
+            element={<ComingSoon title="The Evergreen blog" blurb="Field notes on running accountable guarding operations — what we learn from the control rooms using Evergreen." />}
+          />
+          <Route
+            path="/docs"
+            element={<ComingSoon title="Documentation" blurb="Setup guides, checkpoint and post-order references, and the API. We're writing them up now." />}
+          />
         </Route>
 
         <Route path="/login" element={<Login />} />
