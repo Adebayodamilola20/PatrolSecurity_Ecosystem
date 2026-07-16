@@ -1283,7 +1283,25 @@ http.route({
         userAgent: request.headers.get("user-agent") ?? undefined,
       });
     }
-    if (result.status !== "ok" || !result.userId) {
+    if (result.status === "recovered" && result.userId) {
+      // The client re-presented a token whose rotation it never received, and
+      // the replacement was still untouched — a lost-response retry, not theft.
+      // rotate() kept the session alive and minted a fresh token; record it so
+      // the recovery path is observable if it starts happening often.
+      const recovered = await ctx.runQuery(internal.users.getSafeProfile, {
+        userId: result.userId as Id<"users">,
+      });
+      await recordAudit(ctx, {
+        convexId: result.userId,
+        role: recovered?.role ?? "unknown",
+        clientId: recovered?.clientId ?? undefined,
+      }, "user.session_refresh_recovered", {
+        details: "Refresh retried with a superseded token whose replacement was unused; session preserved",
+        ipAddress: requestIp(request),
+        userAgent: request.headers.get("user-agent") ?? undefined,
+      });
+    }
+    if ((result.status !== "ok" && result.status !== "recovered") || !result.userId) {
       return unauthorized("Session expired. Please sign in again.");
     }
 

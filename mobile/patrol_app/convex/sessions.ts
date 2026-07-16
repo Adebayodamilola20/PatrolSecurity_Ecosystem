@@ -44,6 +44,49 @@ export const rotate = internalMutation({
 
     const now = Date.now();
     if (existing.revokedAt) {
+      // A revoked token presented again is the reuse signal — but it is also
+      // exactly what a legitimate client does when it never received the
+      // rotated token (dropped response, app suspended mid-refresh) and retries
+      // with the only token it still holds. Tell the two apart by the child
+      // this token was replaced by: if that child was never used or revoked,
+      // the rotation chain never advanced past this point, so nobody acted on
+      // the new token. That is a lost-response retry, not a fork — recover it
+      // instead of revoking the whole session.
+      //
+      // Genuine theft still trips the alarm: once the real client uses any
+      // later token, the child is marked used, and re-presenting an earlier
+      // token then revokes the family as before.
+      const child = existing.replacedBy
+        ? await ctx.db.get(existing.replacedBy)
+        : null;
+      const lostResponseRetry =
+        child !== null &&
+        child.familyId === existing.familyId &&
+        !child.revokedAt &&
+        child.lastUsedAt === undefined;
+
+      if (lostResponseRetry) {
+        const user = await ctx.db.get(existing.userId);
+        if (!user || !user.active) {
+          return { status: "invalid" as const, userId: null };
+        }
+        // Retire the never-delivered child and mint a fresh replacement so the
+        // client walks away holding a token it actually received. The family
+        // stays alive; `existing` remains revoked.
+        await ctx.db.patch(child!._id, { revokedAt: now });
+        const replacedBy = await ctx.db.insert("refreshTokens", {
+          userId: existing.userId,
+          tokenHash: args.newTokenHash,
+          familyId: existing.familyId,
+          createdAt: now,
+          expiresAt: now + REFRESH_TTL_MS,
+          userAgent: args.userAgent,
+          ipAddress: args.ipAddress,
+        });
+        await ctx.db.patch(existing._id, { replacedBy, lastUsedAt: now });
+        return { status: "recovered" as const, userId: existing.userId };
+      }
+
       const family = await ctx.db
         .query("refreshTokens")
         .withIndex("by_familyId", (q) => q.eq("familyId", existing.familyId))

@@ -79,8 +79,57 @@ void main() async {
   );
 }
 
-class PatrolApp extends StatelessWidget {
+class PatrolApp extends StatefulWidget {
   const PatrolApp({super.key});
+
+  @override
+  State<PatrolApp> createState() => _PatrolAppState();
+}
+
+class _PatrolAppState extends State<PatrolApp> with WidgetsBindingObserver {
+  static const _storage = FlutterSecureStorage();
+  bool _checkingSession = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // The session is only validated on cold start (splash). An app left open for
+  // hours never re-checks, so a session that died in the background used to
+  // stay on a "signed-in" screen until the next tap failed. Re-validate on
+  // resume: if the session is unrecoverable, bounce to login proactively.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _revalidateSession();
+    }
+  }
+
+  Future<void> _revalidateSession() async {
+    if (_checkingSession) return;
+    _checkingSession = true;
+    try {
+      // No refresh token means the user is already signed out (e.g. sitting on
+      // the login screen) — nothing to bounce.
+      final refresh = await _storage.read(key: 'patrol_refresh');
+      if (refresh == null || refresh.isEmpty) return;
+      // hasRecoverableSession() refreshes proactively and only returns false
+      // when the server has actually rejected the session (not on a transient
+      // network failure, which keeps the guard signed in).
+      final ok = await ApiService.hasRecoverableSession();
+      if (!ok) ApiService.onUnauthorized?.call();
+    } finally {
+      _checkingSession = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
