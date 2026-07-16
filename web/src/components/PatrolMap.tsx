@@ -334,7 +334,10 @@ export function PatrolMap() {
         })
 
       liveOfficersRef.current.forEach((officer, id) => {
-        if (!activeOfficerIds.has(id) && officer.lat == null) {
+        // Off duty — drop them from the live view entirely, even if we still
+        // hold an old position. Keeping them left clocked-out guards lingering
+        // as "on patrol" from a stale GPS fix days later.
+        if (!activeOfficerIds.has(id)) {
           liveOfficersRef.current.delete(id)
           const marker = officerMarkersRef.current.get(id)
           if (marker) {
