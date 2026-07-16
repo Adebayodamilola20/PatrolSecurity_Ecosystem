@@ -52,180 +52,473 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        width: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF0F172A), Color(0xFF1E293B), Color(0xFF0F172A)],
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
               child: Form(
                 key: _formKey,
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primary.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Icon(
-                        Icons.shield_outlined,
-                        size: 48,
-                        color: AppTheme.primary,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
+                    const _LoginBrand(),
+                    const SizedBox(height: 34),
+                    const _LoginHero(),
+                    const SizedBox(height: 30),
                     const Text(
-                      'Patrol Command',
+                      'Welcome back',
                       style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                        color: AppTheme.text,
+                        fontSize: 30,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.8,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Enterprise Guard Tour System',
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Sign in to continue managing your patrol shift.',
                       style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 15,
+                        height: 1.45,
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    const Text(
+                      'Account type',
+                      style: TextStyle(
+                        color: AppTheme.text,
                         fontSize: 13,
-                        color: Colors.white.withValues(alpha: 0.5),
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: 40),
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _RoleChoice(
+                            label: 'Site',
+                            icon: Icons.location_city_outlined,
+                            selected: _loginRole == 'site',
+                            onTap: () => setState(() => _loginRole = 'site'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _RoleChoice(
+                            label: 'Client',
+                            icon: Icons.business_outlined,
+                            selected: _loginRole == 'client',
+                            onTap: () => setState(() => _loginRole = 'client'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _RoleChoice(
+                            label: 'Admin',
+                            icon: Icons.admin_panel_settings_outlined,
+                            selected: _loginRole == 'admin',
+                            onTap: () => setState(() => _loginRole = 'admin'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    const _FieldLabel(label: 'Email address'),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _emailCtrl,
+                      decoration: const InputDecoration(
+                        filled: true,
+                        fillColor: Color(0xFFF8FAF9),
+                        hintText: 'you@company.com',
+                        prefixIcon: Icon(
+                          Icons.mail_outline_rounded,
+                          color: AppTheme.primaryDark,
+                        ),
                       ),
-                      child: Column(
-                        children: [
-                          SegmentedButton<String>(
-                            segments: const [
-                              ButtonSegment(
-                                value: 'site',
-                                label: Text('Site'),
-                                icon: Icon(Icons.location_city_outlined),
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
+                      validator: (v) => v?.isEmpty ?? true
+                          ? 'Enter your email address'
+                          : null,
+                    ),
+                    const SizedBox(height: 18),
+                    const _FieldLabel(label: 'Password'),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _passCtrl,
+                      obscureText: _obscure,
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAF9),
+                        hintText: 'Enter your password',
+                        prefixIcon: const Icon(
+                          Icons.lock_outline_rounded,
+                          color: AppTheme.primaryDark,
+                        ),
+                        suffixIcon: IconButton(
+                          tooltip: _obscure ? 'Show password' : 'Hide password',
+                          icon: Icon(
+                            _obscure
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
+                            color: AppTheme.textSecondary,
+                          ),
+                          onPressed: () => setState(() => _obscure = !_obscure),
+                        ),
+                      ),
+                      textInputAction: TextInputAction.done,
+                      onFieldSubmitted: (_) => _login(),
+                      validator: (v) =>
+                          v?.isEmpty ?? true ? 'Enter your password' : null,
+                    ),
+                    const SizedBox(height: 18),
+                    Consumer<AuthProvider>(
+                      builder: (_, auth, __) {
+                        if (auth.error == null) {
+                          return const SizedBox.shrink();
+                        }
+                        return Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(bottom: 18),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppTheme.error.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: AppTheme.error.withValues(alpha: 0.18),
+                            ),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(
+                                Icons.error_outline_rounded,
+                                color: AppTheme.error,
+                                size: 19,
                               ),
-                              ButtonSegment(
-                                value: 'client',
-                                label: Text('Client'),
-                                icon: Icon(Icons.business_outlined),
-                              ),
-                              ButtonSegment(
-                                value: 'admin',
-                                label: Text('Admin'),
-                                icon: Icon(Icons.admin_panel_settings_outlined),
+                              const SizedBox(width: 9),
+                              Expanded(
+                                child: Text(
+                                  auth.error!,
+                                  style: const TextStyle(
+                                    color: AppTheme.error,
+                                    fontSize: 13,
+                                    height: 1.35,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                               ),
                             ],
-                            selected: {_loginRole},
-                            onSelectionChanged: (value) {
-                              setState(() => _loginRole = value.first);
-                            },
                           ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _emailCtrl,
-                            decoration: const InputDecoration(
-                              labelText: 'Email',
-                              prefixIcon: Icon(Icons.email_outlined),
+                        );
+                      },
+                    ),
+                    Consumer<AuthProvider>(
+                      builder: (_, auth, __) => SizedBox(
+                        width: double.infinity,
+                        height: 54,
+                        child: ElevatedButton(
+                          onPressed: auth.loading ? null : _login,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryDark,
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: AppTheme.primaryDark
+                                .withValues(alpha: 0.55),
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(15),
                             ),
-                            keyboardType: TextInputType.emailAddress,
-                            validator: (v) =>
-                                v?.isEmpty ?? true ? 'Enter email' : null,
                           ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _passCtrl,
-                            obscureText: _obscure,
-                            decoration: InputDecoration(
-                              labelText: 'Password',
-                              prefixIcon: const Icon(Icons.lock_outlined),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  _obscure
-                                      ? Icons.visibility_off_outlined
-                                      : Icons.visibility_outlined,
-                                ),
-                                onPressed: () =>
-                                    setState(() => _obscure = !_obscure),
-                              ),
-                            ),
-                            validator: (v) =>
-                                v?.isEmpty ?? true ? 'Enter password' : null,
-                          ),
-                          const SizedBox(height: 8),
-                          Consumer<AuthProvider>(
-                            builder: (_, auth, __) {
-                              if (auth.error != null) {
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 8),
-                                  child: Text(
-                                    auth.error!,
-                                    style: const TextStyle(
-                                      color: AppTheme.error,
-                                      fontSize: 13,
-                                    ),
+                          child: auth.loading
+                              ? const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
                                   ),
-                                );
-                              }
-                              return const SizedBox.shrink();
-                            },
+                                )
+                              : const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      'Sign in',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    SizedBox(width: 10),
+                                    Icon(Icons.arrow_forward_rounded, size: 19),
+                                  ],
+                                ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Center(
+                      child: Text(
+                        'Your access is protected and role-based.',
+                        style: TextStyle(
+                          color: AppTheme.textSecondary.withValues(alpha: 0.9),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Center(
+                      child: Wrap(
+                        alignment: WrapAlignment.center,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 6,
+                        children: [
+                          Icon(
+                            Icons.shield_outlined,
+                            size: 15,
+                            color: AppTheme.primaryDark.withValues(alpha: 0.8),
                           ),
-                          const SizedBox(height: 8),
-                          Consumer<AuthProvider>(
-                            builder: (_, auth, __) => SizedBox(
-                              width: double.infinity,
-                              height: 50,
-                              child: ElevatedButton(
-                                onPressed: auth.loading ? null : _login,
-                                child: auth.loading
-                                    ? const SizedBox(
-                                        width: 22,
-                                        height: 22,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : const Text('Sign In'),
-                              ),
+                          const Text(
+                            'Site, client, and admin accounts supported',
+                            style: TextStyle(
+                              color: AppTheme.textSecondary,
+                              fontSize: 12,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.business,
-                          size: 14,
-                          color: Colors.white.withValues(alpha: 0.4),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Site, client, and admin accounts supported',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.white.withValues(alpha: 0.4),
-                          ),
-                        ),
-                      ],
-                    ),
                   ],
                 ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LoginBrand extends StatelessWidget {
+  const _LoginBrand();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: AppTheme.primary,
+            borderRadius: BorderRadius.circular(13),
+          ),
+          child: const Icon(
+            Icons.shield_rounded,
+            color: AppTheme.text,
+            size: 23,
+          ),
+        ),
+        const SizedBox(width: 11),
+        const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'PATROL COMMAND',
+              style: TextStyle(
+                color: AppTheme.text,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.6,
+              ),
+            ),
+            SizedBox(height: 3),
+            Text(
+              'SECURITY OPERATIONS',
+              style: TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.2,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _LoginHero extends StatelessWidget {
+  const _LoginHero();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      height: 156,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAF8F0),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFD5EDDF)),
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            top: -56,
+            right: -28,
+            child: Container(
+              width: 170,
+              height: 170,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppTheme.primary.withValues(alpha: 0.13),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: -66,
+            left: -30,
+            child: Container(
+              width: 150,
+              height: 150,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.65),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 22),
+            child: Row(
+              children: [
+                Container(
+                  width: 88,
+                  height: 88,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.8),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 5),
+                  ),
+                  child: const Icon(
+                    Icons.shield_outlined,
+                    color: AppTheme.primaryDark,
+                    size: 48,
+                  ),
+                ),
+                const SizedBox(width: 18),
+                const Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Secure access',
+                        style: TextStyle(
+                          color: AppTheme.text,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      SizedBox(height: 7),
+                      Text(
+                        'Your shift starts with a clear view of what matters.',
+                        style: TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: 12,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FieldLabel extends StatelessWidget {
+  const _FieldLabel({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: const TextStyle(
+        color: AppTheme.text,
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+  }
+}
+
+class _RoleChoice extends StatelessWidget {
+  const _RoleChoice({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? const Color(0xFFE8F7EF) : const Color(0xFFF8FAF9),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          height: 54,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected ? AppTheme.primary : AppTheme.border,
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 18,
+                color: selected ? AppTheme.primaryDark : AppTheme.textSecondary,
+              ),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                style: TextStyle(
+                  color: selected
+                      ? AppTheme.primaryDark
+                      : AppTheme.textSecondary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
         ),
       ),

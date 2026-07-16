@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../providers/auth_provider.dart';
 import '../providers/duty_provider.dart';
 import '../providers/scan_provider.dart';
@@ -14,6 +15,8 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  static const _storage = FlutterSecureStorage();
+
   @override
   void initState() {
     super.initState();
@@ -31,6 +34,25 @@ class _SplashScreenState extends State<SplashScreen> {
     final restored = await auth.restoreSession();
 
     if (!mounted) return;
+    final onboardingComplete =
+        await _storage.read(key: 'patrol_onboarding_complete') == 'true';
+    if (!mounted) return;
+
+    // Onboarding is a first-run product introduction, so it takes priority
+    // over an already-restored session. The active-session flag lets the last
+    // onboarding action return existing users to Home instead of asking them
+    // to sign in again.
+    if (!onboardingComplete) {
+      await minimumSplash;
+      if (!mounted) return;
+      Navigator.pushReplacementNamed(
+        context,
+        AppRoutes.onboarding,
+        arguments: {'hasActiveSession': restored},
+      );
+      return;
+    }
+
     if (restored) {
       await Future.wait([
         scan.loadScans(),

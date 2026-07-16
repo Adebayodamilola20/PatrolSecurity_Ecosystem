@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/checkpoint.dart';
+import '../models/scan.dart';
 import '../providers/auth_provider.dart';
 import '../providers/duty_provider.dart';
 import '../providers/scan_provider.dart';
@@ -13,7 +14,6 @@ import '../utils/routes.dart';
 import '../utils/sign_out.dart';
 import '../utils/theme.dart';
 import '../widgets/duty_prompts.dart';
-import '../widgets/scan_tile.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -258,8 +258,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final role = roleForUser(user);
 
     return Scaffold(
+      backgroundColor: AppTheme.surface,
       appBar: AppBar(
-        title: const Text('Patrol Command'),
+        title: const Text('Dashboard'),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined),
@@ -817,7 +820,22 @@ class _DashboardTab extends StatelessWidget {
     final shift = context.watch<ShiftProvider>();
     final role = roleForUser(auth.user);
 
+    return _buildModernDashboard(context, auth, duty, scan, shift, role);
+  }
+
+  Widget _buildModernDashboard(
+    BuildContext context,
+    AuthProvider auth,
+    DutyProvider duty,
+    ScanProvider scan,
+    ShiftProvider shift,
+    AccountRole role,
+  ) {
+    final canPatrol = canSubmitPatrol(auth.user);
+
     return RefreshIndicator(
+      color: AppTheme.primaryDark,
+      backgroundColor: Colors.white,
       onRefresh: () async {
         await Future.wait([
           scan.loadScans(force: true),
@@ -827,130 +845,91 @@ class _DashboardTab extends StatelessWidget {
         ]);
       },
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 112),
         children: [
-          Text(
-            'Good ${_greeting()}, ${auth.user?.name ?? 'Officer'}',
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: AppTheme.text,
-            ),
-            softWrap: true,
-            overflow: TextOverflow.ellipsis,
-            maxLines: 2,
-          ),
-          const SizedBox(height: 4),
-          if (shift.onDuty) ...[
-            Text(
-              '${_formatHour(shift.clockInTime)} - ${_formatHour(shift.scheduledEnd)}',
-              style: const TextStyle(
-                fontSize: 15,
-                color: AppTheme.text,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            if ((shift.siteLabel ?? '').isNotEmpty)
-              Text(
-                shift.siteLabel!,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppTheme.primary,
-                  fontWeight: FontWeight.w600,
-                ),
-                softWrap: true,
-                overflow: TextOverflow.ellipsis,
-              ),
-            const SizedBox(height: 8),
-          ],
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Good ${_greeting()},',
+                      style: const TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      auth.user?.name ?? 'Officer',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.text,
+                        fontSize: 27,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.7,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      '${role.label} · ${role.scopeLabel}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.primaryDark,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               Container(
-                width: 10,
-                height: 10,
+                width: 46,
+                height: 46,
                 decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: shift.onDuty
-                      ? AppTheme.verified
-                      : AppTheme.textSecondary,
+                  color: AppTheme.primary.withValues(alpha: 0.13),
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: Icon(
+                  role == AccountRole.admin
+                      ? Icons.admin_panel_settings_outlined
+                      : role == AccountRole.client
+                      ? Icons.business_outlined
+                      : Icons.location_city_outlined,
+                  color: AppTheme.primaryDark,
+                  size: 23,
                 ),
               ),
-              const SizedBox(width: 6),
-              Text(
-                shift.onDuty ? 'On Duty' : 'Off Duty',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: shift.onDuty
-                      ? AppTheme.verified
-                      : AppTheme.textSecondary,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              if (shift.clockInTime != null) ...[
-                const SizedBox(width: 12),
-                Text(
-                  'Since ${shift.clockInTime!.hour.toString().padLeft(2, '0')}:${shift.clockInTime!.minute.toString().padLeft(2, '0')}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textSecondary,
-                  ),
-                ),
-              ],
             ],
           ),
-          const SizedBox(height: 20),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Icon(
-                    role == AccountRole.admin
-                        ? Icons.admin_panel_settings_outlined
-                        : role == AccountRole.client
-                        ? Icons.business_outlined
-                        : Icons.location_city_outlined,
-                    color: AppTheme.primary,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          role.label,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            color: AppTheme.text,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          role.scopeLabel,
-                          style: const TextStyle(color: AppTheme.textSecondary),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          const SizedBox(height: 18),
+          _ShiftOverviewCard(
+            onDuty: shift.onDuty,
+            time:
+                '${_formatHour(shift.clockInTime)} - ${_formatHour(shift.scheduledEnd)}',
+            siteLabel: shift.siteLabel,
+            clockInTime: shift.clockInTime,
           ),
           const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
                 child: _StatCard(
-                  label: 'Scans Today',
+                  label: 'Scans today',
                   value: '${scan.todayScans}',
-                  icon: Icons.qr_code,
+                  icon: Icons.qr_code_rounded,
                   color: AppTheme.primary,
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: _StatCard(
-                  label: 'Post Orders',
+                  label: 'Post orders',
                   value: '${duty.orders.length}',
                   icon: Icons.assignment_late_outlined,
                   color: const Color(0xFF3B82F6),
@@ -958,34 +937,17 @@ class _DashboardTab extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            height: 56,
-            child: ElevatedButton.icon(
-              onPressed: canSubmitPatrol(auth.user)
-                  ? () => context
-                        .findAncestorStateOfType<_HomeScreenState>()
-                        ?._openScannerOrExplain(context)
-                  : () => Navigator.pushNamed(context, AppRoutes.patrol),
-              icon: const Icon(Icons.qr_code_scanner, size: 24),
-              label: Text(
-                canSubmitPatrol(auth.user)
-                    ? 'Scan QR Code'
-                    : 'View Patrol Tour',
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primary,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                textStyle: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
+          const SizedBox(height: 24),
+          const _SectionLabel(
+            eyebrow: 'QUICK START',
+            title: 'Keep your patrol moving',
+          ),
+          const SizedBox(height: 12),
+          _PrimaryPatrolAction(
+            enabled: canPatrol,
+            onTap: () => context
+                .findAncestorStateOfType<_HomeScreenState>()
+                ?._openScannerOrExplain(context),
           ),
           const SizedBox(height: 12),
           _EmergencyHoldButton(
@@ -997,112 +959,55 @@ class _DashboardTab extends StatelessWidget {
             },
           ),
           const SizedBox(height: 12),
-          Column(
-            children: [
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton.icon(
-                  onPressed: shift.loading
-                      ? null
-                      : () => handleDutyToggle(context),
-                  icon: Icon(
-                    shift.onDuty ? Icons.logout : Icons.login,
-                    size: 20,
-                  ),
-                  label: Text(
-                    shift.loading
-                        ? 'Processing...'
-                        : shift.onDuty
-                        ? 'Clock Out'
-                        : 'Clock In',
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: shift.onDuty
-                        ? Colors.orange
-                        : AppTheme.verified,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    textStyle: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-              if (shift.onDuty && shift.clockInGpsValid != null) ...[
-                const SizedBox(height: 6),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      shift.clockInGpsValid!
-                          ? Icons.check_circle
-                          : Icons.warning_amber,
-                      size: 14,
-                      color: shift.clockInGpsValid!
-                          ? AppTheme.verified
-                          : AppTheme.flagged,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      shift.clockInGpsValid!
-                          ? 'Geofence verified'
-                          : shift.clockInDistanceMeters != null
-                          ? '${shift.clockInDistanceMeters!.toStringAsFixed(0)}m from checkpoint'
-                          : 'Outside geofence',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: shift.clockInGpsValid!
-                            ? AppTheme.verified
-                            : AppTheme.flagged,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ],
+          _ShiftControlCard(
+            onDuty: shift.onDuty,
+            loading: shift.loading,
+            gpsValid: shift.clockInGpsValid,
+            distanceMeters: shift.clockInDistanceMeters,
+            onTap: shift.loading
+                ? null
+                : () => handleDutyToggle(context),
           ),
-          const SizedBox(height: 20),
-          Row(
+          const SizedBox(height: 24),
+          const _SectionLabel(
+            eyebrow: 'SHORTCUTS',
+            title: 'Everything within reach',
+          ),
+          const SizedBox(height: 12),
+          GridView.count(
+            crossAxisCount: 3,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: 1.08,
             children: [
               _QuickAction(
                 icon: Icons.description_outlined,
                 label: 'Reports',
                 onTap: () => Navigator.pushNamed(context, AppRoutes.reports),
               ),
-              const SizedBox(width: 12),
               _QuickAction(
                 icon: Icons.assignment_turned_in_outlined,
                 label: 'Duties',
                 onTap: () => Navigator.pushNamed(context, AppRoutes.duties),
               ),
-              const SizedBox(width: 12),
               _QuickAction(
                 icon: Icons.history,
                 label: 'History',
                 onTap: () => Navigator.pushNamed(context, AppRoutes.history),
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
               _QuickAction(
                 icon: Icons.location_on_outlined,
                 label: 'Checkpoints',
                 onTap: () =>
                     Navigator.pushNamed(context, AppRoutes.checkpoints),
               ),
-              const SizedBox(width: 12),
               _QuickAction(
                 icon: Icons.sos_outlined,
                 label: 'Emergency',
                 onTap: () => _confirmEmergencyAction(context),
               ),
-              const SizedBox(width: 12),
               _QuickAction(
                 icon: Icons.person_outline,
                 label: 'Profile',
@@ -1110,36 +1015,71 @@ class _DashboardTab extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 26),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Text(
-                'Recent Activity',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+              const Expanded(
+                child: _SectionLabel(
+                  eyebrow: 'LATEST',
+                  title: 'Recent activity',
+                ),
               ),
               TextButton(
                 onPressed: () =>
                     Navigator.pushNamed(context, AppRoutes.history),
-                child: const Text('View All'),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppTheme.primaryDark,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                child: const Text(
+                  'View all',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
               ),
             ],
           ),
           if (scan.scans.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Center(
-                child: Text(
-                  'No scans yet. Start patrolling!',
-                  style: TextStyle(color: AppTheme.textSecondary),
-                ),
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(top: 12),
+              padding: const EdgeInsets.symmetric(vertical: 28),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.history_toggle_off_rounded,
+                    color: AppTheme.textSecondary.withValues(alpha: 0.65),
+                    size: 30,
+                  ),
+                  const SizedBox(height: 9),
+                  const Text(
+                    'No scans yet',
+                    style: TextStyle(
+                      color: AppTheme.text,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  const Text(
+                    'Start a patrol to see activity here.',
+                    style: TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
               ),
             )
           else
             ...scan.scans
                 .take(5)
                 .map(
-                  (s) => ScanTile(
+                  (s) => _DashboardScanTile(
                     scan: s,
                     onTap: () => Navigator.pushNamed(
                       context,
@@ -1281,6 +1221,484 @@ class _EmergencyHoldButtonState extends State<_EmergencyHoldButton> {
   }
 }
 
+class _ShiftOverviewCard extends StatelessWidget {
+  const _ShiftOverviewCard({
+    required this.onDuty,
+    required this.time,
+    required this.siteLabel,
+    required this.clockInTime,
+  });
+
+  final bool onDuty;
+  final String time;
+  final String? siteLabel;
+  final DateTime? clockInTime;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = onDuty ? Colors.white : AppTheme.text;
+    final muted = onDuty
+        ? Colors.white.withValues(alpha: 0.68)
+        : AppTheme.textSecondary;
+    final accent = onDuty ? AppTheme.primary : AppTheme.primaryDark;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: onDuty ? AppTheme.onboardingInk : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: onDuty ? null : Border.all(color: AppTheme.border),
+        boxShadow: onDuty
+            ? [
+                BoxShadow(
+                  color: AppTheme.onboardingInk.withValues(alpha: 0.16),
+                  blurRadius: 18,
+                  offset: const Offset(0, 9),
+                ),
+              ]
+            : null,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: onDuty
+                  ? Colors.white.withValues(alpha: 0.12)
+                  : AppTheme.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: Icon(
+              onDuty ? Icons.shield_rounded : Icons.schedule_outlined,
+              color: accent,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  onDuty ? 'CURRENT SHIFT' : 'SHIFT STATUS',
+                  style: TextStyle(
+                    color: muted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: onDuty ? accent : AppTheme.textSecondary,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    Text(
+                      onDuty ? 'On duty' : 'Off duty',
+                      style: TextStyle(
+                        color: foreground,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+                if (onDuty && (siteLabel ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    siteLabel!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: muted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                onDuty ? time : 'Ready',
+                style: TextStyle(
+                  color: foreground,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              if (onDuty && clockInTime != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Since ${clockInTime!.hour.toString().padLeft(2, '0')}:${clockInTime!.minute.toString().padLeft(2, '0')}',
+                  style: TextStyle(color: muted, fontSize: 10),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PrimaryPatrolAction extends StatelessWidget {
+  const _PrimaryPatrolAction({required this.enabled, required this.onTap});
+
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppTheme.onboardingInk,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.all(17),
+          child: Row(
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: AppTheme.primary,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(
+                  enabled ? Icons.qr_code_scanner_rounded : Icons.route_rounded,
+                  color: AppTheme.onboardingInk,
+                  size: 26,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      enabled ? 'Start a patrol' : 'Review patrol tour',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      enabled
+                          ? 'Scan a checkpoint QR code to check in.'
+                          : 'Review the assigned route for this account.',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.68),
+                        fontSize: 12,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(
+                Icons.arrow_forward_rounded,
+                color: Colors.white,
+                size: 22,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ShiftControlCard extends StatelessWidget {
+  const _ShiftControlCard({
+    required this.onDuty,
+    required this.loading,
+    required this.gpsValid,
+    required this.distanceMeters,
+    required this.onTap,
+  });
+
+  final bool onDuty;
+  final bool loading;
+  final bool? gpsValid;
+  final double? distanceMeters;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final actionColor = onDuty ? const Color(0xFFD97706) : AppTheme.verified;
+    final gpsColor = gpsValid == true ? AppTheme.verified : AppTheme.flagged;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: actionColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(
+                  onDuty ? Icons.logout_rounded : Icons.login_rounded,
+                  color: actionColor,
+                  size: 21,
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      onDuty ? 'End your shift' : 'Start your shift',
+                      style: const TextStyle(
+                        color: AppTheme.text,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      onDuty
+                          ? 'Clock out when you leave site.'
+                          : 'Clock in when you arrive on site.',
+                      style: const TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(
+                width: 104,
+                height: 42,
+                child: ElevatedButton(
+                  onPressed: onTap,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: actionColor,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: actionColor.withValues(
+                      alpha: 0.45,
+                    ),
+                    elevation: 0,
+                    padding: EdgeInsets.zero,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: loading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text(
+                          onDuty ? 'Clock out' : 'Clock in',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                ),
+              ),
+            ],
+          ),
+          if (onDuty && gpsValid != null) ...[
+            const SizedBox(height: 11),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  gpsValid! ? Icons.check_circle_rounded : Icons.warning_amber,
+                  size: 14,
+                  color: gpsColor,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  gpsValid!
+                      ? 'Geofence verified'
+                      : distanceMeters != null
+                      ? '${distanceMeters!.toStringAsFixed(0)}m from checkpoint'
+                      : 'Outside geofence',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: gpsColor,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({required this.eyebrow, required this.title});
+
+  final String eyebrow;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          eyebrow,
+          style: const TextStyle(
+            color: AppTheme.primaryDark,
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.3,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          title,
+          style: const TextStyle(
+            color: AppTheme.text,
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.2,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DashboardScanTile extends StatelessWidget {
+  const _DashboardScanTile({required this.scan, required this.onTap});
+
+  final Scan scan;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final statusColor = scan.gpsValid ? AppTheme.verified : AppTheme.error;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  scan.gpsValid
+                      ? Icons.check_circle_rounded
+                      : Icons.warning_rounded,
+                  color: statusColor,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      scan.checkpointName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.text,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${scan.checkpointCode} · ${scan.officerName}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    scan.formattedTime,
+                    style: const TextStyle(
+                      color: AppTheme.text,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '${scan.distanceMeters.toStringAsFixed(0)}m',
+                    style: const TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _StatCard extends StatelessWidget {
   final String label;
   final String value;
@@ -1296,42 +1714,59 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: AppTheme.border),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
+    return SizedBox(
+      height: 118,
+      child: Card(
+        margin: EdgeInsets.zero,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(17),
+          side: const BorderSide(color: AppTheme.border),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 35,
+                height: 35,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(icon, color: color, size: 19),
               ),
-              child: Icon(icon, color: color, size: 20),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: color,
+              const Spacer(),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    value,
+                    style: TextStyle(
+                      fontSize: 25,
+                      height: 1,
+                      fontWeight: FontWeight.w800,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(width: 7),
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppTheme.textSecondary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppTheme.textSecondary,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1351,39 +1786,42 @@ class _QuickAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Card(
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: AppTheme.border),
-        ),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(icon, color: AppTheme.primary, size: 24),
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: AppTheme.border),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 13),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textSecondary,
-                    fontWeight: FontWeight.w500,
-                  ),
+                child: Icon(icon, color: AppTheme.primaryDark, size: 21),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppTheme.textSecondary,
+                  fontWeight: FontWeight.w700,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

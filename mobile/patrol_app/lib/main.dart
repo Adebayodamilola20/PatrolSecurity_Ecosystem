@@ -4,6 +4,7 @@ import 'utils/theme.dart';
 import 'utils/routes.dart';
 import 'utils/constants.dart';
 import 'screens/splash_screen.dart';
+import 'screens/onboarding_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/duties_screen.dart';
@@ -94,6 +95,13 @@ class PatrolApp extends StatelessWidget {
         switch (settings.name) {
           case AppRoutes.splash:
             return _route(const SplashScreen(), settings);
+          case AppRoutes.onboarding:
+            return _route(
+              OnboardingScreen(
+                hasActiveSession: args?['hasActiveSession'] as bool? ?? false,
+              ),
+              settings,
+            );
           case AppRoutes.login:
             return _route(const LoginScreen(), settings);
           case AppRoutes.home:
@@ -112,18 +120,24 @@ class PatrolApp extends StatelessWidget {
           case AppRoutes.history:
             return _route(const HistoryScreen(), settings);
           case AppRoutes.scanDetail:
-            return _route(ScanDetailScreen(scanId: args?['scanId'] as String?), settings);
+            return _route(
+              ScanDetailScreen(scanId: args?['scanId'] as String?),
+              settings,
+            );
           case AppRoutes.checkpoints:
             return _route(const CheckpointsScreen(), settings);
           case AppRoutes.checkpointDetail:
             return _route(
               CheckpointDetailScreen(
                 checkpointId: args?['checkpointId'] as String?,
-              ), settings);
+              ),
+              settings,
+            );
           case AppRoutes.reports:
-            return _route(ReportsScreen(
-              initialTab: args?['tab'] as int?,
-            ), settings);
+            return _route(
+              ReportsScreen(initialTab: args?['tab'] as int?),
+              settings,
+            );
           case AppRoutes.schedule:
             return _route(
               const WorkflowModuleScreen(
@@ -135,7 +149,9 @@ class PatrolApp extends StatelessWidget {
                   'Admins can review schedule coverage globally.',
                 ],
                 visibleFor: ['Admin', 'Client Account', 'Site Account'],
-              ), settings);
+              ),
+              settings,
+            );
           case AppRoutes.patrol:
             return _route(const PatrolScreen(), settings);
           case AppRoutes.policy:
@@ -155,7 +171,9 @@ class PatrolApp extends StatelessWidget {
                   'Admins can monitor requests across clients and sites.',
                 ],
                 visibleFor: ['Admin', 'Client Account', 'Site Account'],
-              ), settings);
+              ),
+              settings,
+            );
           case AppRoutes.users:
             return _route(
               const WorkflowModuleScreen(
@@ -167,7 +185,9 @@ class PatrolApp extends StatelessWidget {
                   'Control active status and role visibility.',
                 ],
                 visibleFor: ['Admin'],
-              ), settings);
+              ),
+              settings,
+            );
           case AppRoutes.profile:
             return _route(const ProfileScreen(), settings);
           case AppRoutes.settings:

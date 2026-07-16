@@ -3,6 +3,11 @@ import 'package:flutter/material.dart';
 class AppTheme {
   static const Color primary = Color(0xFF10B981);
   static const Color primaryDark = Color(0xFF059669);
+  static const Color onboardingBackground = Color(0xFFF5F7F2);
+  static const Color onboardingInk = Color(0xFF102D32);
+  static const Color onboardingMuted = Color(0xFF718387);
+  static const Color onboardingTrack = Color(0xFFDCE7E1);
+  static const Color onboardingBorder = Color(0xFFD9E4DE);
   static const Color surface = Color(0xFFF8FAFC);
   static const Color card = Colors.white;
   static const Color text = Color(0xFF1E293B);

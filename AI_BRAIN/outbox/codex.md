@@ -6,6 +6,38 @@ Status, results, and questions **from Codex** to the team. Others read this.
 
 ---
 
+## [2026-07-15] re: mobile onboarding UI
+
+Implemented a five-screen first-launch onboarding flow for `mobile/patrol_app` with polished, responsive Flutter UI, progress tracking, previous/continue controls, and a final continuation action. Added the `/onboarding` route and updated `SplashScreen` to prioritize incomplete onboarding even when a session is already restored; existing users return to Home afterward, while new users continue to Login.
+
+Verification: `flutter analyze` passes with no issues. `flutter test` could not run because this project has no `test/` directory. Existing unrelated changes remain in the worktree.
+
+Next: lead review / visual check on the iOS simulator; the login screen remains unchanged for the next UI pass.
+
+## [2026-07-15] re: white login UI
+
+Redesigned `mobile/patrol_app/lib/screens/login_screen.dart` with a white background, restrained green security branding, a light hero panel, clearer “Welcome back” hierarchy, custom role choices, softer input surfaces, inline error treatment, and a stronger sign-in CTA. Existing validation, loading, visibility toggle, account role state, and auth calls are unchanged.
+
+Verification: `flutter analyze` passes with no issues. The simulator build is blocked by Xcode rejecting Finder metadata on a generated Flutter framework (`resource fork, Finder information, or similar detritus not allowed`), not by the Dart source.
+
+## [2026-07-15] re: mobile Home dashboard UI
+
+Reworked only `mobile/patrol_app/lib/screens/home_screen.dart` presentation: aligned greeting and role header, shift overview card, fixed-height metrics, primary patrol action, grouped clock-in/out control, three-column shortcuts grid, empty recent-activity state, and custom aligned scan activity rows. Existing provider loads, refresh behavior, navigation callbacks, QR scan, emergency hold, clock actions, and sign-out behavior were preserved.
+
+Verification: `flutter analyze` passes with no issues and `git diff --check` passes. No backend files were edited; pre-existing changes under `mobile/patrol_app/convex/` were left untouched.
+
+## [2026-07-15] re: mobile Profile UI
+
+Replaced the Profile screen’s oversized generic card stack with a polished presentation-only layout: dark teal identity hero with initials and account status, grouped contact details, aligned patrol statistics, and a single account-actions card for Settings and Sign Out. Existing user/scan bindings, settings navigation, and `signOutAndReturnToLogin` behavior are unchanged.
+
+Verification: `flutter analyze` passes with no issues and `git diff --check` passes. Only `mobile/patrol_app/lib/screens/profile_screen.dart` was changed for this task.
+
+## [2026-07-15] re: mobile Scan Detail UI
+
+Reworked only `mobile/patrol_app/lib/screens/scan_detail_screen.dart`: added a compact verified/flagged summary card, clearer section headings, aligned scan-information rows with softer dividers, and a dedicated field-notes card. Scan lookup, status badge semantics, GPS/timestamp/checkpoint values, network retry state, and notes rendering remain intact.
+
+Verification: `flutter analyze` passes with no issues and `git diff --check` passes. No backend or service files were changed.
+
 ## [2026-07-06] re: git rebase conflict and push
 
 Resolved the in-progress `git pull --rebase` conflict in `AI_BRAIN/team-log.md` by preserving both appended log entries. Continued the rebase non-interactively, producing commit `7bf3a1c` on `main`, then pushed successfully to GitHub.
