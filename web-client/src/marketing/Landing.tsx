@@ -12,13 +12,20 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
 import {
-    ArrowRight, Sparkles, Lock, Network, Search, Smartphone, CheckCircle2, Shield, Home,
-    BarChart2, Folder, Settings, ChevronDown, Bell, Plus, ArrowLeft, FileText,
-    Link as LinkIcon, Hash, ArrowUpRight, Users, MessageSquare, MapPin, QrCode, Clock,
-    Building2, Stethoscope, GraduationCap, Warehouse, CalendarDays, Camera, AlertTriangle, X,
-    Activity, Radio, WifiOff, Map, BarChart3, Printer, ScanLine, ClipboardList, UserCheck,
-    Siren, Fingerprint, FileCheck2, ShieldCheck, Navigation, TrendingUp, Eye
+    ArrowRight, Sparkles, Lock, Smartphone, CheckCircle2, Shield,
+    Home, ChevronDown, FileText, Users, MessageSquare, MapPin,
+    QrCode, Clock, Building2, Stethoscope, GraduationCap, Warehouse,
+    CalendarDays, Camera, AlertTriangle, X, Activity, Radio,
+    WifiOff, Map, BarChart3, Printer, ScanLine, ClipboardList,
+    UserCheck, Siren, Fingerprint, FileCheck2, ShieldCheck, Navigation,
+    TrendingUp, Eye
 } from 'lucide-react';
+
+// Real product screens. Imported so Vite fingerprints and serves them from our
+// own origin — the client CSP only allows images from 'self'/data:/blob:.
+import heroDashboard from '../assets/product/hero-dashboard.png';
+import guardAppShot from '../assets/product/guard-app.png';
+import clientPortalShot from '../assets/product/client-portal.png';
 
 const FadeDown = ({ children, delay = 0, className = "" }: { children: React.ReactNode, delay?: number, className?: string }) => (
     <motion.div
@@ -309,18 +316,19 @@ function ScreenTabs({ tabs }: { tabs: { icon: React.ElementType; label: string; 
     );
 }
 
-function PhoneFrame({ children }: { children: React.ReactNode }) {
+// The real app screenshots are already phone-framed (bezel + Dynamic Island),
+// so they're shown as floating device shots — a second CSS bezel would double it.
+// Keeps the same teal glow the mocked phones had, plus a gentle float.
+function PhoneShot({ src, alt }: { src: string; alt: string }) {
     return (
         <div className="relative mx-auto w-[280px]">
             <div className="absolute -inset-8 bg-teal-500/15 blur-[80px] rounded-full pointer-events-none transform-gpu" />
-            <div className="relative rounded-[2.5rem] border-[10px] border-slate-900 bg-slate-900 shadow-2xl overflow-hidden">
-                <div className="rounded-[1.8rem] overflow-hidden bg-white">
-                    <div className="h-6 bg-slate-900 flex items-center justify-center">
-                        <div className="w-16 h-1 rounded-full bg-slate-700" />
-                    </div>
-                    {children}
-                </div>
-            </div>
+            <img
+                src={src}
+                alt={alt}
+                loading="lazy"
+                className="lp-float relative w-full h-auto block drop-shadow-2xl"
+            />
         </div>
     );
 }
@@ -425,258 +433,17 @@ export default function Landing() {
                             className="w-full transform-gpu"
                         >
                             <div>
-                                {/* 🔥 OPTIMIZATION: Added transform-gpu, will-change-transform */}
                                 <div className="absolute inset-0 bg-gradient-to-b from-teal-500/20 to-cyan-500/20 blur-[100px] rounded-full -z-10 transform translate-y-8 pointer-events-none transform-gpu will-change-transform" />
 
-                                <div className="w-full min-h-[750px] pb-8 bg-[#050505] border border-white/10 rounded-3xl shadow-2xl flex overflow-hidden relative backdrop-blur-2xl">
-                                    {/* Top Glow Effects */}
+                                <div className="w-full bg-[#050505] border border-white/10 rounded-3xl shadow-2xl overflow-hidden relative">
+                                    {/* Top glow line + halo, kept from the original frame */}
                                     <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-[2px] bg-gradient-to-r from-transparent via-teal-500 to-transparent opacity-80 z-50 transform-gpu" />
                                     <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-full h-40 bg-teal-500/20 blur-[100px] pointer-events-none z-40 transform-gpu will-change-transform" />
-
-                                    {/* Floating Left Sidebar */}
-                                    <div className="absolute left-6 top-12 -translate-y-12 w-16 bg-[#111] border border-white/5 rounded-full py-8 flex flex-col items-center gap-8 shadow-[0_0_30px_rgba(0,0,0,0.5)] z-20 transform-gpu">
-                                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-teal-600 to-cyan-500 flex items-center justify-center shadow-[0_0_15px_rgba(20,184,166,0.4)]">
-                                            <Home className="w-5 h-5 text-white" />
-                                        </div>
-                                        <div className="w-10 h-10 rounded-full hover:bg-white/5 flex items-center justify-center text-gray-500 hover:text-white transition-colors cursor-pointer">
-                                            <BarChart2 className="w-5 h-5" />
-                                        </div>
-                                        <div className="w-10 h-10 rounded-full hover:bg-white/5 flex items-center justify-center text-gray-500 hover:text-white transition-colors cursor-pointer">
-                                            <Folder className="w-5 h-5" />
-                                        </div>
-                                        <div className="w-10 h-10 rounded-full hover:bg-white/5 flex items-center justify-center text-gray-500 hover:text-white transition-colors cursor-pointer mt-auto">
-                                            <Settings className="w-5 h-5" />
-                                        </div>
-                                    </div>
-
-                                    {/* Main Content Area */}
-                                    <div className="flex-1 flex flex-col pl-24 lg:pl-28 pr-6 py-8 relative z-10 h-full overflow-y-auto overflow-x-hidden">
-                                        {/* Header */}
-                                        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-4">
-                                            <h2 className="text-2xl font-bold text-white">Good Evening, Alex!</h2>
-                                            <div className="flex items-center gap-4">
-                                                <div className="bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-sm text-gray-300 flex items-center gap-2">
-                                                    Personal Workspace <ChevronDown className="w-4 h-4" />
-                                                </div>
-                                                <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 shrink-0">
-                                                    <Bell className="w-5 h-5" />
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="flex flex-col lg:flex-row gap-8 flex-1">
-                                            {/* Left Column Cards */}
-                                            <div className="w-full lg:w-72 flex flex-col gap-4">
-                                                <div className="h-40 rounded-2xl bg-gradient-to-br from-teal-900/40 to-black border border-teal-500/20 p-5 flex flex-col justify-between relative overflow-hidden group">
-                                                    <div className="absolute top-0 right-0 w-32 h-32 bg-teal-500/10 rounded-full blur-2xl -mr-10 -mt-10 transition-transform group-hover:scale-110 transform-gpu will-change-transform" />
-                                                    <div className="flex justify-between items-start">
-                                                        <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
-                                                            <Sparkles className="w-4 h-4 text-teal-400" />
-                                                        </div>
-                                                        <span className="text-xs text-gray-400">Core Notes</span>
-                                                    </div>
-                                                    <div>
-                                                        <div className="text-lg font-semibold text-white mb-1">Project Alpha</div>
-                                                        <div className="text-sm text-gray-400">Updated 2h ago</div>
-                                                    </div>
-                                                </div>
-                                                <div className="h-40 rounded-2xl bg-gradient-to-br from-cyan-900/40 to-black border border-cyan-500/20 p-5 flex flex-col justify-between relative overflow-hidden group">
-                                                    <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-full blur-2xl -mr-10 -mt-10 transition-transform group-hover:scale-110 transform-gpu will-change-transform" />
-                                                    <div className="flex justify-between items-start">
-                                                        <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
-                                                            <Network className="w-4 h-4 text-cyan-400" />
-                                                        </div>
-                                                        <span className="text-xs text-gray-400">Research</span>
-                                                    </div>
-                                                    <div>
-                                                        <div className="text-lg font-semibold text-white mb-1">Q3 Strategy</div>
-                                                        <div className="text-sm text-gray-400">Updated 5h ago</div>
-                                                    </div>
-                                                </div>
-                                                <div className="h-24 rounded-2xl border border-dashed border-white/20 bg-white/5 flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/10 transition-colors cursor-pointer gap-2">
-                                                    <Plus className="w-5 h-5" /> Add Workspace
-                                                </div>
-                                            </div>
-
-                                            {/* Middle Column List */}
-                                            <div className="flex-1 flex flex-col">
-                                                <div className="flex justify-between items-end mb-6">
-                                                    <div>
-                                                        <h3 className="text-lg font-semibold text-white mb-1">Networked Notes</h3>
-                                                        <p className="text-sm text-gray-500">Recent Activity</p>
-                                                    </div>
-                                                    <div className="flex gap-2">
-                                                        <button className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 hover:text-white"><ArrowLeft className="w-4 h-4" /></button>
-                                                        <button className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 hover:text-white"><ArrowRight className="w-4 h-4" /></button>
-                                                    </div>
-                                                </div>
-
-                                                <div className="flex flex-col gap-3">
-                                                    <div className="bg-white/5 border border-white/10 rounded-xl p-4 flex items-center justify-between hover:bg-white/10 transition-colors shadow-[0_4px_20px_rgba(0,0,0,0.2)]">
-                                                        <div className="flex items-center gap-4">
-                                                            <div className="w-10 h-10 rounded-lg bg-teal-500/20 flex items-center justify-center">
-                                                                <FileText className="w-5 h-5 text-teal-400" />
-                                                            </div>
-                                                            <div>
-                                                                <div className="text-sm font-medium text-white">Meeting Notes: Design Sync</div>
-                                                                <div className="text-xs text-gray-500">Shared with Design Team</div>
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex items-center gap-6">
-                                                            <span className="text-sm text-gray-400">2 mins ago</span>
-                                                            <div className="w-12 h-6 rounded-full bg-teal-600 flex items-center p-1 cursor-pointer">
-                                                                <div className="w-4 h-4 rounded-full bg-white transform translate-x-6 shadow-sm" />
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="bg-white/5 border border-white/10 rounded-xl p-4 flex items-center justify-between hover:bg-white/10 transition-colors">
-                                                        <div className="flex items-center gap-4">
-                                                            <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center">
-                                                                <LinkIcon className="w-5 h-5 text-cyan-400" />
-                                                            </div>
-                                                            <div>
-                                                                <div className="text-sm font-medium text-white">Competitor Analysis</div>
-                                                                <div className="text-xs text-gray-500">Linked to Q3 Strategy</div>
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex items-center gap-6">
-                                                            <span className="text-sm text-gray-400">1 hour ago</span>
-                                                            <div className="w-12 h-6 rounded-full bg-white/10 flex items-center p-1 cursor-pointer">
-                                                                <div className="w-4 h-4 rounded-full bg-gray-400 shadow-sm" />
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="bg-white/5 border border-white/10 rounded-xl p-4 flex items-center justify-between hover:bg-white/10 transition-colors">
-                                                        <div className="flex items-center gap-4">
-                                                            <div className="w-10 h-10 rounded-lg bg-teal-500/20 flex items-center justify-center">
-                                                                <Hash className="w-5 h-5 text-teal-400" />
-                                                            </div>
-                                                            <div>
-                                                                <div className="text-sm font-medium text-white">Product Roadmap 2026</div>
-                                                                <div className="text-xs text-gray-500">Tag added: #planning</div>
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex items-center gap-6">
-                                                            <span className="text-sm text-gray-400">Yesterday</span>
-                                                            <div className="w-12 h-6 rounded-full bg-teal-600 flex items-center p-1 cursor-pointer">
-                                                                <div className="w-4 h-4 rounded-full bg-white transform translate-x-6 shadow-sm" />
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Bottom Widgets */}
-                                        <div className="mt-8">
-                                            <div className="flex justify-between items-center mb-4">
-                                                <h3 className="text-sm font-semibold text-white">Quick Summary</h3>
-                                                <span className="text-xs text-teal-400 cursor-pointer hover:underline">View All</span>
-                                            </div>
-                                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                                                <div className="bg-white/5 border border-white/10 rounded-xl p-4 flex flex-col justify-between h-32 relative overflow-hidden">
-                                                    <div className="flex justify-between items-start">
-                                                        <span className="text-xs text-gray-400">Active Notes</span>
-                                                        <ArrowUpRight className="w-3 h-3 text-cyan-400" />
-                                                    </div>
-                                                    <div className="text-2xl font-bold text-white">1,204</div>
-                                                    <div className="absolute bottom-0 left-0 right-0 h-12 opacity-50">
-                                                        <svg viewBox="0 0 100 30" preserveAspectRatio="none" className="w-full h-full">
-                                                            <path d="M0,30 L0,15 C10,15 20,25 30,20 C40,15 50,5 60,10 C70,15 80,25 90,20 C95,17 100,10 100,10 L100,30 Z" fill="rgba(20,184,166,0.3)" />
-                                                        </svg>
-                                                    </div>
-                                                </div>
-                                                <div className="bg-white/5 border border-white/10 rounded-xl p-4 flex flex-col justify-between h-32 relative overflow-hidden">
-                                                    <div className="flex justify-between items-start">
-                                                        <span className="text-xs text-gray-400">Connections</span>
-                                                        <ArrowUpRight className="w-3 h-3 text-cyan-400" />
-                                                    </div>
-                                                    <div className="text-2xl font-bold text-white">8,432</div>
-                                                    <div className="absolute bottom-0 left-0 right-0 h-12 opacity-50">
-                                                        <svg viewBox="0 0 100 30" preserveAspectRatio="none" className="w-full h-full">
-                                                            <path d="M0,30 L0,20 C15,20 25,10 40,15 C55,20 65,25 80,15 C90,8 100,20 100,20 L100,30 Z" fill="rgba(6,182,212,0.3)" />
-                                                        </svg>
-                                                    </div>
-                                                </div>
-                                                <div className="bg-white/5 border border-white/10 rounded-xl p-4 flex flex-col justify-between h-32 relative overflow-hidden">
-                                                    <div className="flex justify-between items-start">
-                                                        <span className="text-xs text-gray-400">Daily Goal</span>
-                                                        <ArrowUpRight className="w-3 h-3 text-teal-400" />
-                                                    </div>
-                                                    <div className="text-2xl font-bold text-white">85%</div>
-                                                    <div className="absolute bottom-4 left-4 right-4 flex items-end gap-1 h-8">
-                                                        <div className="w-1/6 bg-white/10 rounded-t-sm h-[40%]" />
-                                                        <div className="w-1/6 bg-white/10 rounded-t-sm h-[60%]" />
-                                                        <div className="w-1/6 bg-white/10 rounded-t-sm h-[30%]" />
-                                                        <div className="w-1/6 bg-white/10 rounded-t-sm h-[80%]" />
-                                                        <div className="w-1/6 bg-teal-500 rounded-t-sm h-[100%]" />
-                                                        <div className="w-1/6 bg-white/10 rounded-t-sm h-[50%]" />
-                                                    </div>
-                                                </div>
-                                                <div className="bg-white/5 border border-white/10 rounded-xl p-4 flex flex-col justify-between h-32 relative overflow-hidden items-center justify-center">
-                                                    <div className="absolute top-4 left-4 flex justify-between items-start w-[calc(100%-2rem)]">
-                                                        <span className="text-xs text-gray-400">Sync Status</span>
-                                                        <ArrowUpRight className="w-3 h-3 text-cyan-400" />
-                                                    </div>
-                                                    <div className="w-16 h-16 rounded-full border-4 border-white/10 border-t-cyan-400 border-r-teal-500 mt-4 flex items-center justify-center">
-                                                        <span className="text-xs font-bold text-white">100%</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Right Sidebar */}
-                                    <div className="hidden lg:flex w-64 bg-white/[0.02] border-l border-white/10 p-6 flex-col z-10 relative h-full">
-                                        <div className="flex justify-between items-center mb-6">
-                                            <h3 className="text-lg font-semibold text-white">Contacts</h3>
-                                            <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-gray-400 cursor-pointer hover:text-white">
-                                                <Search className="w-4 h-4" />
-                                            </div>
-                                        </div>
-                                        <p className="text-xs text-gray-500 mb-4">Recently active</p>
-                                        <div className="flex flex-col gap-4 flex-1">
-                                            <div className="flex items-center gap-3 cursor-pointer group">
-                                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center text-white font-bold text-sm shadow-lg">MT</div>
-                                                <div>
-                                                    <div className="text-sm font-medium text-white group-hover:text-teal-400 transition-colors">Mike Taylor</div>
-                                                    <div className="text-xs text-gray-500">Design Lead</div>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-3 cursor-pointer group">
-                                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center text-white font-bold text-sm shadow-lg">JG</div>
-                                                <div>
-                                                    <div className="text-sm font-medium text-white group-hover:text-cyan-400 transition-colors">Jack Green</div>
-                                                    <div className="text-xs text-gray-500">Engineering</div>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-3 cursor-pointer group">
-                                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-teal-500 to-rose-500 flex items-center justify-center text-white font-bold text-sm shadow-lg">CL</div>
-                                                <div>
-                                                    <div className="text-sm font-medium text-white group-hover:text-teal-400 transition-colors">Carmen Lewis</div>
-                                                    <div className="text-xs text-gray-500">Product Manager</div>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-3 cursor-pointer group">
-                                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center text-white font-bold text-sm shadow-lg">MR</div>
-                                                <div>
-                                                    <div className="text-sm font-medium text-white group-hover:text-cyan-400 transition-colors">Micheal R.</div>
-                                                    <div className="text-xs text-gray-500">Marketing</div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Bottom Notification Card */}
-                                        <div className="mt-auto bg-gradient-to-br from-teal-500/10 to-cyan-500/10 border border-white/10 rounded-xl p-4 relative overflow-hidden">
-                                            <div className="absolute -right-4 -top-4 w-16 h-16 bg-teal-500/20 rounded-full blur-xl transform-gpu will-change-transform" />
-                                            <Bell className="w-5 h-5 text-teal-400 mb-2" />
-                                            <div className="text-sm font-medium text-white mb-1">Weekly Review</div>
-                                            <div className="text-xs text-gray-400 mb-3">Your network grew by 12% this week!</div>
-                                            <button className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-colors ml-auto">
-                                                <ArrowRight className="w-4 h-4" />
-                                            </button>
-                                        </div>
-                                    </div>
+                                    <img
+                                        src={heroDashboard}
+                                        alt="Evergreen patrol monitoring dashboard — live scan feed, active officers, alerts and site map"
+                                        className="relative z-10 w-full h-auto block"
+                                    />
                                 </div>
                             </div>
                         </motion.div>
@@ -873,42 +640,7 @@ export default function Landing() {
                         </div>
 
                         <FadeDown delay={0.15} className="order-1 lg:order-2">
-                            <PhoneFrame>
-                                <div className="p-4 bg-gradient-to-b from-teal-500 to-cyan-500 text-white">
-                                    <p className="text-sm font-semibold">On duty — Nasfat Mosque</p>
-                                    <p className="text-[10px] opacity-90">Clocked in 2h 14m ago</p>
-                                </div>
-                                <div className="p-4 space-y-3 bg-white">
-                                    <div className="rounded-xl border border-slate-200 p-3">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-[11px] font-semibold text-slate-900">Next checkpoint</span>
-                                            <span className="text-[9px] text-teal-600 font-medium">Due 10m</span>
-                                        </div>
-                                        <p className="text-[10px] text-slate-500 mt-1">Main gate · SC-KN75</p>
-                                    </div>
-                                    <div className="rounded-xl bg-slate-900 p-4 text-center">
-                                        <ScanLine className="w-7 h-7 text-teal-400 mx-auto mb-1.5" />
-                                        <p className="text-[11px] font-semibold text-white">Scan checkpoint</p>
-                                    </div>
-                                    <div className="rounded-xl border border-teal-500/30 bg-teal-500/5 p-3">
-                                        <div className="flex items-center gap-2">
-                                            <ClipboardList className="w-3.5 h-3.5 text-teal-600" />
-                                            <span className="text-[10px] font-semibold text-slate-900">Post order — acknowledge</span>
-                                        </div>
-                                        <p className="text-[9px] text-slate-500 mt-1">Check perimeter lighting before proceeding.</p>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <div className="rounded-lg border border-slate-200 p-2.5 text-center">
-                                            <Camera className="w-4 h-4 text-slate-400 mx-auto mb-1" />
-                                            <p className="text-[9px] text-slate-600">Incident</p>
-                                        </div>
-                                        <div className="rounded-lg border border-red-200 bg-red-50 p-2.5 text-center">
-                                            <Siren className="w-4 h-4 text-red-500 mx-auto mb-1" />
-                                            <p className="text-[9px] text-red-600 font-medium">Panic</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </PhoneFrame>
+                            <PhoneShot src={guardAppShot} alt="Evergreen guard app — turn incidents, handovers and site activity into photo-backed records" />
                         </FadeDown>
                     </div>
 
@@ -940,43 +672,7 @@ export default function Landing() {
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
                         <FadeDown delay={0.15}>
-                            <PhoneFrame>
-                                <div className="p-4 bg-slate-900 text-white">
-                                    <p className="text-sm font-semibold">Evergreen</p>
-                                    <p className="text-[10px] text-slate-400">Welcome back, Nasfat Estate</p>
-                                </div>
-                                <div className="p-4 space-y-3 bg-white">
-                                    <div className="rounded-xl border border-slate-200 p-3">
-                                        <p className="text-[10px] text-slate-500">Patrols verified today</p>
-                                        <p className="text-2xl font-bold text-slate-900 mt-0.5">
-                                            12<span className="text-sm text-slate-400 font-medium">/12</span>
-                                        </p>
-                                        <div className="h-1.5 mt-2 rounded-full bg-slate-100 overflow-hidden">
-                                            <div className="h-full w-full bg-gradient-to-r from-teal-500 to-cyan-500" />
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <div className="rounded-lg border border-slate-200 p-2.5">
-                                            <p className="text-[9px] text-slate-500">Guards on duty</p>
-                                            <p className="text-sm font-bold text-slate-900">4</p>
-                                        </div>
-                                        <div className="rounded-lg border border-slate-200 p-2.5">
-                                            <p className="text-[9px] text-slate-500">Open incidents</p>
-                                            <p className="text-sm font-bold text-slate-900">0</p>
-                                        </div>
-                                    </div>
-                                    <div className="rounded-xl border border-slate-200 overflow-hidden">
-                                        {['Main gate', 'Rear perimeter', 'Car park'].map((p, i) => (
-                                            <div key={p} className={`flex items-center justify-between px-3 py-2 ${i ? 'border-t border-slate-100' : ''}`}>
-                                                <span className="text-[10px] text-slate-700">{p}</span>
-                                                <span className="inline-flex items-center gap-1 text-[9px] text-teal-600 font-medium">
-                                                    <CheckCircle2 className="w-3 h-3" /> Verified
-                                                </span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </PhoneFrame>
+                            <PhoneShot src={clientPortalShot} alt="Evergreen site-account app — shift status, scans today, post orders and one-tap patrol start" />
                         </FadeDown>
 
                         <div className="space-y-3">
