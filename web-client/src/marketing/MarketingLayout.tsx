@@ -276,11 +276,12 @@ export default function MarketingLayout() {
                         </div>
                     </div>
 
-                    {/* Giant Evergreen watermark. Sits low and faint behind the
-                        footer; teal tint + a readable opacity so it actually shows
-                        on white (the old slate-900/[0.04] was invisible), and
-                        pulled up from -15% so it isn't clipped off the bottom. */}
-                    <div className="absolute bottom-[-4%] left-1/2 -translate-x-1/2 text-[19vw] font-black text-teal-950/[0.07] select-none pointer-events-none tracking-tighter whitespace-nowrap z-0">
+                    {/* Giant Evergreen watermark behind the footer. Teal tint at a
+                        readable opacity (the old slate-900/[0.04] was invisible on
+                        white), sized to bleed past the sides, and sat behind the
+                        link columns — high enough to show the moment the footer
+                        scrolls in, not only at the very bottom. */}
+                    <div className="absolute inset-x-0 bottom-16 text-center text-[20vw] leading-none font-black text-teal-950/[0.10] select-none pointer-events-none tracking-tighter whitespace-nowrap z-0">
                         Evergreen
                     </div>
                 </footer>
