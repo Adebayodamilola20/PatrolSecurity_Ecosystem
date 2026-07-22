@@ -7,7 +7,7 @@ import bcrypt from "bcryptjs";
 import { signPatrolToken } from "./lib/jwt";
 import { requireAuth } from "./lib/httpAuth";
 import type { SensitiveAction } from "./audit";
-import { badRequest, conflict, errorResponse, forbidden, notFound, tooManyRequests, unauthorized } from "./lib/errors";
+import { badRequest, conflict, errorResponse, forbidden, notFound, serviceUnavailable, tooManyRequests, unauthorized } from "./lib/errors";
 import {
   resolveFileRef,
   resolvePhotoRef,
@@ -738,6 +738,34 @@ function requestIp(request: Request) {
   );
 }
 
+// Request protection gate. Runs global load shedding + the per-actor rate limit
+// for `action`, keyed by `actorId` (a user id for authed routes, or the client
+// IP / email for pre-auth routes like login). Returns a ready-to-send 503/429
+// Response when the request must be rejected, or null when it may proceed.
+//
+// `skipGlobal` exempts a route from global shedding (its per-actor limit still
+// applies) — used for safety-critical endpoints like emergency triggers that
+// must go through even when the system is shedding other load.
+async function enforceLimit(
+  ctx: any,
+  action: string,
+  actorId: string | undefined,
+  opts?: { skipGlobal?: boolean },
+): Promise<Response | null> {
+  // No stable actor key (e.g. missing IP on a pre-auth request) — fall back to
+  // a shared bucket so the endpoint still can't be flooded anonymously.
+  const key = actorId && actorId.length > 0 ? actorId : "anonymous";
+  const result = await ctx.runMutation(internal.lib.rateLimiter.guard, {
+    action,
+    actorId: key,
+    skipGlobal: opts?.skipGlobal,
+  });
+  if (result.allowed) return null;
+  return result.scope === "global"
+    ? serviceUnavailable(result.reason, result.retryAfterMs)
+    : tooManyRequests(result.reason, result.retryAfterMs);
+}
+
 async function recordAudit(
   ctx: any,
   user: { convexId: string; role: string; clientId?: string | null },
@@ -1140,18 +1168,20 @@ http.route({
       return badRequest("Email and password are required");
     }
 
+    // Rate-limit BEFORE the user lookup so failed attempts against unknown
+    // emails are capped too (credential stuffing / enumeration). Keyed by
+    // email+IP so one attacker can't burn a victim's whole budget from afar,
+    // and one IP can't spray many emails.
+    const loginLimited = await enforceLimit(
+      ctx,
+      "login",
+      `${email}|${requestIp(request) ?? "noip"}`,
+    );
+    if (loginLimited) return loginLimited;
+
     const user = await ctx.runQuery(internal.users.findByEmail, { email });
     if (!user || !user.active) {
       return unauthorized("Invalid credentials");
-    }
-
-    const rateCheck = await ctx.runQuery(internal.lib.rateLimiter.checkRateLimit, {
-      action: "login",
-      actorId: email,
-      auditAction: "user.login",
-    });
-    if (!rateCheck.allowed) {
-      return tooManyRequests("Too many login attempts. Please try again later.");
     }
 
     const valid = await bcrypt.compare(password, user.passwordHash);
@@ -1506,6 +1536,8 @@ http.route({
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
     if (user.role === "guard") return forbidden("Supervisor access required");
+    const exportLimited = await enforceLimit(ctx, "export", user.convexId);
+    if (exportLimited) return exportLimited;
     const url = new URL(request.url);
     const format = (url.searchParams.get("format") ?? "csv").toLowerCase();
     const rawActivityType = url.searchParams.get("activityType") ?? undefined;
@@ -1640,6 +1672,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const scanLimited = await enforceLimit(ctx, "scan", user.convexId);
+    if (scanLimited) return scanLimited;
     const pendingPassOn = await requireNoPendingPassOnLogs(ctx, user);
     if (pendingPassOn) return pendingPassOn;
     const body = await parseJson(request);
@@ -1864,6 +1898,11 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    // GPS pings are the highest-frequency write in the system. A misbehaving or
+    // spoofed client can turn this into a firehose, so it's the first thing the
+    // per-actor limit + global shedding protect.
+    const positionLimited = await enforceLimit(ctx, "position", user.convexId);
+    if (positionLimited) return positionLimited;
     const body = await parseJson(request);
     if (typeof body?.latitude !== "number" || typeof body?.longitude !== "number") {
       return badRequest("latitude and longitude are required");
@@ -1889,6 +1928,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const incidentLimited = await enforceLimit(ctx, "incident", user.convexId);
+    if (incidentLimited) return incidentLimited;
     const pendingPassOn = await requireNoPendingPassOnLogs(ctx, user);
     if (pendingPassOn) return pendingPassOn;
     const body = await parseJson(request);
@@ -1939,6 +1980,8 @@ http.route({
     if (!user) return unauthorized();
     const roleErr = requireRole(user, ["guard"]);
     if (roleErr) return roleErr;
+    const reportLimited = await enforceLimit(ctx, "report", user.convexId);
+    if (reportLimited) return reportLimited;
     const pendingPassOn = await requireNoPendingPassOnLogs(ctx, user);
     if (pendingPassOn) return pendingPassOn;
     const body = await parseJson(request);
@@ -1978,6 +2021,8 @@ http.route({
     if (!user) return unauthorized();
     const roleErr = requireRole(user, ["guard"]);
     if (roleErr) return roleErr;
+    const maintLimited = await enforceLimit(ctx, "report", user.convexId);
+    if (maintLimited) return maintLimited;
     const pendingPassOn = await requireNoPendingPassOnLogs(ctx, user);
     if (pendingPassOn) return pendingPassOn;
     const body = await parseJson(request);
@@ -2029,6 +2074,11 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    // Safety-critical: NEVER shed an emergency by the global load breaker. We
+    // still apply a generous per-actor cap (skipGlobal) so a stuck client can't
+    // spam alerts, but a real panic press must always get through.
+    const emergencyLimited = await enforceLimit(ctx, "emergency", user.convexId, { skipGlobal: true });
+    if (emergencyLimited) return emergencyLimited;
     const body = await parseJson(request);
     const checkpointId = await maybeResolveCheckpointId(ctx, body?.checkpointId);
     const emergencyEmails = csvList(

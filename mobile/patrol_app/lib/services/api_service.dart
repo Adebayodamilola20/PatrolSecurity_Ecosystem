@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -122,6 +123,31 @@ class ApiService {
       );
     }
     _baseUrlVerified = true;
+  }
+
+  /// Runs [send], transparently retrying when the server replies 429 (this
+  /// client is over its rate limit) or 503 (the server is shedding load).
+  /// Honors a Retry-After header, otherwise backs off exponentially with
+  /// jitter. Returns the final response — including the last 429/503 if the
+  /// retries are exhausted — for the caller to handle normally.
+  static Future<http.Response> _withRateLimitRetry(
+    Future<http.Response> Function() send, {
+    int maxRetries = 3,
+  }) async {
+    var attempt = 0;
+    while (true) {
+      final res = await send();
+      final shed = res.statusCode == 429 || res.statusCode == 503;
+      if (!shed || attempt >= maxRetries) return res;
+      final retryAfter = res.headers['retry-after'];
+      final headerMs =
+          retryAfter != null ? (int.tryParse(retryAfter.trim()) ?? 0) * 1000 : 0;
+      final backoffMs =
+          headerMs > 0 ? headerMs : (500 * (1 << attempt)).clamp(500, 8000);
+      final waitMs = (backoffMs + Random().nextInt(300)).clamp(0, 10000);
+      await Future.delayed(Duration(milliseconds: waitMs));
+      attempt++;
+    }
   }
 
   static Exception _apiException(http.Response res, String fallback) {
@@ -297,13 +323,18 @@ class ApiService {
     Map<String, dynamic> scanData,
   ) async {
     _ensureHttps();
-    final res = await _client
-        .post(
-          Uri.parse('$baseUrl/scans'),
-          headers: await _headers(),
-          body: jsonEncode(scanData),
-        )
-        .timeout(_timeout);
+    // A scan is user-initiated and must not be lost to a transient spike, so
+    // retry through throttling / load shedding (headers re-fetched each try in
+    // case the token refreshes mid-backoff).
+    final res = await _withRateLimitRetry(
+      () async => _client
+          .post(
+            Uri.parse('$baseUrl/scans'),
+            headers: await _headers(),
+            body: jsonEncode(scanData),
+          )
+          .timeout(_timeout),
+    );
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _apiException(res, 'Failed to submit scan');
     }
@@ -431,6 +462,9 @@ class ApiService {
       if (res.statusCode == 401) {
         onUnauthorized?.call();
       }
+      // 429/503 (throttled / shed) are intentionally NOT retried here: a fresh
+      // position supersedes this one within seconds, so dropping a shed ping
+      // reduces load instead of amplifying it with stale retries.
     } catch (_) {
       // Position updates are non-critical; silently ignore failures
     }

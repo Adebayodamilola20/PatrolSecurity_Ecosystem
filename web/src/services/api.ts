@@ -90,7 +90,30 @@ function forceSessionExpiry() {
   emitAppEvent('app:session-expired')
 }
 
-async function request<T>(path: string, options?: RequestInit, allowRefresh = true): Promise<T> {
+// How many times to transparently retry a 429 (rate limited) or 503 (server
+// shedding load) before surfacing the error to the caller.
+const MAX_RATE_LIMIT_RETRIES = 3
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// Milliseconds to wait before retrying a throttled/shed request. Prefers the
+// server's Retry-After (seconds), else falls back to exponential backoff with
+// jitter. Capped so a busy server can't park the UI for too long.
+function retryDelayMs(retryAfterHeader: string | null, attempt: number): number {
+  const fromHeader = retryAfterHeader ? Number(retryAfterHeader) * 1000 : NaN
+  const base = Number.isFinite(fromHeader) && fromHeader > 0
+    ? fromHeader
+    : Math.min(2 ** attempt * 500, 8000)
+  const jitter = Math.random() * 300
+  return Math.min(base + jitter, 10000)
+}
+
+async function request<T>(
+  path: string,
+  options?: RequestInit,
+  allowRefresh = true,
+  retryCount = 0,
+): Promise<T> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     const error = new Error('You have a poor network connection or you are offline. Please try again.')
     emitAppEvent('app:request-error', { message: error.message, kind: 'network' })
@@ -138,6 +161,14 @@ async function request<T>(path: string, options?: RequestInit, allowRefresh = tr
       return request<T>(path, options, false)
     }
     forceSessionExpiry()
+  }
+
+  // Throttled (429) or the server is shedding load (503). Honor Retry-After and
+  // transparently retry a few times with backoff before giving up, so a brief
+  // spike is invisible to the user instead of a hard error.
+  if ((res.status === 429 || res.status === 503) && retryCount < MAX_RATE_LIMIT_RETRIES) {
+    await sleep(retryDelayMs(res.headers.get('Retry-After'), retryCount))
+    return request<T>(path, options, allowRefresh, retryCount + 1)
   }
 
   if (!res.ok) {

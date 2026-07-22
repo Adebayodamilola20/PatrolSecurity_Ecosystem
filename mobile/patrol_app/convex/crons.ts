@@ -10,6 +10,16 @@ crons.interval(
   {},
 );
 
+// Rate-limit / load-shedding counter rows expire within seconds-to-minutes of
+// their window closing. Sweep them off the hot path so the by_bucketKey lookups
+// every protected request makes stay fast and the table doesn't grow unbounded.
+crons.interval(
+  "purge expired rate-limit counters",
+  { minutes: 5 },
+  internal.lib.rateLimiter.purgeExpired,
+  {},
+);
+
 crons.daily(
   "purge expired refresh tokens",
   { hourUTC: 3, minuteUTC: 15 },

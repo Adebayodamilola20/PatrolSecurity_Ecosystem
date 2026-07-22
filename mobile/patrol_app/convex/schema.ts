@@ -588,6 +588,22 @@ export default defineSchema({
   })
     .index("by_userId_windowKey", ["userId", "windowKey"]),
 
+  // Generic fixed-window request counters backing both per-actor rate limiting
+  // and global load shedding (see convex/lib/rateLimiter.ts). One row per
+  // (bucketKey) — a bucketKey encodes scope + actor + window, or a global
+  // shard. Reads/writes are always by the unique bucketKey index, so the cost
+  // per request is O(1) regardless of history size (unlike the old approach
+  // that scanned the whole auditLogs partition). Rows self-expire and are
+  // swept by the "purge expired rate-limit counters" cron.
+  rateLimits: defineTable({
+    bucketKey: v.string(),
+    count: v.number(),
+    windowStart: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_bucketKey", ["bucketKey"])
+    .index("by_expiresAt", ["expiresAt"]),
+
   aiGeneratedReports: defineTable({
     userId: v.id("users"),
     reportType: v.string(),

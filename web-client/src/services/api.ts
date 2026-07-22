@@ -96,7 +96,28 @@ function forceSessionExpiry() {
   }
 }
 
-async function request<T>(path: string, options?: RequestInit, allowRefresh = true): Promise<T> {
+// How many times to transparently retry a 429 (rate limited) or 503 (server
+// shedding load) before surfacing the error to the caller.
+const MAX_RATE_LIMIT_RETRIES = 3
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// Prefer the server's Retry-After (seconds); else exponential backoff + jitter,
+// capped so a busy server can't park the UI for too long.
+function retryDelayMs(retryAfterHeader: string | null, attempt: number): number {
+  const fromHeader = retryAfterHeader ? Number(retryAfterHeader) * 1000 : NaN
+  const base = Number.isFinite(fromHeader) && fromHeader > 0
+    ? fromHeader
+    : Math.min(2 ** attempt * 500, 8000)
+  return Math.min(base + Math.random() * 300, 10000)
+}
+
+async function request<T>(
+  path: string,
+  options?: RequestInit,
+  allowRefresh = true,
+  retryCount = 0,
+): Promise<T> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     throw new Error('You appear to be offline. Please check your connection and try again.')
   }
@@ -140,6 +161,14 @@ async function request<T>(path: string, options?: RequestInit, allowRefresh = tr
       return request<T>(path, options, false)
     }
     forceSessionExpiry()
+  }
+
+  // Throttled (429) or server shedding load (503): honor Retry-After and retry
+  // a few times with backoff before surfacing an error, so a brief spike stays
+  // invisible to the user.
+  if ((res.status === 429 || res.status === 503) && retryCount < MAX_RATE_LIMIT_RETRIES) {
+    await sleep(retryDelayMs(res.headers.get('Retry-After'), retryCount))
+    return request<T>(path, options, allowRefresh, retryCount + 1)
   }
 
   if (!res.ok) {
