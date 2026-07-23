@@ -755,11 +755,23 @@ async function enforceLimit(
   // No stable actor key (e.g. missing IP on a pre-auth request) — fall back to
   // a shared bucket so the endpoint still can't be flooded anonymously.
   const key = actorId && actorId.length > 0 ? actorId : "anonymous";
-  const result = await ctx.runMutation(internal.lib.rateLimiter.guard, {
-    action,
-    actorId: key,
-    skipGlobal: opts?.skipGlobal,
-  });
+  let result;
+  try {
+    result = await ctx.runMutation(internal.lib.rateLimiter.guard, {
+      action,
+      actorId: key,
+      skipGlobal: opts?.skipGlobal,
+    });
+  } catch (err) {
+    // FAIL OPEN. The limiter's counter is a single row per (actor, action,
+    // window); a burst of truly-simultaneous writes from one actor can lose the
+    // optimistic-concurrency retry race and throw. The rate limiter must never
+    // be the thing that takes a request down — admit it rather than 500. Worst
+    // case a few extra requests slip through under contention, which is exactly
+    // the regime where a per-actor cap matters least anyway.
+    console.error(`rate limiter failed open for action=${action}:`, err);
+    return null;
+  }
   if (result.allowed) return null;
   return result.scope === "global"
     ? serviceUnavailable(result.reason, result.retryAfterMs)
