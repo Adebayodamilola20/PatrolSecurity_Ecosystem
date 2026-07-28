@@ -2599,21 +2599,13 @@ http.route({ path: "/auth/me", method: "GET", handler: httpAction(async (ctx, re
   return json({ user: profile });
 })});
 
-http.route({ path: "/auth/forgot-password", method: "POST", handler: httpAction(async (ctx, request) => {
-  const body = await parseJson(request);
-  const email = String(body?.email ?? "").trim().toLowerCase();
-  if (!email) return badRequest("Email is required");
-  const user = await ctx.runQuery(internal.users.findByEmail, { email });
-  if (!user) return json({ message: "If that email exists, a reset link has been sent" });
-  return json({ message: "If that email exists, a reset link has been sent" });
-})});
-
-http.route({ path: "/auth/reset-password", method: "POST", handler: httpAction(async (ctx, request) => {
-  const body = await parseJson(request);
-  const password = String(body?.password ?? "");
-  if (password.length < 6) return badRequest("Password must be at least 6 characters");
-  return json({ message: "Password reset successfully. You can now sign in." });
-})});
+// Self-service password reset is deliberately not offered. Client logins are
+// created by staff from the client dashboard, which is also where the password
+// is set; admin access uses a single shared credential for now. The previous
+// /auth/forgot-password and /auth/reset-password routes were stubs that reported
+// success without sending mail or writing a hash, so they are gone rather than
+// left to lie to callers. Password changes go through /auth/change-password,
+// which requires the current password.
 
 http.route({ path: "/scans/recent", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);

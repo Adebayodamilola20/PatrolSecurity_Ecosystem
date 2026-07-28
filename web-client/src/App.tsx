@@ -8,7 +8,6 @@ import AboutUs from './marketing/AboutUs'
 import ContactUs from './marketing/ContactUs'
 import ComingSoon from './marketing/ComingSoon'
 import Login from './pages/Login'
-import ForgotPassword from './pages/ForgotPassword'
 import Overview from './pages/Overview'
 import Guards from './pages/Guards'
 import Scans from './pages/Scans'
@@ -65,7 +64,6 @@ export default function App() {
         </Route>
 
         <Route path="/login" element={<Login />} />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
 
         <Route
           element={

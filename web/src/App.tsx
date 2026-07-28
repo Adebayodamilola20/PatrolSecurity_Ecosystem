@@ -24,8 +24,6 @@ import PassOnLogs from './pages/PassOnLogs'
 import ActivitySummary from './pages/ActivitySummary'
 import AiAssistant from './pages/AiAssistant'
 import Login from './pages/Login'
-import ForgotPassword from './pages/ForgotPassword'
-import ResetPassword from './pages/ResetPassword'
 import { useAuthStore, useCanViewLiveTracking, type UserRole } from './stores/useAuthStore'
 import { useIdleLogout } from './hooks/useIdleLogout'
 
@@ -86,8 +84,6 @@ export default function App() {
       <CookieConsent />
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/reset-password/:token" element={<ResetPassword />} />
 
         <Route
           element={

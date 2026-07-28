@@ -214,11 +214,6 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ refreshToken }),
       }),
-    forgotPassword: (email: string) =>
-      request<{ message: string }>('/auth/forgot-password', {
-        method: 'POST',
-        body: JSON.stringify({ email }),
-      }),
   },
   // All of the following are server-tenant-scoped to the caller's clientId.
   overview: () => request<ClientOverview>('/client/overview'),

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, Navigate, useNavigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 import {
   ShieldCheck,
   Mail,
@@ -219,14 +219,6 @@ export default function Login() {
             </button>
           </form>
 
-          <div className="lp-fade mt-5 text-center" style={{ animationDelay: '0.3s' }}>
-            <Link
-              to="/forgot-password"
-              className="text-xs text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Forgot password?
-            </Link>
-          </div>
         </div>
       </main>
     </div>
