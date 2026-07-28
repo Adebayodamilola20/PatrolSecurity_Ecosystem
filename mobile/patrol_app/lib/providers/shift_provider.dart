@@ -2,10 +2,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
+import '../services/offline_cache.dart';
 import '../utils/constants.dart';
 
 class ShiftProvider extends ChangeNotifier {
+  /// How long a cached duty state stays usable — one long shift. Past this the
+  /// app stops asserting the guard is on duty on the strength of old data.
+  static const _cachedStatusMaxAge = Duration(hours: 18);
+
   bool _onDuty = false;
+  bool _statusFromCache = false;
   bool _loading = false;
   String? _error;
   DateTime? _clockInTime;
@@ -33,9 +39,14 @@ class ShiftProvider extends ChangeNotifier {
   double? get clockOutDistanceMeters => _clockOutDistanceMeters;
   bool get positionTracking => _positionTracking;
 
+  /// True when the duty state on screen is the last known one from disk rather
+  /// than a fresh answer from the server.
+  bool get statusFromCache => _statusFromCache;
+
   void clearData() {
     _stopPositionTracking();
     _onDuty = false;
+    _statusFromCache = false;
     _loading = false;
     _error = null;
     _clockInTime = null;
@@ -109,8 +120,10 @@ class ShiftProvider extends ChangeNotifier {
     try {
       final data = await ApiService.getShiftStatus();
       _error = null;
+      _statusFromCache = false;
       _applyShiftPayload(data);
       _statusLoadedAt = DateTime.now();
+      await OfflineCache.save(OfflineCache.keyShiftStatus, data);
       if (_onDuty && !_positionTracking) {
         _startPositionTracking();
       } else if (!_onDuty && _positionTracking) {
@@ -118,13 +131,47 @@ class ShiftProvider extends ChangeNotifier {
       }
       notifyListeners();
     } catch (e) {
-      _error = e.toString().replaceFirst('Exception: ', '');
+      // Losing coverage must not read as "off duty". The scanner refuses to
+      // work off duty, so a failed status check used to lock a clocked-in guard
+      // out of scanning for the rest of a dead spot — exactly when the offline
+      // queue is supposed to carry them.
+      final restored = await _applyCachedStatus();
+      if (!restored) {
+        _error = e.toString().replaceFirst('Exception: ', '');
+      }
       notifyListeners();
     }
   }
 
+  /// Reapplies the last known duty state from disk.
+  ///
+  /// Bounded to one shift's length: a day-old "on duty" is not evidence that
+  /// the guard is on duty now, and the server remains the authority the moment
+  /// the connection is back.
+  Future<bool> _applyCachedStatus() async {
+    final cached = await OfflineCache.load(OfflineCache.keyShiftStatus);
+    if (cached == null) return false;
+    if (cached.age > _cachedStatusMaxAge) return false;
+    final data = cached.data;
+    if (data is! Map<String, dynamic>) return false;
+
+    _applyShiftPayload(data);
+    _statusFromCache = true;
+    _error = null;
+    // Position updates are pointless with no connection and would drain the
+    // battery a guard needs for the rest of the shift; they restart with the
+    // first successful status load.
+    if (!_onDuty && _positionTracking) _stopPositionTracking();
+    return true;
+  }
+
   void _startPositionTracking() {
     _positionTracking = true;
+    // Hold the receiver open for the shift. Without this each 30s tick starts
+    // from a cold chip, reads a ~1400m cell-tower estimate, fails the accuracy
+    // check and drops the update — which is what kept it cold in the first
+    // place. Guards could not break out of that loop by retrying.
+    LocationService.startWarmTracking();
     _positionTimer?.cancel();
     _positionTimer = Timer.periodic(
       const Duration(seconds: continuousGpsUpdateSeconds),
@@ -137,6 +184,7 @@ class ShiftProvider extends ChangeNotifier {
 
   void _stopPositionTracking() {
     _positionTracking = false;
+    LocationService.stopWarmTracking();
     _positionTimer?.cancel();
     _positionTimer = null;
   }

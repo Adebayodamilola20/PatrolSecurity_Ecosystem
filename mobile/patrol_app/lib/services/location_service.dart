@@ -45,6 +45,57 @@ class LocationService {
   static SafeLocationResult? _lastGoodLocation;
   static Future<SafeLocationResult>? _locationRequest;
 
+  /// Held open for the whole shift. See [startWarmTracking].
+  static StreamSubscription<Position>? _warmSubscription;
+
+  /// Keeps the GPS receiver powered for the duration of a shift.
+  ///
+  /// The old design asked for a one-shot position every 30 seconds and let the
+  /// receiver sleep in between. Each request therefore started cold, and a cold
+  /// receiver answers with a cell-tower estimate — around 1400m — long before
+  /// it has a satellite lock. That reading failed the accuracy check, the
+  /// position update was dropped, and dropping it meant nothing ever kept the
+  /// receiver awake. The next request started cold too. Guards sat in that loop
+  /// indefinitely: same coarse number every retry, scans permanently refused.
+  ///
+  /// A stream that stays subscribed never lets the receiver sleep, so readings
+  /// stay in the 10-25m range the hardware is actually capable of and a scan
+  /// resolves immediately instead of racing a warm-up it cannot win.
+  static void startWarmTracking() {
+    if (_warmSubscription != null) return;
+    _warmSubscription = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.best,
+        // A few metres of movement is enough to justify an update while still
+        // keeping the chip awake between them.
+        distanceFilter: 5,
+      ),
+    ).listen(
+      (position) {
+        if (position.accuracy > _maxAccuracyMeters) return;
+        _lastGoodLocation = SafeLocationResult(
+          latitude: position.latitude,
+          longitude: position.longitude,
+          accuracyMeters: position.accuracy,
+          capturedAt: position.timestamp,
+          speed: position.speed,
+          heading: position.heading,
+        );
+      },
+      // Losing the stream must not take the app down; the one-shot path still
+      // works and the next shift start resubscribes.
+      onError: (_) {},
+      cancelOnError: false,
+    );
+  }
+
+  /// Releases the receiver once the guard is off duty, so an idle phone is not
+  /// holding GPS open for the rest of the day.
+  static void stopWarmTracking() {
+    _warmSubscription?.cancel();
+    _warmSubscription = null;
+  }
+
   static Future<SafeLocationResult> getCurrentLocation({
     bool allowCached = true,
   }) {
