@@ -30,6 +30,14 @@
 	<string>Camera is used to scan QR codes at checkpoints</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Your location is used to verify you are at the checkpoint</string>
+	<!-- Without this dictionary iOS refuses the temporary full-accuracy prompt
+	     outright, so a guard whose Precise Location is off can never be asked
+	     for it and every scan fails on a fuzzed ~1400m reading. -->
+	<key>NSLocationTemporaryUsageDescriptionDictionary</key>
+	<dict>
+		<key>PatrolScan</key>
+		<string>Exact location is needed to confirm you are standing at the checkpoint. Without it a patrol scan cannot be verified.</string>
+	</dict>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Photos can be attached to scan reports</string>
 	<key>UIApplicationSceneManifest</key>

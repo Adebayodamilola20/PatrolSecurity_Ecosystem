@@ -70,6 +70,45 @@ class LocationService {
     return _locationRequest!;
   }
 
+  /// Purpose key matching `NSLocationTemporaryUsageDescriptionDictionary` in
+  /// Info.plist. iOS silently refuses the prompt if the two disagree.
+  static const String _fullAccuracyPurposeKey = 'PatrolScan';
+
+  /// Detects the iOS "precise location off" state and tries to get out of it.
+  ///
+  /// Returns `null` when accuracy is precise (or the platform has no such
+  /// concept), or a populated error result naming the actual setting when the
+  /// system is still withholding precise location. Never throws: a plugin that
+  /// doesn't implement this should not block a scan on a device where the
+  /// reading would have been fine.
+  static Future<SafeLocationResult?> _ensurePreciseAccuracy() async {
+    try {
+      var status = await Geolocator.getLocationAccuracy();
+      if (status == LocationAccuracyStatus.precise) return null;
+
+      // One chance to grant it for this session without leaving the app.
+      status = await Geolocator.requestTemporaryFullAccuracy(
+        purposeKey: _fullAccuracyPurposeKey,
+      );
+      if (status == LocationAccuracyStatus.precise) return null;
+
+      return SafeLocationResult(
+        latitude: 0,
+        longitude: 0,
+        accuracyMeters: double.infinity,
+        capturedAt: DateTime.now(),
+        error:
+            'Precise Location is turned off for this app, so the phone only '
+            'reports a rough area. Turn on Settings > Privacy & Security > '
+            'Location Services > Patrol > Precise Location, then try again.',
+      );
+    } catch (_) {
+      // Unsupported platform or plugin error — fall through to a normal fix
+      // attempt rather than refusing a scan that might well have worked.
+      return null;
+    }
+  }
+
   /// Returns the tightest fix the receiver produces inside [window].
   ///
   /// A phone's first reading is nearly always a coarse cell/wifi estimate that
@@ -155,6 +194,15 @@ class LocationService {
             'Location permission is blocked for this app. Allow location in Android app settings.',
       );
     }
+
+    // iOS lets the user grant location while withholding *precise* location. In
+    // that mode Core Location returns a deliberately fuzzed point with a fixed
+    // accuracy around 1400m — it never improves, no matter how long you sample
+    // or how open the sky is. Waiting for it to tighten is futile and telling
+    // the guard to "move to an open area" is actively misleading, so detect the
+    // state and ask for precise access instead.
+    final reducedAccuracyError = await _ensurePreciseAccuracy();
+    if (reducedAccuracyError != null) return reducedAccuracyError;
 
     try {
       final position = await _bestFixWithin(_fixWindow);
