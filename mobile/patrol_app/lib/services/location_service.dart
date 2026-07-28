@@ -36,6 +36,12 @@ class SafeLocationResult {
 class LocationService {
   static const double _maxAccuracyMeters = 100.0;
   static const Duration _maxCachedLocationAge = Duration(seconds: 8);
+
+  /// How long to keep listening for the fix to tighten before giving up. A cold
+  /// receiver indoors can take well over ten seconds to drop from a coarse
+  /// network estimate to a satellite fix, so this is deliberately generous —
+  /// nothing waits the full window once the reading is good enough.
+  static const Duration _fixWindow = Duration(seconds: 20);
   static SafeLocationResult? _lastGoodLocation;
   static Future<SafeLocationResult>? _locationRequest;
 
@@ -62,6 +68,54 @@ class LocationService {
           _locationRequest = null;
         });
     return _locationRequest!;
+  }
+
+  /// Returns the tightest fix the receiver produces inside [window].
+  ///
+  /// A phone's first reading is nearly always a coarse cell/wifi estimate that
+  /// tightens over the next several seconds as satellites lock. Asking for a
+  /// single position the instant the scan screen opens therefore reports
+  /// hundreds — or thousands — of metres of error even outdoors with precise
+  /// location granted, and the guard is told to "move to an open area" when
+  /// they are already standing in one. Sampling the stream and keeping the best
+  /// reading fixes that. It returns the moment a fix clears the accuracy bar,
+  /// so a good receiver still resolves in well under a second.
+  static Future<Position?> _bestFixWithin(Duration window) async {
+    Position? best;
+    final completer = Completer<Position?>();
+    StreamSubscription<Position>? sub;
+    Timer? deadline;
+
+    void finish() {
+      if (completer.isCompleted) return;
+      deadline?.cancel();
+      sub?.cancel();
+      completer.complete(best);
+    }
+
+    deadline = Timer(window, finish);
+
+    sub = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.best,
+        distanceFilter: 0,
+      ),
+    ).listen(
+      (position) {
+        final current = best;
+        if (current == null || position.accuracy < current.accuracy) {
+          best = position;
+        }
+        // Good enough — don't make the guard wait out the rest of the window.
+        if (position.accuracy <= _maxAccuracyMeters) finish();
+      },
+      // A stream error shouldn't discard a good reading already in hand; the
+      // caller falls back to the last known position when nothing arrived.
+      onError: (_) => finish(),
+      cancelOnError: false,
+    );
+
+    return completer.future;
   }
 
   static Future<SafeLocationResult> _resolveCurrentLocation() async {
@@ -103,13 +157,10 @@ class LocationService {
     }
 
     try {
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          distanceFilter: 5,
-          timeLimit: Duration(seconds: 12),
-        ),
-      );
+      final position = await _bestFixWithin(_fixWindow);
+      if (position == null) {
+        throw TimeoutException('No position was delivered inside the window.');
+      }
 
       final accuracy = position.accuracy;
       if (accuracy > _maxAccuracyMeters) {
