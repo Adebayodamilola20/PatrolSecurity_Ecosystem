@@ -5,6 +5,8 @@ import QRCode from 'qrcode'
 import L from 'leaflet'
 import { api } from '../services/api'
 import { useCanManageCheckpoints } from '../stores/useAuthStore'
+import { resolvePlaceLocation, searchPlaces } from '../services/placesSearch'
+import type { PlaceSuggestion } from '../services/placesSearch'
 import type { Checkpoint } from '../types'
 import { CardSkeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
@@ -24,13 +26,7 @@ const statusColor: Record<string, string> = {
   deactivated: 'bg-muted text-muted-foreground',
 }
 
-interface AddressSuggestion {
-  id: string
-  mainText: string
-  secondaryText: string
-  description: string
-  latitude: string
-  longitude: string
+interface AddressSuggestion extends PlaceSuggestion {
   prefillName?: boolean
 }
 
@@ -246,41 +242,11 @@ export default function Checkpoints() {
           return
         }
 
-        const response = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&countrycodes=ng&q=${encodeURIComponent(addressQuery)}`,
-          {
-            headers: {
-              Accept: 'application/json',
-            },
-          },
-        )
-
-        if (!response.ok) {
-          throw new Error('Could not search for that address.')
-        }
-
-        const results = await response.json()
+        const suggestions = await searchPlaces(addressQuery)
         if (!active) return
 
         setAddressResults(
-          (Array.isArray(results) ? results : []).map((result: any) => ({
-            id: String(result.place_id),
-            mainText:
-              String(result.display_name || '')
-                .split(',')
-                .slice(0, 2)
-                .join(', ') || 'Selected address',
-            secondaryText:
-              String(result.display_name || '')
-                .split(',')
-                .slice(2)
-                .join(',')
-                .trim(),
-            description: result.display_name || '',
-            latitude: result.lat,
-            longitude: result.lon,
-            prefillName: true,
-          })),
+          suggestions.map((suggestion) => ({ ...suggestion, prefillName: true })),
         )
       } catch (error) {
         if (!active) return
@@ -446,17 +412,28 @@ export default function Checkpoints() {
     }
   }
 
-  const handleAddressSelect = (result: AddressSuggestion) => {
-    setForm((f) => ({
-      ...f,
-      name: f.name || (result.prefillName ? result.mainText : f.name),
-      latitude: result.latitude,
-      longitude: result.longitude,
-    }))
-    setAddressQuery(result.description || `${result.latitude}, ${result.longitude}`)
+  const handleAddressSelect = async (result: AddressSuggestion) => {
     setAddressResults([])
     setAddressError('')
     setLocationInfo('')
+    setAddressQuery(result.description)
+
+    try {
+      // Autocomplete suggestions carry no coordinates; the pick has to be
+      // resolved before the pin can move.
+      const place = await resolvePlaceLocation(result)
+      setForm((f) => ({
+        ...f,
+        name: f.name || (result.prefillName ? result.mainText : f.name),
+        latitude: place.latitude,
+        longitude: place.longitude,
+      }))
+      setAddressQuery(place.address || result.description)
+    } catch (error) {
+      setAddressError(
+        error instanceof Error ? error.message : 'Could not pinpoint that address.',
+      )
+    }
   }
 
   return (
@@ -699,9 +676,11 @@ export default function Checkpoints() {
                         {result.secondaryText ? (
                           <div className="text-xs text-muted-foreground">{result.secondaryText}</div>
                         ) : null}
-                        <div className="mt-1 text-[11px] text-muted-foreground">
-                          {result.latitude}, {result.longitude}
-                        </div>
+                        {result.latitude && result.longitude ? (
+                          <div className="mt-1 text-[11px] text-muted-foreground">
+                            {result.latitude}, {result.longitude}
+                          </div>
+                        ) : null}
                       </button>
                     ))
                   )}

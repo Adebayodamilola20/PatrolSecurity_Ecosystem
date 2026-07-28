@@ -17,6 +17,8 @@ import {
 import QRCode from 'qrcode'
 import L from 'leaflet'
 import { api } from '../services/api'
+import { resolvePlaceLocation, searchPlaces } from '../services/placesSearch'
+import type { PlaceSuggestion } from '../services/placesSearch'
 import { useAuthStore } from '../stores/useAuthStore'
 import { CardSkeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
@@ -90,14 +92,7 @@ function QRCell({ data, size = 96 }: { data: string; size?: number }) {
   return <canvas ref={ref} width={size} height={size} className="rounded-lg" />
 }
 
-interface AddressSuggestion {
-  id: string
-  mainText: string
-  secondaryText: string
-  description: string
-  latitude: string
-  longitude: string
-}
+type AddressSuggestion = PlaceSuggestion
 
 const emptyLocationForm = {
   name: '',
@@ -336,25 +331,9 @@ export default function ClientDetail() {
           ])
           return
         }
-        const response = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&countrycodes=ng&q=${encodeURIComponent(addressQuery)}`,
-          { headers: { Accept: 'application/json' } },
-        )
-        if (!response.ok) throw new Error('Could not search for that address.')
-        const results = await response.json()
+        const suggestions = await searchPlaces(addressQuery)
         if (!active) return
-        setAddressResults(
-          (Array.isArray(results) ? results : []).map((result: any) => ({
-            id: String(result.place_id),
-            mainText:
-              String(result.display_name || '').split(',').slice(0, 2).join(', ') || 'Selected address',
-            secondaryText:
-              String(result.display_name || '').split(',').slice(2).join(',').trim(),
-            description: result.display_name || '',
-            latitude: result.lat,
-            longitude: result.lon,
-          })),
-        )
+        setAddressResults(suggestions)
       } catch (error) {
         if (!active) return
         setAddressResults([])
@@ -943,15 +922,24 @@ export default function ClientDetail() {
                           <button
                             key={result.id}
                             type="button"
-                            onClick={() => {
-                              setLocationForm(f => ({
-                                ...f,
-                                address: f.address || result.description,
-                                latitude: result.latitude,
-                                longitude: result.longitude,
-                              }))
-                              setAddressQuery(result.description)
+                            onClick={async () => {
                               setAddressResults([])
+                              setAddressQuery(result.description)
+                              try {
+                                const place = await resolvePlaceLocation(result)
+                                setLocationForm(f => ({
+                                  ...f,
+                                  address: f.address || place.address,
+                                  latitude: place.latitude,
+                                  longitude: place.longitude,
+                                }))
+                              } catch (error) {
+                                setAddressError(
+                                  error instanceof Error
+                                    ? error.message
+                                    : 'Could not pinpoint that address.',
+                                )
+                              }
                             }}
                             className="block w-full border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent"
                           >
