@@ -862,6 +862,23 @@ async function initDb() {
       }
       db.exec('PRAGMA foreign_keys = ON')
     }
+
+    // --- Offline scan sync -------------------------------------------------
+    // Deliberately AFTER the legacy users rebuild above: that block recreates
+    // `scans` from a fixed column list, so anything added before it would be
+    // dropped on the one boot the rebuild runs.
+    //
+    // The device stamps every scan with a clientScanId, so a queued scan that
+    // gets retried (timeout, app restart, an overlapping flush) resolves to the
+    // SAME row instead of inventing a second patrol record. The unique index is
+    // the enforcement; NULLs stay unconstrained, so pre-offline rows and any
+    // client that omits the id are unaffected.
+    try { db.exec("ALTER TABLE scans ADD COLUMN clientScanId TEXT"); } catch {}
+    try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_scans_clientScanId ON scans(officerId, clientScanId)"); } catch {}
+    // A queued scan is filed under the time it was TAKEN, so the day-range
+    // export reads scannedAt rather than receivedAt.
+    try { db.exec("CREATE INDEX IF NOT EXISTS idx_scans_scannedAt ON scans(scannedAt)"); } catch {}
+
     try { db.exec(`CREATE TABLE IF NOT EXISTS passOnLogAcknowledgements (
       id TEXT PRIMARY KEY,
       passOnLogId TEXT NOT NULL,
@@ -971,6 +988,10 @@ async function initDb() {
     await db.exec(pgSchema)
     try { await db.exec("CREATE INDEX IF NOT EXISTS idx_scans_officerId ON scans(officerId)"); } catch (e) { console.log('[PG] Create idx_scans_officerId:', e.message) }
     try { await db.exec("CREATE INDEX IF NOT EXISTS idx_scans_receivedAt ON scans(receivedAt)"); } catch (e) { console.log('[PG] Create idx_scans_receivedAt:', e.message) }
+    try { await db.exec("CREATE INDEX IF NOT EXISTS idx_scans_scannedAt ON scans(scannedAt)"); } catch (e) { console.log('[PG] Create idx_scans_scannedAt:', e.message) }
+    // See the sqlite path: clientScanId makes an offline scan's retry idempotent.
+    try { await db.exec("ALTER TABLE scans ADD COLUMN IF NOT EXISTS clientScanId TEXT"); } catch (e) { console.log('[PG] Add scans.clientScanId:', e.message) }
+    try { await db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_scans_clientScanId ON scans(officerId, clientScanId)"); } catch (e) { console.log('[PG] Create idx_scans_clientScanId:', e.message) }
     try { await db.exec("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check"); } catch (e) { console.log('[PG] Drop constraint:', e.message) }
     try { await db.exec("UPDATE users SET role = 'guard' WHERE role = 'officer'"); } catch (e) { console.log('[PG] Update officer->guard:', e.message) }
     try { await db.exec("UPDATE users SET role = 'main_account' WHERE role IN ('client_main_account', 'client-main-account', 'main-account')"); } catch (e) { console.log('[PG] Update legacy roles:', e.message) }
