@@ -61,40 +61,58 @@ class LocationService {
   /// A stream that stays subscribed never lets the receiver sleep, so readings
   /// stay in the 10-25m range the hardware is actually capable of and a scan
   /// resolves immediately instead of racing a warm-up it cannot win.
-  static void startWarmTracking() {
+  /// Fan-out for the single platform subscription. Everything that wants
+  /// positions listens here rather than opening its own stream: iOS does not
+  /// reliably feed two concurrent `getPositionStream` subscriptions, and when
+  /// the shift-long warm stream was already running a second one opened for a
+  /// scan received nothing at all until it timed out.
+  static final StreamController<Position> _positions =
+      StreamController<Position>.broadcast();
+
+  static void _openStream() {
     if (_warmSubscription != null) return;
-    _warmSubscription = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.best,
-        // A few metres of movement is enough to justify an update while still
-        // keeping the chip awake between them.
-        distanceFilter: 5,
-      ),
-    ).listen(
-      (position) {
-        if (position.accuracy > _maxAccuracyMeters) return;
-        _lastGoodLocation = SafeLocationResult(
-          latitude: position.latitude,
-          longitude: position.longitude,
-          accuracyMeters: position.accuracy,
-          capturedAt: position.timestamp,
-          speed: position.speed,
-          heading: position.heading,
+    _warmSubscription =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.best,
+            // Every update, however small the movement: a stationary guard
+            // still needs the fix to tighten while they stand at the QR code.
+            distanceFilter: 0,
+          ),
+        ).listen(
+          (position) {
+            if (!_positions.isClosed) _positions.add(position);
+            if (position.accuracy > _maxAccuracyMeters) return;
+            _lastGoodLocation = SafeLocationResult(
+              latitude: position.latitude,
+              longitude: position.longitude,
+              accuracyMeters: position.accuracy,
+              capturedAt: position.timestamp,
+              speed: position.speed,
+              heading: position.heading,
+            );
+          },
+          // Losing the stream must not take the app down.
+          onError: (_) {},
+          cancelOnError: false,
         );
-      },
-      // Losing the stream must not take the app down; the one-shot path still
-      // works and the next shift start resubscribes.
-      onError: (_) {},
-      cancelOnError: false,
-    );
+  }
+
+  static void startWarmTracking() {
+    _warmTrackingRequested = true;
+    _openStream();
   }
 
   /// Releases the receiver once the guard is off duty, so an idle phone is not
   /// holding GPS open for the rest of the day.
   static void stopWarmTracking() {
+    _warmTrackingRequested = false;
     _warmSubscription?.cancel();
     _warmSubscription = null;
   }
+
+  /// True while a shift is holding the receiver open.
+  static bool _warmTrackingRequested = false;
 
   static Future<SafeLocationResult> getCurrentLocation({
     bool allowCached = true,
@@ -170,7 +188,10 @@ class LocationService {
   /// they are already standing in one. Sampling the stream and keeping the best
   /// reading fixes that. It returns the moment a fix clears the accuracy bar,
   /// so a good receiver still resolves in well under a second.
-  static Future<Position?> _bestFixWithin(Duration window) async {
+  static Future<Position?> _bestFixWithin(
+    Duration window, {
+    void Function(double accuracy)? onSample,
+  }) async {
     Position? best;
     final completer = Completer<Position?>();
     StreamSubscription<Position>? sub;
@@ -180,18 +201,22 @@ class LocationService {
       if (completer.isCompleted) return;
       deadline?.cancel();
       sub?.cancel();
+      // Only release the receiver if no shift is holding it open.
+      if (!_warmTrackingRequested) {
+        _warmSubscription?.cancel();
+        _warmSubscription = null;
+      }
       completer.complete(best);
     }
 
     deadline = Timer(window, finish);
 
-    sub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.best,
-        distanceFilter: 0,
-      ),
-    ).listen(
+    // Listen to the shared fan-out, then make sure the one platform stream is
+    // running. Opening a second platform stream here is what starved this path
+    // of events whenever a shift already had one open.
+    sub = _positions.stream.listen(
       (position) {
+        onSample?.call(position.accuracy);
         final current = best;
         if (current == null || position.accuracy < current.accuracy) {
           best = position;
@@ -204,6 +229,8 @@ class LocationService {
       onError: (_) => finish(),
       cancelOnError: false,
     );
+
+    _openStream();
 
     return completer.future;
   }
@@ -256,20 +283,30 @@ class LocationService {
     if (reducedAccuracyError != null) return reducedAccuracyError;
 
     try {
-      final position = await _bestFixWithin(_fixWindow);
+      final samples = <double>[];
+      final position = await _bestFixWithin(_fixWindow, onSample: samples.add);
       if (position == null) {
-        throw TimeoutException('No position was delivered inside the window.');
+        // TEMPORARY diagnostic: distinguishes "the receiver said nothing at
+        // all" from "it answered and every answer was too coarse".
+        throw TimeoutException(
+          'No position in ${_fixWindow.inSeconds}s. Samples seen: ${samples.length}.',
+        );
       }
 
       final accuracy = position.accuracy;
       if (accuracy > _maxAccuracyMeters) {
+        // TEMPORARY diagnostic: the sample trail shows whether the fix was
+        // tightening at all, or pinned at one value the whole window.
+        final trail = samples.map((a) => a.toStringAsFixed(0)).join(' > ');
         return SafeLocationResult(
           latitude: 0,
           longitude: 0,
           accuracyMeters: accuracy,
           capturedAt: DateTime.now(),
           error:
-              'GPS accuracy is too low (${accuracy.toStringAsFixed(0)}m). Move to an open area and try again.',
+              'GPS never got below ${_maxAccuracyMeters.toStringAsFixed(0)}m in '
+              '${_fixWindow.inSeconds}s. Best ${accuracy.toStringAsFixed(0)}m '
+              'from ${samples.length} readings [$trail].',
         );
       }
 
