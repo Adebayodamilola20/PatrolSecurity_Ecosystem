@@ -3,6 +3,23 @@
 > **Every agent reads this file first.** Keep it to one active focus.
 
 ## Active Focus
+
+> ⚠️ **2026-07-28 — READ [[Session_2026-07-28_Prod_Switch_And_GPS]] FIRST.**
+> Everything below this box predates the production switch and is partly stale.
+>
+> - **We are on PROD Convex now: `harmless-pigeon-186`.** `dev:resilient-buffalo-226`
+>   is a fallback and nothing points at it. Full 678-doc snapshot migration, verified.
+> - Convex source is **`mobile/patrol_app/convex/`**, not the repo-root `convex/`.
+> - `main` is at `cdf19cf`. Today shipped: password-reset removal, the GPS
+>   cold-receiver fix, Google Places address search, prod repointing.
+> - **Offline cache is PAUSED and parked on `offline-work-paused` (`8950b51`).**
+>   Do not merge it. It was compiling into builds and the user does not want it.
+> - `flutter build ios --release` **fails** — repo sits in an iCloud-synced Desktop
+>   and `codesign` rejects `com.apple.FinderInfo`. Debug builds are fine. The user
+>   has declined to move the repo; don't re-raise it.
+> - **Outstanding:** rotate `RESEND_API_KEY`, `TERMII_API_KEY`, `NVIDIA_API_KEY`
+>   (leaked in transcript; only the user can do it).
+
 - **PHASE 2 + PRODUCTION HARDENING — SHIPPED + MERGED TO `main` THROUGH 2026-07-12.**
   Latest commit `660968e` on `main` (feature/client-structure fast-forwarded in and
   pushed to origin/main). All deployed LIVE to `dev:resilient-buffalo-226`.
