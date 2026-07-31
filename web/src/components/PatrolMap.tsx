@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { formatDate } from '../utils/format'
+import { useTheme } from '../hooks/useTheme'
 import { api } from '../services/api'
 import { loadGoogleMaps } from '../services/googleMaps'
 import {
@@ -75,6 +76,44 @@ const LIGHT_MAP_STYLES = [
   { featureType: 'road', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
 ]
 
+/*
+ * Dark equivalent of the light styling above: the same points of interest and
+ * transit clutter suppressed, over a dark base. Guard markers and geofence
+ * circles are drawn in saturated colours, so the base has to stay desaturated
+ * or they stop reading as the important thing on the map.
+ */
+const DARK_MAP_STYLES = [
+  { elementType: 'geometry', stylers: [{ color: '#1f2733' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#9fb0c4' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#141a22' }] },
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#2b3543' }] },
+  { featureType: 'road', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+  { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#33404f' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#3d4b5c' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#101720' }] },
+  { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: '#3a4757' }] },
+]
+
+/**
+ * Base map choice, remembered so an operator who works in satellite doesn't have
+ * to reselect it every time the dashboard reloads.
+ */
+type BaseMap = 'roadmap' | 'hybrid'
+
+const BASEMAP_STORAGE_KEY = 'patrol_map_basemap'
+
+function storedBaseMap(): BaseMap {
+  try {
+    return localStorage.getItem(BASEMAP_STORAGE_KEY) === 'hybrid'
+      ? 'hybrid'
+      : 'roadmap'
+  } catch {
+    return 'roadmap'
+  }
+}
+
 function escapeHtml(value: string) {
   return value
     .replaceAll('&', '&amp;')
@@ -134,6 +173,38 @@ export function PatrolMap() {
   const [latestIncident, setLatestIncident] = useState<LiveIncident | null>(null)
   const [mapError, setMapError] = useState('')
   const [panelOpen, setPanelOpen] = useState(true)
+
+  const [baseMap, setBaseMap] = useState<BaseMap>(storedBaseMap)
+  const { theme } = useTheme()
+
+  // The init effect must not re-run when the base map or theme changes — that
+  // would tear down and rebuild the map, losing the operator's pan and zoom and
+  // every marker. Refs carry the current values into first construction; the
+  // effect below applies later changes to the live map in place.
+  const baseMapRef = useRef<BaseMap>(baseMap)
+  const activeStylesRef = useRef<any[]>(
+    theme === 'dark' ? DARK_MAP_STYLES : LIGHT_MAP_STYLES,
+  )
+  baseMapRef.current = baseMap
+  activeStylesRef.current =
+    theme === 'dark' ? DARK_MAP_STYLES : LIGHT_MAP_STYLES
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    map.setMapTypeId(baseMap)
+    // Google applies `styles` to roadmap and terrain only; passing them under
+    // satellite tints nothing and would leave stale styling behind on the way
+    // back, so they are cleared explicitly.
+    map.setOptions({
+      styles: baseMap === 'roadmap' ? activeStylesRef.current : [],
+    })
+    try {
+      localStorage.setItem(BASEMAP_STORAGE_KEY, baseMap)
+    } catch {
+      // A remembered preference is a convenience, not a requirement.
+    }
+  }, [baseMap, theme])
 
   // Rebuild the React-facing officer list from the imperative marker source of
   // truth, so the panel always mirrors what's on the map.
@@ -414,10 +485,13 @@ export function PatrolMap() {
         const map = new maps.Map(ref.current, {
           center: { lat: 6.5244, lng: 3.3792 },
           zoom: 13,
+          // Google's own control is suppressed in favour of the segmented one
+          // below, which matches the rest of the dashboard's chrome.
           mapTypeControl: false,
           streetViewControl: false,
           fullscreenControl: true,
-          styles: LIGHT_MAP_STYLES,
+          mapTypeId: baseMapRef.current,
+          styles: baseMapRef.current === 'roadmap' ? activeStylesRef.current : [],
         })
         mapRef.current = map
 
@@ -513,6 +587,33 @@ export function PatrolMap() {
   return (
     <div className="relative h-full w-full overflow-hidden rounded-xl">
       <div ref={ref} className="h-full w-full" />
+
+      {/* Base map switch. Top-right keeps it clear of the guard-tracking panel
+          on the left and the incident banner along the bottom. */}
+      <div
+        className="absolute right-4 top-4 flex overflow-hidden rounded-lg border border-border bg-card/95 shadow-lg backdrop-blur"
+        role="group"
+        aria-label="Base map"
+      >
+        {([
+          { id: 'roadmap', label: 'Map' },
+          { id: 'hybrid', label: 'Satellite' },
+        ] as Array<{ id: BaseMap; label: string }>).map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            onClick={() => setBaseMap(option.id)}
+            aria-pressed={baseMap === option.id}
+            className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+              baseMap === option.id
+                ? 'bg-primary text-primary-foreground'
+                : 'text-foreground hover:bg-accent'
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
 
       {/* Guard Tracking panel — mirrors the live map, real counts and roster. */}
       {panelOpen ? (
