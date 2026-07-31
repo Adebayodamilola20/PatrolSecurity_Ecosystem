@@ -266,6 +266,28 @@ export const create = internalMutation({
       throw new Error("Officer must clock in before scanning");
     }
 
+    // A guard may only scan checkpoints at a site they are posted to. This used
+    // to run only `if (siteId)`, which meant a checkpoint carrying no site — and
+    // several active ones do, left over from before the client/site structure —
+    // skipped the check completely and could be scanned by any guard in the
+    // system. Every path now has to produce an authorisation, and a checkpoint
+    // that belongs to no site and no client cannot produce one at all: a scan
+    // nobody is posted to is not patrol evidence.
+    const rejectScan = async (details: string, message: string) => {
+      await ctx.runMutation(internal.audit.record, {
+        action: "scan.rejected",
+        actorId: args.officerId,
+        actorRole: officer?.role ?? "guard",
+        targetType: "checkpoint",
+        targetId: args.checkpointId,
+        details,
+        clientId,
+        siteId,
+        success: false,
+      });
+      throw new Error(message);
+    };
+
     if (siteId) {
       const assigned = await ctx.db
         .query("userSiteAssignments")
@@ -274,19 +296,32 @@ export const create = internalMutation({
         )
         .first();
       if (!assigned) {
-        await ctx.runMutation(internal.audit.record, {
-          action: "scan.rejected",
-          actorId: args.officerId,
-          actorRole: officer?.role ?? "guard",
-          targetType: "checkpoint",
-          targetId: args.checkpointId,
-          details: "Officer not assigned to this checkpoint's site",
-          clientId,
-          siteId,
-          success: false,
-        });
-        throw new Error("Officer is not assigned to this checkpoint's site");
+        await rejectScan(
+          "Officer not assigned to this checkpoint's site",
+          "Officer is not assigned to this checkpoint's site",
+        );
       }
+    } else if (checkpoint.clientId) {
+      // Site-less but tenant-owned: the guard must at least be posted somewhere
+      // under the same client.
+      const assignments = await ctx.db
+        .query("userSiteAssignments")
+        .withIndex("by_userId", (q) => q.eq("userId", args.officerId))
+        .collect();
+      const sameClient = assignments.some(
+        (a) => a.clientId === checkpoint.clientId,
+      );
+      if (!sameClient) {
+        await rejectScan(
+          "Officer not assigned to any site under this checkpoint's client",
+          "Officer is not assigned to this checkpoint's client",
+        );
+      }
+    } else {
+      await rejectScan(
+        "Checkpoint belongs to no site or client, so no assignment can authorise it",
+        "This checkpoint is not attached to a location. Ask an admin to assign it before scanning.",
+      );
     }
 
     const recentByOfficer = await ctx.db
