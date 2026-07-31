@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { AlertTriangle, AlertCircle, Info, Clock, ShieldAlert, User2, MapPin, RefreshCw, Mail, Search, ChevronDown, Camera, ExternalLink } from 'lucide-react'
 import { api } from '../services/api'
+import { CardSkeleton } from '../components/ui/Skeleton'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useAlertStore } from '../stores/useAlertStore'
 import type { Incident, MissedPatrol } from '../types'
@@ -179,8 +180,12 @@ export default function Alerts() {
       )}
 
       {loading ? (
-        <div className="rounded-xl border border-border bg-card p-8 text-center text-muted-foreground">
-          Loading alerts...
+        // Matches the skeleton treatment used by the other list pages, so
+        // loading looks the same wherever you are in the dashboard.
+        <div className="space-y-3">
+          <CardSkeleton />
+          <CardSkeleton />
+          <CardSkeleton />
         </div>
       ) : (filteredMissed.length > 0 || filteredIncidents.length > 0) ? (
         <div className="space-y-3">

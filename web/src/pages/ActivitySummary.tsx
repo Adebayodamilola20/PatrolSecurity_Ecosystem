@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { formatDate } from '../utils/format'
+import { TableSkeleton } from '../components/ui/Skeleton'
 import { api } from '../services/api'
 import { Download, Filter, FileSpreadsheet, FileText, Users, MapPin } from 'lucide-react'
 
@@ -221,9 +222,13 @@ export default function ActivitySummary() {
             </thead>
             <tbody>
               {loading ? (
+                // A skeleton rather than the word "Loading": every request to
+                // the backend costs the best part of a second from here, and a
+                // page that greys out its own shape reads as quicker than one
+                // that goes blank, at identical speed.
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
-                    Loading...
+                  <td colSpan={6} className="px-4 py-4">
+                    <TableSkeleton rows={6} />
                   </td>
                 </tr>
               ) : rows.length === 0 ? (

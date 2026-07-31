@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { api, TOKEN_KEY, REFRESH_KEY, USER_KEY } from '../services/api'
 import { IDLE_ACTIVITY_KEY } from '../hooks/useIdleLogout'
+import { clearClientDataCache } from '../hooks/useClientData'
 import type { ClientUser } from '../types'
 
 // Normalizes role strings like "Main-Account" / "client_main_account" -> "main_account".
@@ -101,6 +102,9 @@ export const useClientAuthStore = create<ClientAuthStore>((set) => ({
     const refreshToken = localStorage.getItem(REFRESH_KEY)
     if (refreshToken) void api.auth.logout(refreshToken).catch(() => {})
     clearSession()
+    // The page cache holds one tenant's guards, scans and sites. Leaving it in
+    // place would show them to whoever signs in next on this browser.
+    clearClientDataCache()
     set({ user: null, token: null, isAuthenticated: false, loading: false })
   },
 }))
@@ -111,6 +115,9 @@ export const useClientAuthStore = create<ClientAuthStore>((set) => ({
 if (typeof window !== 'undefined') {
   window.addEventListener('client:session-expired', () => {
     clearSession()
+    // Same reasoning as logout: an expired session must not leave this tenant's
+    // data cached for the next person to sign in.
+    clearClientDataCache()
     useClientAuthStore.setState({ user: null, token: null, isAuthenticated: false, loading: false })
   })
 }
