@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/scan_provider.dart';
 import '../utils/theme.dart';
+import '../utils/app_time.dart';
 import '../widgets/network_error_state.dart';
 import '../widgets/status_badge.dart';
 
@@ -88,7 +89,7 @@ class ScanDetailScreen extends StatelessWidget {
                   label: 'Scanned at',
                   value: DateFormat(
                     'MMM d, yyyy · h:mm:ss a',
-                  ).format(item.scannedAt),
+                  ).format(AppTime.toLagos(item.scannedAt)),
                 ),
                 const _DetailDivider(),
                 _DetailRow(

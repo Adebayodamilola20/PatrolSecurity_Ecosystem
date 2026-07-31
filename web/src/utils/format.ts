@@ -1,3 +1,12 @@
+/*
+ * Every time in this product is a Nigerian operational time — a guard clocked in
+ * at a Nigerian site at a Nigerian hour. Rendering in the viewer's own timezone
+ * meant a supervisor on a laptop set to another region saw "09:00" for a shift
+ * that started at 11:00, and shift/lateness figures were read off those wrong
+ * numbers. Pin the display zone so the wall clock always matches the site.
+ */
+export const OPERATING_TIME_ZONE = 'Africa/Lagos'
+
 export function safeDate(value: string | Date | null | undefined): Date | null {
   if (!value) return null
   const d = new Date(value)
@@ -6,12 +15,29 @@ export function safeDate(value: string | Date | null | undefined): Date | null {
 
 export function formatDate(value: string | Date | null | undefined, fallback = '—'): string {
   const d = safeDate(value)
-  return d ? d.toLocaleString() : fallback
+  return d
+    ? d.toLocaleString('en-GB', {
+        timeZone: OPERATING_TIME_ZONE,
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      })
+    : fallback
 }
 
 export function formatTime(value: string | Date | null | undefined, fallback = '—'): string {
   const d = safeDate(value)
-  return d ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : fallback
+  return d
+    ? d.toLocaleTimeString('en-GB', {
+        timeZone: OPERATING_TIME_ZONE,
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      })
+    : fallback
 }
 
 export function formatDuration(clockIn: string | Date | null | undefined, clockOut: string | Date | null | undefined): string {

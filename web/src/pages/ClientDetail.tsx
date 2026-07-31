@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import QRCode from 'qrcode'
 import L from 'leaflet'
+import { formatTime } from '../utils/format'
 import { api } from '../services/api'
 import { resolvePlaceLocation, searchPlaces } from '../services/placesSearch'
 import type { PlaceSuggestion } from '../services/placesSearch'
@@ -697,7 +698,7 @@ export default function ClientDetail() {
                                   {site.locationQr.lastScanVerified ? 'Verified' : 'Unverified'}
                                 </span>
                                 <span className="text-muted-foreground">
-                                  · {new Date(site.locationQr.lastScanAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  · {formatTime(site.locationQr.lastScanAt)}
                                 </span>
                               </div>
                             ) : null}
@@ -836,7 +837,7 @@ export default function ClientDetail() {
                                         {sub.lastScanVerified ? 'Verified' : 'Unverified'}
                                       </span>
                                       <span className="text-muted-foreground">
-                                        · {new Date(sub.lastScanAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        · {formatTime(sub.lastScanAt)}
                                       </span>
                                     </div>
                                   ) : (

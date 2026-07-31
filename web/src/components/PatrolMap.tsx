@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { formatDate } from '../utils/format'
 import { api } from '../services/api'
 import { loadGoogleMaps } from '../services/googleMaps'
 import {
@@ -169,7 +170,7 @@ export function PatrolMap() {
         ? escapeHtml(officer.siteName)
         : ''
     const lastSeen = officer.lastSeenAt
-      ? escapeHtml(new Date(officer.lastSeenAt).toLocaleString())
+      ? escapeHtml(formatDate(officer.lastSeenAt))
       : 'Unknown'
     if (!infoWindowRef.current) infoWindowRef.current = new maps.InfoWindow()
     infoWindowRef.current.setContent(

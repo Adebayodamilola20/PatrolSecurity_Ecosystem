@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { formatDate } from '../utils/format'
 import { api } from '../services/api'
 import { Download, Filter, FileSpreadsheet, FileText, Users, MapPin } from 'lucide-react'
 
@@ -95,7 +96,7 @@ export default function ActivitySummary() {
     if (!value) return '-'
     const date = new Date(value)
     if (Number.isNaN(date.getTime())) return value
-    return date.toLocaleString()
+    return formatDate(date)
   }
 
   return (

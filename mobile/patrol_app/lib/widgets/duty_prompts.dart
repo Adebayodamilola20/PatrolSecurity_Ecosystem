@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:vibration/vibration.dart';
 
 import '../providers/shift_provider.dart';
+import '../utils/app_time.dart';
 import '../utils/theme.dart';
 
 /// Prompts around going on and off duty.
@@ -182,7 +182,7 @@ Future<void> showClockInConfirmation(
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Clocked in at ${DateFormat('h:mm a').format(clockInTime)}',
+                    'Clocked in at ${AppTime.time(clockInTime)}',
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       fontSize: 15,

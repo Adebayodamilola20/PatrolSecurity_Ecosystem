@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Download, QrCode, Search, User2 } from 'lucide-react'
+import { formatDate } from '../utils/format'
 import { useScanStore, useScanWebSocket } from '../stores/useScanStore'
 import { TableSkeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
@@ -224,7 +225,7 @@ export default function Scans() {
                       {s.checkpointActive === false && <span className="ml-1 text-[10px] text-muted-foreground/50">(Deactivated)</span>}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
-                      {new Date(s.scannedAt).toLocaleString()}
+                      {formatDate(s.scannedAt)}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {s.distanceMeters ? `${s.distanceMeters}m` : '-'}

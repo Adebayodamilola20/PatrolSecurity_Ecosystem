@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { X, Building2, Plus, Eye, EyeOff } from 'lucide-react'
+import { formatDate } from '../utils/format'
 import { api } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
 import { CardSkeleton } from '../components/ui/Skeleton'
@@ -123,7 +124,7 @@ export default function Clients() {
                 <div className="mt-0.5 text-xs text-muted-foreground">{client.phone}</div>
               ) : null}
               <div className="mt-3 text-[11px] text-muted-foreground">
-                Created {new Date(client.createdAt).toLocaleDateString()}
+                Created {formatDate(client.createdAt)}
               </div>
             </button>
           ))}

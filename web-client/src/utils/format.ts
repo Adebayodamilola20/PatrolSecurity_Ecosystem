@@ -1,3 +1,11 @@
+/*
+ * Clients read these times as the hour a guard was physically at their site, so
+ * they must render in Nigerian time no matter where the viewer's browser thinks
+ * it is. Rendering in the viewer's zone shifted every timestamp by the offset
+ * between them and Lagos.
+ */
+export const OPERATING_TIME_ZONE = 'Africa/Lagos'
+
 export function safeDate(value: string | Date | null | undefined): Date | null {
   if (!value) return null
   const d = new Date(value)
@@ -6,12 +14,29 @@ export function safeDate(value: string | Date | null | undefined): Date | null {
 
 export function formatDate(value: string | Date | null | undefined, fallback = '—'): string {
   const d = safeDate(value)
-  return d ? d.toLocaleString() : fallback
+  return d
+    ? d.toLocaleString('en-GB', {
+        timeZone: OPERATING_TIME_ZONE,
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      })
+    : fallback
 }
 
 export function formatTime(value: string | Date | null | undefined, fallback = '—'): string {
   const d = safeDate(value)
-  return d ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : fallback
+  return d
+    ? d.toLocaleTimeString('en-GB', {
+        timeZone: OPERATING_TIME_ZONE,
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      })
+    : fallback
 }
 
 export function formatDuration(clockIn: string | Date | null | undefined, clockOut: string | Date | null | undefined): string {

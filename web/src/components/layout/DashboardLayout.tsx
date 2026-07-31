@@ -3,6 +3,7 @@ import { Outlet, Navigate } from 'react-router-dom'
 import { AlertTriangle, MapPin, X } from 'lucide-react'
 import Sidebar from './Sidebar'
 import Header from './Header'
+import { formatDate } from '../../utils/format'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { ErrorBoundary } from '../ErrorBoundary'
 import AiAssistantPanel, { AiAssistantLauncher } from '../AiAssistantPanel'
@@ -158,7 +159,7 @@ export default function DashboardLayout() {
 }
 
 function EmergencyPopup({ alert, onClose }: { alert: EmergencyAlert; onClose: () => void }) {
-  const when = alert.triggeredAt ? new Date(alert.triggeredAt).toLocaleString() : new Date().toLocaleString()
+  const when = formatDate(alert.triggeredAt ?? new Date())
   const emailDelivery = alert.delivery?.email
   const smsDelivery = alert.delivery?.sms
 

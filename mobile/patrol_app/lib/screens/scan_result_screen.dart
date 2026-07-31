@@ -14,8 +14,8 @@ import '../services/api_service.dart';
 import '../services/location_service.dart';
 import '../utils/constants.dart';
 import '../utils/routes.dart';
+import '../utils/app_time.dart';
 import '../utils/theme.dart';
-import 'package:intl/intl.dart';
 
 class ScanResultScreen extends StatefulWidget {
   final Map<String, dynamic>? scanData;
@@ -572,9 +572,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
         final reportedAt =
             DateTime.tryParse(incident['reportedAt']?.toString() ?? '') ??
             DateTime.now();
-        final formattedTime = DateFormat(
-          'MMM d, yyyy  h:mm a',
-        ).format(reportedAt);
+        final formattedTime = AppTime.dateTime(reportedAt);
 
         await showDialog<void>(
           context: context,
@@ -749,7 +747,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                 _InfoRow(
                   icon: Icons.access_time,
                   label: 'Time',
-                  value: DateFormat('MMM d, yyyy – h:mm a').format(_timestamp),
+                  value: AppTime.dateTime(_timestamp),
                 ),
                 const SizedBox(height: 8),
                 _InfoRow(

@@ -11,6 +11,7 @@ import '../providers/auth_provider.dart';
 import '../providers/scan_provider.dart';
 import '../providers/shift_provider.dart';
 import '../services/api_service.dart';
+import '../utils/app_time.dart';
 import '../utils/constants.dart';
 import '../utils/theme.dart';
 
@@ -27,7 +28,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
   bool _submitting = false;
   bool _exportsLoading = false;
   String _statusMessage = '';
-  DateTime _exportDate = DateTime.now();
+  // Seeded from the Nigerian date, not the device's: near midnight a handset on
+  // another timezone would default the export to the wrong day. The picked value
+  // is a wall-clock date from here on, so it is formatted without conversion.
+  DateTime _exportDate = AppTime.todayInLagos();
   List<ExportFile> _dailyExports = [];
 
   @override
@@ -310,13 +314,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   String _buildShiftWindow(ShiftProvider shift) {
-    final formatter = DateFormat('HH:mm');
     final start = shift.clockInTime == null
         ? '--:--'
-        : formatter.format(shift.clockInTime!);
+        : AppTime.time24(shift.clockInTime!);
     final end = shift.scheduledEnd == null
         ? '--:--'
-        : formatter.format(shift.scheduledEnd!);
+        : AppTime.time24(shift.scheduledEnd!);
     return '$start - $end';
   }
 
@@ -487,7 +490,7 @@ class _ExportArchiveCard extends StatelessWidget {
     final generated = item.generatedAt ?? item.createdAt;
     final generatedLabel = generated == null
         ? 'Unknown time'
-        : DateFormat('MMM d, yyyy  h:mm a').format(generated);
+        : AppTime.dateTime(generated);
     final fullDownloadUrl = item.downloadUrl.startsWith('http')
         ? item.downloadUrl
         : baseUrl.replaceFirst('/api/v1', '') + item.downloadUrl;

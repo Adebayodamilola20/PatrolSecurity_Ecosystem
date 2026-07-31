@@ -4,7 +4,7 @@ import { api } from '../services/api'
 import { Skeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
 import { getScheduleStatus } from '../utils/patrolSchedule'
-import { formatDuration } from '../utils/format'
+import { formatDate, formatDuration } from '../utils/format'
 import { subscribeToScans, subscribeToShiftUpdates } from '../services/websocket'
 import { photoSrc } from '../utils/photo'
 
@@ -329,7 +329,7 @@ export default function Timesheets() {
                     <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
                       <div>
                         <div className="text-muted-foreground">Clock In</div>
-                        <div className="text-sm font-medium">{t.clockIn ? new Date(t.clockIn).toLocaleString() : '-'}</div>
+                        <div className="text-sm font-medium">{t.clockIn ? formatDate(t.clockIn) : '-'}</div>
                         {mapsLink(t.clockInLatitude, t.clockInLongitude) ? (
                           <a
                             href={mapsLink(t.clockInLatitude, t.clockInLongitude)!}
@@ -345,7 +345,7 @@ export default function Timesheets() {
                       </div>
                       <div>
                         <div className="text-muted-foreground">Clock Out</div>
-                        <div className="text-sm font-medium">{t.clockOut ? new Date(t.clockOut).toLocaleString() : 'In Progress'}</div>
+                        <div className="text-sm font-medium">{t.clockOut ? formatDate(t.clockOut) : 'In Progress'}</div>
                         {mapsLink(t.clockOutLatitude, t.clockOutLongitude) ? (
                           <a
                             href={mapsLink(t.clockOutLatitude, t.clockOutLongitude)!}

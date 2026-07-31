@@ -6,7 +6,7 @@ import L from 'leaflet'
 import { api } from '../services/api'
 import type { Scan } from '../types'
 import { Skeleton } from '../components/ui/Skeleton'
-import { formatDate } from '../utils/format'
+import { formatDate, formatTime } from '../utils/format'
 import { EmptyState } from '../components/ui/EmptyState'
 import { getScheduleStatus } from '../utils/patrolSchedule'
 
@@ -319,7 +319,7 @@ export default function CheckpointDetail() {
                   </div>
                   <div className="mt-0.5 text-xs text-muted-foreground">{scan.notes || 'No notes'}</div>
                   <div className="mt-2 flex items-center gap-3 text-[11px]">
-                    <span className="text-muted-foreground">{new Date(scan.scannedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span className="text-muted-foreground">{formatTime(scan.scannedAt)}</span>
                     <span className={scan.gpsValid ? 'text-success' : 'text-destructive'}>
                       {scan.gpsValid ? `${scan.distanceMeters}m` : 'GPS Flagged'}
                     </span>
