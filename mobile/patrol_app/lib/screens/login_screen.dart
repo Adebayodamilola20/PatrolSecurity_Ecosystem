@@ -19,7 +19,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _obscure = true;
-  String _loginRole = 'site';
 
   @override
   void dispose() {
@@ -87,47 +86,11 @@ class _LoginScreenState extends State<LoginScreen> {
                         height: 1.45,
                       ),
                     ),
+                    // The account-type chips were removed: they set a field the
+                    // login call never read, so picking one changed nothing, and
+                    // offering "Client" advertised an account type this app now
+                    // refuses. The account's own role decides what it can do.
                     const SizedBox(height: 28),
-                    const Text(
-                      'Account type',
-                      style: TextStyle(
-                        color: AppTheme.text,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _RoleChoice(
-                            label: 'Site',
-                            icon: Icons.location_city_outlined,
-                            selected: _loginRole == 'site',
-                            onTap: () => setState(() => _loginRole = 'site'),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _RoleChoice(
-                            label: 'Client',
-                            icon: Icons.business_outlined,
-                            selected: _loginRole == 'client',
-                            onTap: () => setState(() => _loginRole = 'client'),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _RoleChoice(
-                            label: 'Admin',
-                            icon: Icons.admin_panel_settings_outlined,
-                            selected: _loginRole == 'admin',
-                            onTap: () => setState(() => _loginRole = 'admin'),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
                     const _FieldLabel(label: 'Email address'),
                     const SizedBox(height: 8),
                     TextFormField(
@@ -287,7 +250,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             color: AppTheme.primaryDark.withValues(alpha: 0.8),
                           ),
                           const Text(
-                            'Site, client, and admin accounts supported',
+                            'Guard and supervisor accounts',
                             style: TextStyle(
                               color: AppTheme.textSecondary,
                               fontSize: 12,
@@ -468,60 +431,3 @@ class _FieldLabel extends StatelessWidget {
   }
 }
 
-class _RoleChoice extends StatelessWidget {
-  const _RoleChoice({
-    required this.label,
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: selected ? const Color(0xFFE8F7EF) : const Color(0xFFF8FAF9),
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          height: 54,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: selected ? AppTheme.primary : AppTheme.border,
-              width: selected ? 1.5 : 1,
-            ),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 18,
-                color: selected ? AppTheme.primaryDark : AppTheme.textSecondary,
-              ),
-              const SizedBox(height: 3),
-              Text(
-                label,
-                style: TextStyle(
-                  color: selected
-                      ? AppTheme.primaryDark
-                      : AppTheme.textSecondary,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}

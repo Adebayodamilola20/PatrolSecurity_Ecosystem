@@ -29,6 +29,16 @@ Future<bool> _vibrationEnabled() async {
 /// nothing here outlives the prompt. Audio is a nice-to-have — a handset on
 /// silent, or with no audio route, must never break clocking in.
 Future<void> _playChime(String asset) async {
+  // Honours the Alert Sound setting. It used to be written and never read, so
+  // turning it off changed nothing.
+  try {
+    final enabled =
+        await const FlutterSecureStorage().read(key: 'setting_alertsound');
+    if ((enabled ?? 'true') != 'true') return;
+  } catch (_) {
+    // Unreadable storage shouldn't silence a confirmation the guard expects.
+  }
+
   final player = AudioPlayer();
   try {
     await player.play(AssetSource(asset));

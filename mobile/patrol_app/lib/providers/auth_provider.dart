@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../models/user.dart';
+import '../utils/access_control.dart';
 import '../services/api_service.dart';
 
 class AuthProvider extends ChangeNotifier {
@@ -26,6 +27,20 @@ class AuthProvider extends ChangeNotifier {
     try {
       final data = await ApiService.login(email, password);
       final user = User.fromJson(data['user']);
+
+      // This is the field app. Client accounts belong in the web portal, which
+      // is where their reporting lives; letting one in here would land them on
+      // a scanner and duty toggle they have no business using, and the login
+      // screen used to advertise "client" as a supported account type.
+      if (roleFromString(user.role) == AccountRole.client) {
+        await ApiService.logout();
+        _error =
+            'Client accounts sign in on the web portal, not the guard app.';
+        _loading = false;
+        notifyListeners();
+        return false;
+      }
+
       _user = user;
       await _storage.write(
         key: _userStorageKey,

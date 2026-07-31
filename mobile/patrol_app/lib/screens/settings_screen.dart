@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/scan_provider.dart';
 import '../utils/sign_out.dart';
@@ -17,16 +16,13 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   static const _storage = FlutterSecureStorage();
 
-  bool _notificationsEnabled = true;
+  // Only settings that actually change how the app behaves live here. The page
+  // previously carried ten toggles of which one was read by anything — push
+  // notifications, dark mode, compact layout, font size, session timeout,
+  // auto-advance and the offline pair all wrote to storage and were never
+  // consulted, so switching them appeared to do something and did not.
   bool _vibrationEnabled = true;
-  bool _offlineMode = false;
-  bool _darkMode = false;
-  bool _autoScan = true;
   bool _alertSound = true;
-  bool _compactLayout = false;
-  String _sessionTimeout = '30 min';
-  String _fontSize = 'Medium';
-  String _syncInterval = 'Every 5 min';
 
   bool _loaded = false;
 
@@ -37,24 +33,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadSettings() async {
-    _notificationsEnabled =
-        (await _storage.read(key: 'setting_notifications') ?? 'true') == 'true';
     _vibrationEnabled =
         (await _storage.read(key: 'setting_vibration') ?? 'true') == 'true';
-    _offlineMode =
-        (await _storage.read(key: 'setting_offline') ?? 'false') == 'true';
-    _darkMode =
-        (await _storage.read(key: 'setting_darkmode') ?? 'false') == 'true';
-    _autoScan =
-        (await _storage.read(key: 'setting_autoscan') ?? 'true') == 'true';
     _alertSound =
         (await _storage.read(key: 'setting_alertsound') ?? 'true') == 'true';
-    _compactLayout =
-        (await _storage.read(key: 'setting_compact') ?? 'false') == 'true';
-    _sessionTimeout = await _storage.read(key: 'setting_timeout') ?? '30 min';
-    _fontSize = await _storage.read(key: 'setting_fontsize') ?? 'Medium';
-    _syncInterval =
-        await _storage.read(key: 'setting_syncinterval') ?? 'Every 5 min';
     if (mounted) setState(() => _loaded = true);
   }
 
@@ -100,23 +82,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       subtitle: 'Update your login credentials',
                       onTap: () => _changePassword(context),
                     ),
-                    _Divider(),
-                    _SettingTile(
-                      icon: Icons.timer_outlined,
-                      iconColor: const Color(0xFFF59E0B),
-                      iconBg: const Color(0xFFF59E0B).withValues(alpha: 0.1),
-                      title: 'Session Timeout',
-                      subtitle:
-                          'Auto-lock after $_sessionTimeout of inactivity',
-                      trailing: _DropdownChip(
-                        value: _sessionTimeout,
-                        items: ['5 min', '15 min', '30 min', '1 hour', 'Never'],
-                        onChanged: (v) => setState(() {
-                          _sessionTimeout = v!;
-                          _save('setting_timeout', v);
-                        }),
-                      ),
-                    ),
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -124,22 +89,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 8),
                 _Card(
                   children: [
-                    _SettingTile(
-                      icon: Icons.qr_code_scanner_rounded,
-                      iconColor: AppTheme.primary,
-                      iconBg: AppTheme.primary.withValues(alpha: 0.1),
-                      title: 'Auto-Advance Scan',
-                      subtitle: 'Return to scanner after a successful scan',
-                      trailing: Switch.adaptive(
-                        value: _autoScan,
-                        onChanged: (v) => setState(() {
-                          _autoScan = v;
-                          _save('setting_autoscan', v.toString());
-                        }),
-                        activeTrackColor: AppTheme.primary,
-                      ),
-                    ),
-                    _Divider(),
                     _SettingTile(
                       icon: Icons.vibration_rounded,
                       iconColor: const Color(0xFF3B82F6),
@@ -158,33 +107,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ],
                 ),
                 const SizedBox(height: 24),
-                _SectionLabel(label: 'NOTIFICATIONS'),
+                _SectionLabel(label: 'ALERTS'),
                 const SizedBox(height: 8),
                 _Card(
                   children: [
-                    _SettingTile(
-                      icon: Icons.notifications_active_rounded,
-                      iconColor: const Color(0xFFF43F5E),
-                      iconBg: const Color(0xFFF43F5E).withValues(alpha: 0.1),
-                      title: 'Push Notifications',
-                      subtitle:
-                          'Receive alerts for missed checkpoints and updates',
-                      trailing: Switch.adaptive(
-                        value: _notificationsEnabled,
-                        onChanged: (v) => setState(() {
-                          _notificationsEnabled = v;
-                          _save('setting_notifications', v.toString());
-                        }),
-                        activeTrackColor: AppTheme.primary,
-                      ),
-                    ),
-                    _Divider(),
                     _SettingTile(
                       icon: Icons.volume_up_rounded,
                       iconColor: const Color(0xFF8B5CF6),
                       iconBg: const Color(0xFF8B5CF6).withValues(alpha: 0.1),
                       title: 'Alert Sound',
-                      subtitle: 'Play a tone for notifications',
+                      subtitle: 'Play a tone when you clock in or out',
                       trailing: Switch.adaptive(
                         value: _alertSound,
                         onChanged: (v) => setState(() {
@@ -197,103 +129,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ],
                 ),
                 const SizedBox(height: 24),
-                _SectionLabel(label: 'APPEARANCE'),
-                const SizedBox(height: 8),
-                _Card(
-                  children: [
-                    _SettingTile(
-                      icon: Icons.dark_mode_rounded,
-                      iconColor: const Color(0xFF1E293B),
-                      iconBg: const Color(0xFF1E293B).withValues(alpha: 0.08),
-                      title: 'Dark Mode',
-                      subtitle: 'Switch to a darker color scheme',
-                      trailing: Switch.adaptive(
-                        value: _darkMode,
-                        onChanged: (v) => setState(() {
-                          _darkMode = v;
-                          _save('setting_darkmode', v.toString());
-                        }),
-                        activeTrackColor: AppTheme.primary,
-                      ),
-                    ),
-                    _Divider(),
-                    _SettingTile(
-                      icon: Icons.view_compact_rounded,
-                      iconColor: const Color(0xFF3B82F6),
-                      iconBg: const Color(0xFF3B82F6).withValues(alpha: 0.1),
-                      title: 'Compact Layout',
-                      subtitle: 'Show more content in less space',
-                      trailing: Switch.adaptive(
-                        value: _compactLayout,
-                        onChanged: (v) => setState(() {
-                          _compactLayout = v;
-                          _save('setting_compact', v.toString());
-                        }),
-                        activeTrackColor: AppTheme.primary,
-                      ),
-                    ),
-                    _Divider(),
-                    _SettingTile(
-                      icon: Icons.text_fields_rounded,
-                      iconColor: const Color(0xFFEC4899),
-                      iconBg: const Color(0xFFEC4899).withValues(alpha: 0.1),
-                      title: 'Font Size',
-                      subtitle: 'Currently $_fontSize',
-                      trailing: _DropdownChip(
-                        value: _fontSize,
-                        items: ['Small', 'Medium', 'Large'],
-                        onChanged: (v) => setState(() {
-                          _fontSize = v!;
-                          _save('setting_fontsize', v);
-                        }),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
                 _SectionLabel(label: 'DATA & STORAGE'),
                 const SizedBox(height: 8),
                 _Card(
                   children: [
-                    _SettingTile(
-                      icon: Icons.wifi_rounded,
-                      iconColor: const Color(0xFF3B82F6),
-                      iconBg: const Color(0xFF3B82F6).withValues(alpha: 0.1),
-                      title: 'Offline Mode',
-                      subtitle: 'Cache scans locally and sync when connected',
-                      trailing: Switch.adaptive(
-                        value: _offlineMode,
-                        onChanged: (v) => setState(() {
-                          _offlineMode = v;
-                          _save('setting_offline', v.toString());
-                        }),
-                        activeTrackColor: AppTheme.primary,
-                      ),
-                    ),
-                    if (_offlineMode) ...[
-                      _Divider(),
-                      _SettingTile(
-                        icon: Icons.sync_rounded,
-                        iconColor: AppTheme.primary,
-                        iconBg: AppTheme.primary.withValues(alpha: 0.1),
-                        title: 'Auto-Sync Interval',
-                        subtitle: 'Upload cached scans automatically',
-                        trailing: _DropdownChip(
-                          value: _syncInterval,
-                          items: [
-                            'Every 5 min',
-                            'Every 15 min',
-                            'Every 30 min',
-                            'Manual',
-                          ],
-                          onChanged: (v) => setState(() {
-                            _syncInterval = v!;
-                            _save('setting_syncinterval', v);
-                          }),
-                        ),
-                      ),
-                    ],
-                    _Divider(),
                     _StorageTile(
                       scanCount: scan.totalScans,
                       onClear: () => _confirmClearCache(context, scan),
@@ -305,40 +144,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 8),
                 _Card(
                   children: [
-                    _SettingTile(
-                      icon: Icons.help_outline_rounded,
-                      iconColor: AppTheme.primary,
-                      iconBg: AppTheme.primary.withValues(alpha: 0.1),
-                      title: 'Help & FAQ',
-                      subtitle: 'Guides and troubleshooting',
-                      onTap: () => _openUrl(
-                        context,
-                        'https://patrolsecurity-ecosystem.onrender.com/help',
-                      ),
-                    ),
-                    _Divider(),
-                    _SettingTile(
-                      icon: Icons.privacy_tip_outlined,
-                      iconColor: const Color(0xFF6366F1),
-                      iconBg: const Color(0xFF6366F1).withValues(alpha: 0.1),
-                      title: 'Privacy Policy',
-                      onTap: () => _openUrl(
-                        context,
-                        'https://patrolsecurity-ecosystem.onrender.com/privacy',
-                      ),
-                    ),
-                    _Divider(),
-                    _SettingTile(
-                      icon: Icons.description_outlined,
-                      iconColor: const Color(0xFF8B5CF6),
-                      iconBg: const Color(0xFF8B5CF6).withValues(alpha: 0.1),
-                      title: 'Terms of Service',
-                      onTap: () => _openUrl(
-                        context,
-                        'https://patrolsecurity-ecosystem.onrender.com/terms',
-                      ),
-                    ),
-                    _Divider(),
+                    // Help, Privacy Policy and Terms of Service used to link to
+                    // patrolsecurity-ecosystem.onrender.com, a host that no
+                    // longer resolves at all — every tap opened nothing. The
+                    // pages do not exist on the live site either, so the links
+                    // are gone rather than left pointing at a dead end.
+                    // TODO: restore once real privacy/terms pages are published;
+                    // both app stores require a reachable privacy policy URL.
                     _SettingTile(
                       icon: Icons.info_outline_rounded,
                       iconColor: AppTheme.textSecondary,
@@ -444,19 +256,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           );
         }
-      }
-    }
-  }
-
-  Future<void> _openUrl(BuildContext context, String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri != null && await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Could not open link')));
       }
     }
   }
@@ -751,66 +550,6 @@ class _Card extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         child: Column(children: children),
-      ),
-    );
-  }
-}
-
-class _Divider extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) =>
-      const Divider(height: 1, thickness: 0.5, color: AppTheme.border);
-}
-
-class _DropdownChip extends StatelessWidget {
-  final String value;
-  final List<String> items;
-  final ValueChanged<String?> onChanged;
-
-  const _DropdownChip({
-    required this.value,
-    required this.items,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppTheme.primary.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: value,
-          items: items
-              .map(
-                (t) => DropdownMenuItem(
-                  value: t,
-                  child: Text(
-                    t,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              )
-              .toList(),
-          onChanged: onChanged,
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: AppTheme.primary,
-          ),
-          icon: const Icon(
-            Icons.expand_more,
-            size: 16,
-            color: AppTheme.primary,
-          ),
-          isDense: true,
-        ),
       ),
     );
   }
