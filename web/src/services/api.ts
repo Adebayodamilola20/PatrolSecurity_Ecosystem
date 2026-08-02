@@ -262,6 +262,34 @@ export const api = {
     get: (id: string) => request<any>(`/users/${id}`),
     create: (data: any) =>
       request<any>('/users', { method: 'POST', body: JSON.stringify(data) }),
+    // Removes the profile, login and postings. Patrol history is kept — see
+    // `users.remove` in convex for why, and `deletionImpact` for the numbers
+    // to show before confirming.
+    remove: (id: string) =>
+      request<{ message: string; name: string }>(`/users/${id}`, { method: 'DELETE' }),
+  },
+  // What a delete would remove and what it would keep, for the confirm dialogs.
+  deletionImpact: {
+    user: (id: string) =>
+      request<{
+        name: string
+        role: string
+        isLastAdmin: boolean
+        onDuty: boolean
+        scans: number
+        shifts: number
+        incidents: number
+        assignedSites: string[]
+      }>(`/deletion-impact?type=user&id=${encodeURIComponent(id)}`),
+    site: (id: string) =>
+      request<{
+        name: string
+        subLocations: number
+        qrCodes: number
+        scans: number
+        activePostOrders: number
+        assignedGuards: string[]
+      }>(`/deletion-impact?type=site&id=${encodeURIComponent(id)}`),
   },
   // Guard <-> location posting. Scans at a location are rejected unless the
   // guard is assigned to it, and the client portal's coverage numbers count
@@ -337,6 +365,10 @@ export const api = {
       request<any>('/sites', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: string, data: any) =>
       request<any>(`/sites/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    // Deletes the location and every QR code inside it. Scans taken there are
+    // kept as history.
+    remove: (id: string) =>
+      request<{ message: string; name: string }>(`/sites/${id}`, { method: 'DELETE' }),
   },
   passOnLogs: {
     list: () => request<any[]>('/pass-on-logs'),

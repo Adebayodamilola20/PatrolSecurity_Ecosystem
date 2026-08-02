@@ -110,6 +110,29 @@ export default defineSchema({
     .index("by_role", ["role"])
     .index("by_role_clientId", ["role", "clientId"]),
 
+  // Tombstones for hard-deleted guards and locations.
+  //
+  // Deleting a guard removes the profile and the login but deliberately keeps
+  // the patrol history, so scans/shifts/incidents/reports still carry an id
+  // that no longer resolves. Every name lookup on that history is a
+  // `find(u => u._id === row.officerId)?.name ?? ""`, which would quietly start
+  // rendering blank — defeating the point of keeping the history at all. These
+  // rows keep the name attached to the record instead.
+  deletedEntities: defineTable({
+    entityType: v.union(
+      v.literal("user"),
+      v.literal("site"),
+      v.literal("checkpoint"),
+    ),
+    entityId: v.string(),
+    name: v.string(),
+    deletedAt: v.number(),
+    deletedByUserId: v.optional(v.id("users")),
+    deletedByName: v.optional(v.string()),
+  })
+    .index("by_entityType", ["entityType"])
+    .index("by_entityId", ["entityId"]),
+
   // Server-side sessions: one row per refresh token, stored as a SHA-256
   // hash (a database leak never exposes usable tokens). Tokens are single-use
   // and rotate on every refresh; `familyId` ties a login's whole rotation

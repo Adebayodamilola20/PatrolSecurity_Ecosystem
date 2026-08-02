@@ -2914,6 +2914,81 @@ http.route({ pathPrefix: "/users/", method: "GET", handler: httpAction(async (ct
   return json(await ctx.runQuery(internal.users.getDetail, { userId }));
 })});
 
+// Pre-flight for the delete confirmations: what a delete would remove, and
+// what it would keep. A flat path rather than `/users/{id}/deletion-impact`
+// because the `/users/` and `/sites/` prefixes are already claimed by
+// single-resource handlers.
+http.route({ path: "/deletion-impact", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  const roleErr = requireRole(user, ["admin"]);
+  if (roleErr) return roleErr;
+  const url = new URL(request.url);
+  const type = url.searchParams.get("type");
+  const id = url.searchParams.get("id");
+  if (!id) return badRequest("id required");
+  if (type === "user") {
+    const userId = await ctx.runQuery(internal.users.resolveId, { id });
+    if (!userId) return notFound("User not found");
+    const impact = await ctx.runQuery(internal.users.getDeletionImpact, { userId });
+    if (!impact) return notFound("User not found");
+    return json(impact);
+  }
+  if (type === "site") {
+    const siteId = await ctx.runQuery(internal.sites.resolveId, { id });
+    if (!siteId) return notFound("Location not found");
+    const impact = await ctx.runQuery(internal.sites.getDeletionImpact, { siteId });
+    if (!impact) return notFound("Location not found");
+    return json(impact);
+  }
+  return badRequest("type must be 'user' or 'site'");
+})});
+
+// Removes a guard from the system after they leave: profile, login and
+// postings go, patrol history stays. See `users.remove` for why.
+http.route({ pathPrefix: "/users/", method: "DELETE", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  const roleErr = requireRole(user, ["admin"]);
+  if (roleErr) return roleErr;
+  const id = lastPathPart(request);
+  if (!id) return badRequest("User ID required");
+  const userId = await ctx.runQuery(internal.users.resolveId, { id });
+  if (!userId) return notFound("User not found");
+  // Deleting yourself revokes your own session mid-request and locks the
+  // account out of the dashboard it is using.
+  if (_uid(user.convexId) === userId) {
+    return badRequest("You cannot delete your own account");
+  }
+  const impact = await ctx.runQuery(internal.users.getDeletionImpact, { userId });
+  if (!impact) return notFound("User not found");
+  // A client's portal login is created and owned by the Clients page; deleting
+  // one here would strand that client with no way into their portal.
+  if (impact.role === "main_account") {
+    return badRequest("Portal logins are managed on the client's page, not here");
+  }
+  if (impact.isLastAdmin) {
+    return badRequest("This is the only admin account — create another admin before deleting this one");
+  }
+  const result = await ctx.runMutation(internal.users.remove, {
+    userId,
+    deletedByUserId: _uid(user.convexId),
+    deletedByName: user.name,
+  });
+  if (!result) return notFound("User not found");
+  await recordAudit(ctx, user, "user.deleted", {
+    targetType: "user",
+    targetId: userId as string,
+    details:
+      `Deleted ${result.role} "${result.name}" — patrol history kept ` +
+      `(${impact.scans} scan(s), ${impact.shifts} shift(s), ${impact.incidents} incident(s)); ` +
+      `${result.sessionsRevoked} session(s) revoked, ${result.assignmentsRemoved} posting(s) removed, ` +
+      `${result.shiftsClosed} open shift(s) closed`,
+    ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+  });
+  return json({ message: `${result.name} deleted`, ...result });
+})});
+
 http.route({ path: "/shifts/missing-clockins", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
@@ -3389,6 +3464,38 @@ http.route({ path: "/client/reports", method: "GET", handler: httpAction(async (
   const clientId = _cid(user.clientId);
   if (!clientId) return json([]);
   return json(await ctx.runQuery(internal.clients.portalReports, { clientId }));
+})});
+
+// Removes a location the company no longer covers: the site, its QR points
+// and its guard postings go, the patrol history taken there stays.
+// Admin-only — unlike the PUT above, this is not recoverable by editing.
+http.route({ pathPrefix: "/sites/", method: "DELETE", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  const roleErr = requireRole(user, ["admin"]);
+  if (roleErr) return roleErr;
+  const id = lastPathPart(request);
+  if (!id) return badRequest("Site ID required");
+  const siteId = await ctx.runQuery(internal.sites.resolveId, { id });
+  if (!siteId) return notFound("Location not found");
+  const impact = await ctx.runQuery(internal.sites.getDeletionImpact, { siteId });
+  if (!impact) return notFound("Location not found");
+  const result = await ctx.runMutation(internal.sites.remove, {
+    siteId,
+    deletedByUserId: _uid(user.convexId),
+    deletedByName: user.name,
+  });
+  if (!result) return notFound("Location not found");
+  await recordAudit(ctx, user, "site.deleted", {
+    targetType: "site",
+    targetId: siteId as string,
+    details:
+      `Deleted location "${result.name}" — patrol history kept (${impact.scans} scan(s)); ` +
+      `${result.checkpointsRemoved} QR code(s) removed, ${result.assignmentsRemoved} posting(s) removed, ` +
+      `${result.postOrdersDeactivated} post order(s) deactivated`,
+    ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+  });
+  return json({ message: `${result.name} deleted`, ...result });
 })});
 
 http.route({ path: "/sites", method: "GET", handler: httpAction(async (ctx, request) => {

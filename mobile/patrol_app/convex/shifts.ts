@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { distanceMeters } from "./lib/geo";
+import { deletedNamesByType } from "./lib/tombstones";
 
 async function validateSiteGeofence(
   ctx: MutationCtx,
@@ -106,10 +107,16 @@ export const listForExport = internalQuery({
   handler: async (ctx) => {
     const shifts = await ctx.db.query("shifts").order("desc").take(500);
     const users = await ctx.db.query("users").collect();
+    // Timesheet rows outlive the guard, so an export covering a period a
+    // since-deleted guard worked still names them.
+    const goneUsers = await deletedNamesByType(ctx, "user");
     return shifts.map((shift) => ({
       id: shift.legacyId ?? shift._id,
       userId: shift.userId,
-      userName: users.find((user) => user._id === shift.userId)?.name ?? "",
+      userName:
+        users.find((user) => user._id === shift.userId)?.name ??
+        goneUsers.get(shift.userId) ??
+        "",
       clockIn: new Date(shift.clockIn).toISOString(),
       clockOut: shift.clockOut ? new Date(shift.clockOut).toISOString() : null,
       status: shift.status,
@@ -149,12 +156,13 @@ export const listAll = internalQuery({
       );
     }
     const users = await ctx.db.query("users").collect();
+    const goneUsers = await deletedNamesByType(ctx, "user");
     return shifts.map((s) => {
       const u = users.find((u) => u._id === s.userId);
       return {
         id: s.legacyId ?? s._id,
         userId: s.userId,
-        userName: u?.name ?? "",
+        userName: u?.name ?? goneUsers.get(s.userId) ?? "",
         userEmail: u?.email ?? "",
         userPhone: u?.phone ?? "",
         clockIn: new Date(s.clockIn).toISOString(),

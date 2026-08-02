@@ -2,6 +2,7 @@ import { internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { getReportTemplate, validateTemplateFields } from "./lib/reportTemplates";
+import { deletedNamesByType } from "./lib/tombstones";
 
 export const listSubmissions = internalQuery({
   args: {
@@ -238,6 +239,8 @@ export const getForPdf = internalQuery({
     const report = await ctx.db.get(args.reportId);
     if (!report) return null;
     const officer = await ctx.db.get(report.userId);
+    // A filed report outlives the guard who filed it; keep it attributed.
+    const goneUsers = officer ? null : await deletedNamesByType(ctx, "user");
     const checkpoint = report.checkpointId
       ? await ctx.db.get(report.checkpointId)
       : null;
@@ -263,7 +266,7 @@ export const getForPdf = internalQuery({
       siteName: site?.name ?? null,
       checkpointName: checkpoint?.name ?? null,
       clientName: client?.name ?? null,
-      officerName: officer?.name ?? null,
+      officerName: officer?.name ?? goneUsers?.get(report.userId) ?? null,
       status: report.status,
       submittedAt: report.submittedAt,
       pdfStorageId: report.pdfStorageId ?? null,

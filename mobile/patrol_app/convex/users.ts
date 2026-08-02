@@ -1,5 +1,6 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
+import { recordTombstone } from "./lib/tombstones";
 
 export const findByEmail = internalQuery({
   args: {
@@ -110,6 +111,134 @@ export const create = internalMutation({
   handler: async (ctx, args) => {
     const id = await ctx.db.insert("users", args);
     return id;
+  },
+});
+
+/**
+ * How much of a guard's record a delete would touch. Read before the confirm
+ * dialog so staff are told what survives rather than guessing — the counts
+ * that are *kept* are the reassuring half of the message.
+ */
+export const getDeletionImpact = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    if (!user) return null;
+    const [scans, shifts, incidents, assignments] = await Promise.all([
+      ctx.db
+        .query("scans")
+        .withIndex("by_officerId", (q) => q.eq("officerId", args.userId))
+        .collect(),
+      ctx.db
+        .query("shifts")
+        .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+        .collect(),
+      ctx.db
+        .query("incidents")
+        .withIndex("by_officerId", (q) => q.eq("officerId", args.userId))
+        .collect(),
+      ctx.db
+        .query("userSiteAssignments")
+        .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+        .collect(),
+    ]);
+    const siteNames = await Promise.all(
+      assignments.map(async (a) => (await ctx.db.get(a.siteId))?.name ?? null),
+    );
+    // Deleting the only admin would leave nobody able to administer the
+    // system — including nobody able to create a replacement admin.
+    const admins = await ctx.db
+      .query("users")
+      .withIndex("by_role", (q) => q.eq("role", "admin"))
+      .collect();
+    return {
+      name: user.name,
+      role: user.role,
+      isLastAdmin: user.role === "admin" && admins.length <= 1,
+      onDuty: shifts.some((s) => s.status === "active"),
+      scans: scans.length,
+      shifts: shifts.length,
+      incidents: incidents.length,
+      assignedSites: siteNames.filter((n): n is string => !!n),
+    };
+  },
+});
+
+/**
+ * Hard-deletes a guard's profile: the account, its logins and its postings.
+ *
+ * Patrol history — scans, shifts, incidents, reports — is deliberately left
+ * behind. It is the evidence trail for nights the guard actually worked, and a
+ * client or the police can still ask about those nights after the guard is
+ * gone; a tombstone keeps their name readable on it.
+ *
+ * An open shift is closed first. An `active` shift whose user no longer exists
+ * would otherwise keep a deleted guard on duty forever on the live map.
+ */
+export const remove = internalMutation({
+  args: {
+    userId: v.id("users"),
+    deletedByUserId: v.optional(v.id("users")),
+    deletedByName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    if (!user) return null;
+
+    const openShifts = await ctx.db
+      .query("shifts")
+      .withIndex("by_userId_status", (q) =>
+        q.eq("userId", args.userId).eq("status", "active"),
+      )
+      .collect();
+    const now = Date.now();
+    for (const shift of openShifts) {
+      await ctx.db.patch(shift._id, {
+        status: "completed",
+        clockOut: shift.clockOut ?? now,
+      });
+    }
+
+    // Sessions go first: an in-flight refresh must not be able to outlive the
+    // profile it belongs to.
+    const tokens = await ctx.db
+      .query("refreshTokens")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .collect();
+    for (const token of tokens) await ctx.db.delete(token._id);
+
+    const assignments = await ctx.db
+      .query("userSiteAssignments")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .collect();
+    for (const assignment of assignments) await ctx.db.delete(assignment._id);
+
+    // Live GPS telemetry rather than evidence — it is purged on a schedule
+    // anyway, and leaving it puts a nameless dot on the live map.
+    const positions = await ctx.db
+      .query("officerPositions")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .collect();
+    for (const position of positions) await ctx.db.delete(position._id);
+
+    await recordTombstone(ctx, {
+      entityType: "user",
+      entityId: args.userId,
+      name: user.name,
+      deletedByUserId: args.deletedByUserId,
+      deletedByName: args.deletedByName,
+    });
+
+    await ctx.db.delete(args.userId);
+
+    return {
+      name: user.name,
+      role: user.role,
+      shiftsClosed: openShifts.length,
+      sessionsRevoked: tokens.length,
+      assignmentsRemoved: assignments.length,
+      positionsRemoved: positions.length,
+    };
   },
 });
 

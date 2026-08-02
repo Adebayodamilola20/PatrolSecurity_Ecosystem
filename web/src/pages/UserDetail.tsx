@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Clock3, Mail, Phone, ShieldCheck, User2, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Clock3, Mail, Phone, ShieldCheck, User2, AlertTriangle, Trash2, X } from 'lucide-react'
 import { api } from '../services/api'
 import { subscribeToScans, subscribeToShiftUpdates } from '../services/websocket'
+import { useCanManageUsers } from '../stores/useAuthStore'
 import { Skeleton } from '../components/ui/Skeleton'
 import { formatDate, formatDuration, formatLateStatus } from '../utils/format'
+
+type DeletionImpact = Awaited<ReturnType<typeof api.deletionImpact.user>>
 
 type DateFilter = 'all' | 'today' | 'yesterday' | 'custom'
 
@@ -39,6 +42,12 @@ export default function UserDetail() {
   const [user, setUser] = useState<any>(null)
   const [dateFilter, setDateFilter] = useState<DateFilter>('all')
   const [customDate, setCustomDate] = useState('')
+  const canManage = useCanManageUsers()
+  const [showDelete, setShowDelete] = useState(false)
+  const [impact, setImpact] = useState<DeletionImpact | null>(null)
+  const [impactError, setImpactError] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
 
   useEffect(() => {
     if (!id) return
@@ -62,6 +71,36 @@ export default function UserDetail() {
     }
   }, [id])
 
+  // The counts come from the server rather than the already-loaded profile:
+  // this page only holds recent shifts and scans, and "3 scans" next to a
+  // delete button would read as the total.
+  const openDelete = () => {
+    if (!id) return
+    setShowDelete(true)
+    setImpact(null)
+    setImpactError('')
+    setDeleteError('')
+    api.deletionImpact
+      .user(id)
+      .then(setImpact)
+      .catch((err) =>
+        setImpactError(err instanceof Error ? err.message : 'Could not load this guard’s record.'),
+      )
+  }
+
+  const confirmDelete = async () => {
+    if (!id) return
+    setDeleting(true)
+    setDeleteError('')
+    try {
+      await api.users.remove(id)
+      navigate('/users')
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Could not delete this profile.')
+      setDeleting(false)
+    }
+  }
+
   if (!user) {
     return (
       <div className="space-y-4">
@@ -83,6 +122,93 @@ export default function UserDetail() {
       >
         <ArrowLeft className="h-4 w-4" /> Officers
       </button>
+
+      {showDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-xl">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <h2 className="text-lg font-semibold">Delete {user.name}?</h2>
+              <button
+                onClick={() => setShowDelete(false)}
+                disabled={deleting}
+                className="text-muted-foreground hover:text-foreground disabled:opacity-50"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {impactError ? (
+              <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {impactError}
+              </div>
+            ) : !impact ? (
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-2/3" />
+              </div>
+            ) : (
+              <div className="space-y-3 text-sm">
+                <p className="text-muted-foreground">
+                  This permanently removes their profile and their login. It cannot be undone.
+                </p>
+
+                <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-destructive">Removed</div>
+                  <ul className="mt-1.5 space-y-0.5 text-muted-foreground">
+                    <li>Profile and login — they can no longer sign in</li>
+                    {impact.assignedSites.length > 0 && (
+                      <li>Posting to {impact.assignedSites.join(', ')}</li>
+                    )}
+                    {impact.onDuty && <li>Their open shift is clocked out</li>}
+                  </ul>
+                </div>
+
+                <div className="rounded-lg border border-border bg-background/40 p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Kept</div>
+                  <ul className="mt-1.5 space-y-0.5 text-muted-foreground">
+                    <li>{impact.scans} scan{impact.scans === 1 ? '' : 's'}</li>
+                    <li>{impact.shifts} shift{impact.shifts === 1 ? '' : 's'}</li>
+                    <li>{impact.incidents} incident{impact.incidents === 1 ? '' : 's'}</li>
+                  </ul>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Their patrol record stays in reports and history under their name.
+                  </p>
+                </div>
+
+                {impact.onDuty && (
+                  <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-warning">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>They are clocked in right now. Deleting will end that shift.</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {deleteError && (
+              <div className="mt-3 rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {deleteError}
+              </div>
+            )}
+
+            <div className="mt-5 flex gap-2">
+              <button
+                onClick={() => setShowDelete(false)}
+                disabled={deleting}
+                className="flex-1 rounded-lg border border-border py-2 text-sm hover:bg-accent disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={deleting || !impact}
+                className="flex-1 rounded-lg bg-destructive py-2 text-sm font-medium text-destructive-foreground hover:opacity-90 disabled:opacity-50"
+              >
+                {deleting ? 'Deleting...' : 'Delete Profile'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-start justify-between gap-4">
@@ -107,6 +233,14 @@ export default function UserDetail() {
               </div>
             </div>
           </div>
+          {canManage && (
+            <button
+              onClick={openDelete}
+              className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-destructive/30 px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/10"
+            >
+              <Trash2 className="h-4 w-4" /> Delete Profile
+            </button>
+          )}
         </div>
 
         <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">

@@ -1,6 +1,7 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
+import { recordTombstone } from "./lib/tombstones";
 
 const siteShape = (s: Doc<"sites">, clientName?: string) => ({
   id: s.legacyId ?? s._id,
@@ -113,6 +114,135 @@ export const updatePatrolSettings = internalMutation({
 
     const updated = await ctx.db.get(args.siteId);
     return updated ? siteShape(updated) : null;
+  },
+});
+
+/**
+ * What deleting a location would take with it. Read before the confirm dialog
+ * so staff see the QR codes and postings that stop working, not just the name.
+ */
+export const getDeletionImpact = internalQuery({
+  args: { siteId: v.id("sites") },
+  handler: async (ctx, args) => {
+    const site = await ctx.db.get(args.siteId);
+    if (!site) return null;
+    const [checkpoints, assignments, scans, postOrders] = await Promise.all([
+      ctx.db
+        .query("checkpoints")
+        .withIndex("by_siteId", (q) => q.eq("siteId", args.siteId))
+        .collect(),
+      ctx.db
+        .query("userSiteAssignments")
+        .withIndex("by_siteId", (q) => q.eq("siteId", args.siteId))
+        .collect(),
+      ctx.db
+        .query("scans")
+        .withIndex("by_siteId", (q) => q.eq("siteId", args.siteId))
+        .collect(),
+      ctx.db
+        .query("postOrders")
+        .withIndex("by_siteId", (q) => q.eq("siteId", args.siteId))
+        .collect(),
+    ]);
+    const guardNames = await Promise.all(
+      assignments.map(async (a) => (await ctx.db.get(a.userId))?.name ?? null),
+    );
+    return {
+      name: site.name,
+      // The location's own QR point is created with it and is not a
+      // sub-location, so it is counted separately from what staff added.
+      subLocations: checkpoints.filter((c) => !c.isPrimary).length,
+      qrCodes: checkpoints.length,
+      scans: scans.length,
+      activePostOrders: postOrders.filter((p) => p.active).length,
+      assignedGuards: guardNames.filter((n): n is string => !!n),
+    };
+  },
+});
+
+/**
+ * Hard-deletes a location: the site, every QR point inside it, and the guard
+ * postings to it.
+ *
+ * Scans, reports and shifts taken there are deliberately kept — they are the
+ * record of patrols that really happened, and shifts already carry their own
+ * `siteLabel`. Tombstones keep the location and checkpoint names readable on
+ * that history.
+ *
+ * The QR codes must go: a checkpoint row left behind is still scannable, so a
+ * guard could keep logging patrols at a location the company no longer covers.
+ * Post orders are deactivated rather than deleted — they are instructions with
+ * their own acknowledgement history, but must stop being served.
+ */
+export const remove = internalMutation({
+  args: {
+    siteId: v.id("sites"),
+    deletedByUserId: v.optional(v.id("users")),
+    deletedByName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const site = await ctx.db.get(args.siteId);
+    if (!site) return null;
+
+    const checkpoints = await ctx.db
+      .query("checkpoints")
+      .withIndex("by_siteId", (q) => q.eq("siteId", args.siteId))
+      .collect();
+    for (const checkpoint of checkpoints) {
+      // Close any open missed-patrol alert first: an alert for a location that
+      // no longer exists is noise staff can never action.
+      const openAlerts = await ctx.db
+        .query("missedPatrolAlerts")
+        .withIndex("by_checkpointId_status", (q) =>
+          q.eq("checkpointId", checkpoint._id).eq("status", "open"),
+        )
+        .collect();
+      for (const alert of openAlerts) {
+        await ctx.db.patch(alert._id, { status: "resolved" });
+      }
+      await recordTombstone(ctx, {
+        entityType: "checkpoint",
+        entityId: checkpoint._id,
+        name: checkpoint.name,
+        deletedByUserId: args.deletedByUserId,
+        deletedByName: args.deletedByName,
+      });
+      await ctx.db.delete(checkpoint._id);
+    }
+
+    const assignments = await ctx.db
+      .query("userSiteAssignments")
+      .withIndex("by_siteId", (q) => q.eq("siteId", args.siteId))
+      .collect();
+    for (const assignment of assignments) await ctx.db.delete(assignment._id);
+
+    const postOrders = await ctx.db
+      .query("postOrders")
+      .withIndex("by_siteId", (q) => q.eq("siteId", args.siteId))
+      .collect();
+    let postOrdersDeactivated = 0;
+    for (const order of postOrders) {
+      if (!order.active) continue;
+      await ctx.db.patch(order._id, { active: false });
+      postOrdersDeactivated++;
+    }
+
+    await recordTombstone(ctx, {
+      entityType: "site",
+      entityId: args.siteId,
+      name: site.name,
+      deletedByUserId: args.deletedByUserId,
+      deletedByName: args.deletedByName,
+    });
+
+    await ctx.db.delete(args.siteId);
+
+    return {
+      name: site.name,
+      checkpointsRemoved: checkpoints.length,
+      assignmentsRemoved: assignments.length,
+      postOrdersDeactivated,
+    };
   },
 });
 

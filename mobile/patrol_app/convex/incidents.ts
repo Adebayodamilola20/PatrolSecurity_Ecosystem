@@ -1,6 +1,7 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import { deletedNamesByType } from "./lib/tombstones";
 
 const incidentCategory = v.union(
   v.literal("Security Incident"),
@@ -89,6 +90,9 @@ export const listForApi = internalQuery({
     const users = await ctx.db.query("users").collect();
     const checkpoints = await ctx.db.query("checkpoints").collect();
     const sites = await ctx.db.query("sites").collect();
+    // An incident outlives the guard who filed it, so a deleted guard's
+    // reports stay attributed instead of going nameless.
+    const goneOfficers = await deletedNamesByType(ctx, "user");
     return incidents.map((i) => {
       const checkpoint = i.checkpointId
         ? checkpoints.find((c) => c._id === i.checkpointId)
@@ -109,7 +113,10 @@ export const listForApi = internalQuery({
         severity: i.severity,
         status: i.status,
         officerId: i.officerId,
-        officerName: users.find((u) => u._id === i.officerId)?.name ?? "",
+        officerName:
+          users.find((u) => u._id === i.officerId)?.name ??
+          goneOfficers.get(i.officerId) ??
+          "",
         checkpointId: i.checkpointId,
         checkpointName: checkpoint?.name ?? null,
         siteName: site?.name ?? null,

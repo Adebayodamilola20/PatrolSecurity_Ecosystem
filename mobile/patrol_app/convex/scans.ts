@@ -3,6 +3,7 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { distanceMeters } from "./lib/geo";
+import { deletedNamesByType } from "./lib/tombstones";
 
 export const list = internalQuery({
   args: {
@@ -90,6 +91,12 @@ export const listForApi = internalQuery({
 
     const users = await ctx.db.query("users").collect();
     const checkpoints = await ctx.db.query("checkpoints").collect();
+    // A scan outlives the guard who took it and the QR point it was taken at,
+    // so fall back to the tombstone name rather than showing the record blank.
+    const [goneOfficers, goneCheckpoints] = await Promise.all([
+      deletedNamesByType(ctx, "user"),
+      deletedNamesByType(ctx, "checkpoint"),
+    ]);
 
     return scans.map((scan) => {
       const officer = users.find((user) => user._id === scan.officerId);
@@ -101,10 +108,10 @@ export const listForApi = internalQuery({
         id: scan.legacyId ?? scan._id,
         officerId: officer?.legacyId ?? officer?._id ?? "",
         officerConvexId: scan.officerId,
-        officerName: officer?.name ?? "",
+        officerName: officer?.name ?? goneOfficers.get(scan.officerId) ?? "",
         checkpointId: checkpoint?.legacyId ?? checkpoint?._id ?? "",
         checkpointConvexId: scan.checkpointId,
-        checkpointName: checkpoint?.name ?? "",
+        checkpointName: checkpoint?.name ?? goneCheckpoints.get(scan.checkpointId) ?? "",
         checkpointCode: checkpoint?.code ?? "",
         scannedAt: new Date(scan.scannedAt).toISOString(),
         receivedAt: new Date(scan.receivedAt).toISOString(),
@@ -138,13 +145,24 @@ export const getRecent = internalQuery({
     }
     const users = await ctx.db.query("users").collect();
     const checkpoints = await ctx.db.query("checkpoints").collect();
+    // A scan outlives the guard who took it and the QR point it was taken at,
+    // so fall back to the tombstone name rather than showing the record blank.
+    const [goneOfficers, goneCheckpoints] = await Promise.all([
+      deletedNamesByType(ctx, "user"),
+      deletedNamesByType(ctx, "checkpoint"),
+    ]);
     return scans.map((s) => ({
       id: s.legacyId ?? s._id,
       officerId: s.officerId,
-      officerName: users.find((u) => u._id === s.officerId)?.name ?? "",
+      officerName:
+        users.find((u) => u._id === s.officerId)?.name ??
+        goneOfficers.get(s.officerId) ??
+        "",
       checkpointId: s.checkpointId,
       checkpointName:
-        checkpoints.find((c) => c._id === s.checkpointId)?.name ?? "",
+        checkpoints.find((c) => c._id === s.checkpointId)?.name ??
+        goneCheckpoints.get(s.checkpointId) ??
+        "",
       scannedAt: new Date(s.scannedAt).toISOString(),
       gpsLatitude: s.gpsLatitude,
       gpsLongitude: s.gpsLongitude,
@@ -174,6 +192,12 @@ export const getDetail = internalQuery({
     if (!scan) return null;
     const users = await ctx.db.query("users").collect();
     const checkpoints = await ctx.db.query("checkpoints").collect();
+    // A scan outlives the guard who took it and the QR point it was taken at,
+    // so fall back to the tombstone name rather than showing the record blank.
+    const [goneOfficers, goneCheckpoints] = await Promise.all([
+      deletedNamesByType(ctx, "user"),
+      deletedNamesByType(ctx, "checkpoint"),
+    ]);
     return {
       id: scan.legacyId ?? scan._id,
       clientId:
@@ -181,9 +205,15 @@ export const getDetail = internalQuery({
         checkpoints.find((c) => c._id === scan.checkpointId)?.clientId ??
         null,
       officerId: scan.officerId,
-      officerName: users.find(u => u._id === scan.officerId)?.name ?? "",
+      officerName:
+        users.find(u => u._id === scan.officerId)?.name ??
+        goneOfficers.get(scan.officerId) ??
+        "",
       checkpointId: scan.checkpointId,
-      checkpointName: checkpoints.find(c => c._id === scan.checkpointId)?.name ?? "",
+      checkpointName:
+        checkpoints.find(c => c._id === scan.checkpointId)?.name ??
+        goneCheckpoints.get(scan.checkpointId) ??
+        "",
       checkpointCode: checkpoints.find(c => c._id === scan.checkpointId)?.code ?? "",
       scannedAt: new Date(scan.scannedAt).toISOString(),
       receivedAt: new Date(scan.receivedAt).toISOString(),
@@ -203,13 +233,24 @@ export const getById = internalQuery({
     if (!s) return null;
     const users = await ctx.db.query("users").collect();
     const checkpoints = await ctx.db.query("checkpoints").collect();
+    // A scan outlives the guard who took it and the QR point it was taken at,
+    // so fall back to the tombstone name rather than showing the record blank.
+    const [goneOfficers, goneCheckpoints] = await Promise.all([
+      deletedNamesByType(ctx, "user"),
+      deletedNamesByType(ctx, "checkpoint"),
+    ]);
     return {
       id: s.legacyId ?? s._id,
       officerId: s.officerId,
-      officerName: users.find((u) => u._id === s.officerId)?.name ?? "",
+      officerName:
+        users.find((u) => u._id === s.officerId)?.name ??
+        goneOfficers.get(s.officerId) ??
+        "",
       checkpointId: s.checkpointId,
       checkpointName:
-        checkpoints.find((c) => c._id === s.checkpointId)?.name ?? "",
+        checkpoints.find((c) => c._id === s.checkpointId)?.name ??
+        goneCheckpoints.get(s.checkpointId) ??
+        "",
       checkpointCode:
         checkpoints.find((c) => c._id === s.checkpointId)?.code ?? "",
       scannedAt: new Date(s.scannedAt).toISOString(),
@@ -742,6 +783,12 @@ export const listPostOrderAcknowledgements = internalQuery({
     }
     const users = await ctx.db.query("users").collect();
     const checkpoints = await ctx.db.query("checkpoints").collect();
+    // A scan outlives the guard who took it and the QR point it was taken at,
+    // so fall back to the tombstone name rather than showing the record blank.
+    const [goneOfficers, goneCheckpoints] = await Promise.all([
+      deletedNamesByType(ctx, "user"),
+      deletedNamesByType(ctx, "checkpoint"),
+    ]);
     const orders = await ctx.db.query("postOrders").collect();
     return acknowledgements.map((ack) => ({
       id: ack._id,
@@ -752,9 +799,14 @@ export const listPostOrderAcknowledgements = internalQuery({
       checkpointId: ack.checkpointId,
       checkpointName:
         checkpoints.find((checkpoint) => checkpoint._id === ack.checkpointId)
-          ?.name ?? "",
+          ?.name ??
+        goneCheckpoints.get(ack.checkpointId) ??
+        "",
       userId: ack.userId,
-      userName: users.find((user) => user._id === ack.userId)?.name ?? "",
+      userName:
+        users.find((user) => user._id === ack.userId)?.name ??
+        goneOfficers.get(ack.userId) ??
+        "",
       acknowledgedAt: new Date(ack.acknowledgedAt).toISOString(),
       clientId: ack.clientId ?? null,
       siteId: ack.siteId ?? null,

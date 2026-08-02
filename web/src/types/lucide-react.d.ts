@@ -70,6 +70,7 @@ declare module 'lucide-react' {
   export const ShieldCheck: LucideIcon
   export const Sun: LucideIcon
   export const Timer: LucideIcon
+  export const Trash2: LucideIcon
   export const User: LucideIcon
   export const User2: LucideIcon
   export const Users: LucideIcon

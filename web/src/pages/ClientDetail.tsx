@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   ShieldAlert,
   AlertTriangle,
+  Trash2,
 } from 'lucide-react'
 import QRCode from 'qrcode'
 import L from 'leaflet'
@@ -144,6 +145,14 @@ export default function ClientDetail() {
   // staff can't silently double-assign them.
   const [assignConflict, setAssignConflict] = useState('')
 
+  // Delete-location state. The impact is fetched per location when the dialog
+  // opens, so staff see the QR codes and postings that stop working.
+  const [deleteSite, setDeleteSite] = useState<ClientSite | null>(null)
+  const [deleteImpact, setDeleteImpact] = useState<Awaited<ReturnType<typeof api.deletionImpact.site>> | null>(null)
+  const [deleteImpactError, setDeleteImpactError] = useState('')
+  const [deletingSite, setDeletingSite] = useState(false)
+  const [deleteSiteError, setDeleteSiteError] = useState('')
+
   const load = () => {
     if (!id) return
     api.clients.get(id)
@@ -210,6 +219,38 @@ export default function ClientDetail() {
       setActionError(error instanceof Error ? error.message : 'Could not remove the guard.')
     } finally {
       setAssignBusySiteId('')
+    }
+  }
+
+  const openDeleteSite = (site: ClientSite) => {
+    setDeleteSite(site)
+    setDeleteImpact(null)
+    setDeleteImpactError('')
+    setDeleteSiteError('')
+    api.deletionImpact
+      .site(site.id)
+      .then(setDeleteImpact)
+      .catch((error) =>
+        setDeleteImpactError(
+          error instanceof Error ? error.message : 'Could not load this location’s record.',
+        ),
+      )
+  }
+
+  const confirmDeleteSite = async () => {
+    if (!deleteSite) return
+    setDeletingSite(true)
+    setDeleteSiteError('')
+    try {
+      await api.sites.remove(deleteSite.id)
+      setDeleteSite(null)
+      load()
+    } catch (error) {
+      setDeleteSiteError(
+        error instanceof Error ? error.message : 'Could not delete this location.',
+      )
+    } finally {
+      setDeletingSite(false)
     }
   }
 
@@ -872,11 +913,121 @@ export default function ClientDetail() {
                         })}
                       </div>
                     )}
+
+                    {canManage && (
+                      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-destructive/20 pt-4">
+                        <div className="text-xs text-muted-foreground">
+                          Deleting removes this location and its QR codes. Scans already taken here are kept.
+                        </div>
+                        <button
+                          onClick={() => openDeleteSite(site)}
+                          className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-destructive/30 px-3 py-2 text-xs font-medium text-destructive hover:bg-destructive/10"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" /> Delete Location
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Delete Location confirmation */}
+      {deleteSite && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-xl">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <h2 className="text-lg font-semibold">Delete {deleteSite.name}?</h2>
+              <button
+                onClick={() => setDeleteSite(null)}
+                disabled={deletingSite}
+                className="text-muted-foreground hover:text-foreground disabled:opacity-50"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {deleteImpactError ? (
+              <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {deleteImpactError}
+              </div>
+            ) : !deleteImpact ? (
+              <div className="space-y-2">
+                <CardSkeleton />
+              </div>
+            ) : (
+              <div className="space-y-3 text-sm">
+                <p className="text-muted-foreground">
+                  This permanently removes the location from {detail.name}. It cannot be undone.
+                </p>
+
+                <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-destructive">Removed</div>
+                  <ul className="mt-1.5 space-y-0.5 text-muted-foreground">
+                    <li>
+                      {deleteImpact.qrCodes} QR code{deleteImpact.qrCodes === 1 ? '' : 's'}
+                      {deleteImpact.subLocations > 0 && (
+                        <> ({deleteImpact.subLocations} sub-location{deleteImpact.subLocations === 1 ? '' : 's'})</>
+                      )}
+                      {' '}— printed codes stop working
+                    </li>
+                    {deleteImpact.assignedGuards.length > 0 && (
+                      <li>Postings for {deleteImpact.assignedGuards.join(', ')}</li>
+                    )}
+                    {deleteImpact.activePostOrders > 0 && (
+                      <li>
+                        {deleteImpact.activePostOrders} post order{deleteImpact.activePostOrders === 1 ? '' : 's'} deactivated
+                      </li>
+                    )}
+                  </ul>
+                </div>
+
+                <div className="rounded-lg border border-border bg-background/40 p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Kept</div>
+                  <ul className="mt-1.5 space-y-0.5 text-muted-foreground">
+                    <li>{deleteImpact.scans} scan{deleteImpact.scans === 1 ? '' : 's'} taken here</li>
+                    <li>Reports and incidents filed at this location</li>
+                  </ul>
+                </div>
+
+                {deleteImpact.assignedGuards.length > 0 && (
+                  <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-warning">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>
+                      {deleteImpact.assignedGuards.length} guard
+                      {deleteImpact.assignedGuards.length === 1 ? ' is' : 's are'} posted here and will need reassigning.
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {deleteSiteError && (
+              <div className="mt-3 rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {deleteSiteError}
+              </div>
+            )}
+
+            <div className="mt-5 flex gap-2">
+              <button
+                onClick={() => setDeleteSite(null)}
+                disabled={deletingSite}
+                className="flex-1 rounded-lg border border-border py-2 text-sm hover:bg-accent disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void confirmDeleteSite()}
+                disabled={deletingSite || !deleteImpact}
+                className="flex-1 rounded-lg bg-destructive py-2 text-sm font-medium text-destructive-foreground hover:opacity-90 disabled:opacity-50"
+              >
+                {deletingSite ? 'Deleting...' : 'Delete Location'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
