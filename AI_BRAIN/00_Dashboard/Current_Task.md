@@ -4,6 +4,26 @@
 
 ## Active Focus
 
+> 🚨 **2026-08-03 — READ [[Session_2026-08-03_Alert_Delivery]] FIRST.** Newest.
+>
+> - **The panic button had never notified anyone.** All 9 prod emergency events
+>   show `delivered: 0`. Email 403'd (unverified domain), SMS 400'd (local phone
+>   format). **Now fixed and verified on prod: 0/2 → 2/2 delivered.**
+> - SMS fix is code: `convex/lib/phone.ts` normalizes inside `sendSms`.
+>   Commit `d9ed518` on branch `fix-emergency-alert-delivery` — **pushed, NOT
+>   merged, already deployed to prod.**
+> - Email works **only to `adebayodamilola2007@gmail.com`** until the domain is
+>   verified (using Resend's shared `onboarding@resend.dev` sender). Adding any
+>   client/supervisor email will fail until then.
+> - **Blocked on user:** add 3 DNS records at Namecheap for
+>   `mail.evergreenprotection.com` (records listed in the handoff). Then verify +
+>   set `RESEND_FROM_EMAIL=alerts@mail.evergreenprotection.com`.
+> - RESEND + TERMII keys rotated on prod and dev. **`NVIDIA_API_KEY` still NOT
+>   rotated** — user deferred it; it remains the leaked value.
+> - **Trap:** `convex data settings` is the WRONG table and reads as empty. Real
+>   table is **`communicationSettings`**.
+> - Guard + location delete (`02f76c3`) now verified end-to-end on dev.
+
 > ⚠️ **2026-07-28 — READ [[Session_2026-07-28_Prod_Switch_And_GPS]] FIRST.**
 > Everything below this box predates the production switch and is partly stale.
 >
