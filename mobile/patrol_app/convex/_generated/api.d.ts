@@ -33,6 +33,7 @@ import type * as lib_geo from "../lib/geo.js";
 import type * as lib_http from "../lib/http.js";
 import type * as lib_httpAuth from "../lib/httpAuth.js";
 import type * as lib_jwt from "../lib/jwt.js";
+import type * as lib_phone from "../lib/phone.js";
 import type * as lib_photoRefs from "../lib/photoRefs.js";
 import type * as lib_rateLimiter from "../lib/rateLimiter.js";
 import type * as lib_reportTemplates from "../lib/reportTemplates.js";
@@ -90,6 +91,7 @@ declare const fullApi: ApiFromModules<{
   "lib/http": typeof lib_http;
   "lib/httpAuth": typeof lib_httpAuth;
   "lib/jwt": typeof lib_jwt;
+  "lib/phone": typeof lib_phone;
   "lib/photoRefs": typeof lib_photoRefs;
   "lib/rateLimiter": typeof lib_rateLimiter;
   "lib/reportTemplates": typeof lib_reportTemplates;

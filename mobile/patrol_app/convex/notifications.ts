@@ -34,6 +34,7 @@ import {
   getTermiiSenderId,
   getTermiiBaseUrl,
 } from "./env";
+import { normalizePhoneNumber } from "./lib/phone";
 
 async function sendEmail({
   recipient,
@@ -98,6 +99,17 @@ async function sendSms({
   const apiKey = getTermiiApiKey();
   const senderId = getTermiiSenderId();
   const baseUrl = getTermiiBaseUrl();
+  const to = normalizePhoneNumber(recipient);
+  if (!to) {
+    const result: DeliveryResult = {
+      provider: "termii",
+      recipient,
+      success: false,
+      error: "Recipient is not a usable phone number",
+    };
+    console.log("[SMS_DELIVERY]", JSON.stringify(result));
+    return result;
+  }
   const response = await fetch(`${baseUrl}/sms/send`, {
     method: "POST",
     headers: {
@@ -105,7 +117,7 @@ async function sendSms({
     },
     body: JSON.stringify({
       api_key: apiKey,
-      to: recipient,
+      to,
       from: senderId,
       sms: message,
       type: "plain",

@@ -27,7 +27,9 @@ export function getTermiiSenderId() {
 }
 
 export function getTermiiBaseUrl() {
-  return optionalEnv("TERMII_BASE_URL", "https://api.ng.termii.com/api");
+  // Termii's current host. The old api.ng.termii.com default is stale, and a
+  // deployment that inherits it loses SMS silently rather than loudly.
+  return optionalEnv("TERMII_BASE_URL", "https://v3.api.termii.com/api");
 }
 
 export function getJwtSecret() {
