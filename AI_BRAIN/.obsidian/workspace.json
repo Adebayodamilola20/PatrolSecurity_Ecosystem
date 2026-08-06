@@ -11,10 +11,14 @@
             "id": "65473e139fcbb931",
             "type": "leaf",
             "state": {
-              "type": "graph",
-              "state": {},
-              "icon": "lucide-git-fork",
-              "title": "Graph view"
+              "type": "markdown",
+              "state": {
+                "file": "00_Dashboard/Current_Task.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Current_Task"
             }
           }
         ]
@@ -37,7 +41,9 @@
               "type": "file-explorer",
               "state": {
                 "sortOrder": "alphabetical",
-                "autoReveal": false
+                "autoReveal": false,
+                "showSearch": false,
+                "searchQuery": ""
               },
               "icon": "lucide-folder-closed",
               "title": "Files"
@@ -181,6 +187,19 @@
   },
   "active": "65473e139fcbb931",
   "lastOpenFiles": [
+    "00_Dashboard/Current_Task.md",
+    "06_Handoffs/Session_2026-08-03_Alert_Delivery.md",
+    "09_Neurons.md",
+    "09_Neurons/20260630-1155-kilo-team-check-in-in-one-short.md",
+    "08_Prompts/OpenCode_Prompt.md",
+    "06_Handoffs/Session_2026-07-28_Prod_Switch_And_GPS.md",
+    "09_Neurons/20260715-1706-codex-scan-detail-ui.md",
+    "09_Neurons/20260715-1108-codex-profile-ui.md",
+    "09_Neurons/20260715-1036-codex-home-ui.md",
+    "09_Neurons/20260715-0951-codex-white-login.md",
+    "09_Neurons/20260715-0919-codex-mobile-onboarding.md",
+    "00_Dashboard/Roadmap.md",
+    "09_Neurons/20260702-0900-codex-web-dashboard-live-incident-notifications-toast.md",
     "09_Neurons/20260708-0625-opencode-checkin.md",
     "05_Logs/team-log.md",
     "09_Neurons/20260708-0625-kilo-team-check-in-the-user-says.md",
@@ -190,23 +209,10 @@
     "01_Project_Context/Uptime_Monitoring.md",
     "09_Neurons/20260702-0900-kilo-web-dashboard-live-incident-notifications-toast.md",
     "09_Neurons/20260702-0900-opencode-web-dashboard-live-incident-notifications-toast.md",
-    "09_Neurons/20260702-0900-codex-web-dashboard-live-incident-notifications-toast.md",
     "09_Neurons/20260702-0900-antigravity-web-dashboard-live-incident-notifications-toast.md",
     "09_Neurons/20260630-1347-kilo-quick-team-check-in-reply-in.md",
     "09_Neurons/20260630-1347-opencode-quick-team-check-in-reply-in.md",
     "09_Neurons/20260630-1347-codex-quick-team-check-in-reply-in.md",
-    "09_Neurons/20260630-1347-antigravity-quick-team-check-in-reply-in.md",
-    "09_Neurons/20260630-1155-opencode-team-check-in-in-one-short.md",
-    "09_Neurons/20260630-1200-claude-ai-brain-bootstrap.md",
-    "09_Neurons/20260630-1202-kilo-team-check-in-reply-in-one.md",
-    "09_Neurons/20260630-1202-opencode-team-check-in-reply-in-one.md",
-    "09_Neurons/20260630-1202-codex-team-check-in-reply-in-one.md",
-    "09_Neurons/20260630-1202-antigravity-team-check-in-reply-in-one.md",
-    "00_Dashboard/Home.md",
-    "09_Neurons/20260630-1155-kilo-team-check-in-in-one-short.md",
-    "09_Neurons/20260630-1155-codex-team-check-in-in-one-short.md",
-    "09_Neurons/20260630-1155-antigravity-team-check-in-in-one-short.md",
-    "09_Neurons/20260630-1152-kilo-quick-team-check-in-reply-in.md",
     "05_Logs/Session_Log.md.tmp.18548.5052e0dd5d73",
     "orchestrator.json",
     "06_Handoffs/Client_Web_Suggestions.md.tmp.13018.73d30f136368",
