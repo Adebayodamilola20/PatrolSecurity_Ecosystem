@@ -4,12 +4,10 @@
   "type": "module",
   "scripts": {
     "convex:dev": "convex dev",
-    "convex:deploy": "convex deploy",
-    "convex:import:sqlite": "node scripts/import-backend-sqlite.mjs"
+    "convex:deploy": "convex deploy"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
-    "better-sqlite3": "^11.10.0",
     "convex": "^1.25.4",
     "jose": "^6.0.11",
     "pdf-lib": "^1.17.1"
