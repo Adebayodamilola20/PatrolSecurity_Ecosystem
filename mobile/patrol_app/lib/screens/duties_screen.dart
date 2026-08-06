@@ -43,7 +43,7 @@ class _DutiesScreenState extends State<DutiesScreen> {
               children: [
                 Text(
                   order.instructions,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppTheme.textSecondary,
                     height: 1.4,
                   ),
@@ -239,8 +239,8 @@ class _DutiesScreenState extends State<DutiesScreen> {
         actions: [
           TextButton.icon(
             onPressed: _openHandoverDialog,
-            icon: const Icon(Icons.swap_horiz, color: AppTheme.primary),
-            label: const Text(
+            icon: Icon(Icons.swap_horiz, color: AppTheme.primary),
+            label: Text(
               'Handover',
               style: TextStyle(color: AppTheme.primary),
             ),
@@ -253,7 +253,7 @@ class _DutiesScreenState extends State<DutiesScreen> {
           padding: const EdgeInsets.all(16),
           children: [
             if (duty.pendingHandovers.isNotEmpty) ...[
-              const Text(
+              Text(
                 'Pending Handovers',
                 style: TextStyle(
                   fontSize: 18,
@@ -283,7 +283,7 @@ class _DutiesScreenState extends State<DutiesScreen> {
                         const SizedBox(height: 6),
                         Text(
                           handover.summary,
-                          style: const TextStyle(color: AppTheme.textSecondary),
+                          style: TextStyle(color: AppTheme.textSecondary),
                           softWrap: true,
                           overflow: TextOverflow.ellipsis,
                           maxLines: 3,
@@ -292,7 +292,7 @@ class _DutiesScreenState extends State<DutiesScreen> {
                           const SizedBox(height: 8),
                           Text(
                             'Issues: ${handover.openIssues}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 13,
                               color: AppTheme.flagged,
                             ),
@@ -414,7 +414,7 @@ class _DutiesScreenState extends State<DutiesScreen> {
                         const SizedBox(height: 8),
                         Text(
                           instruction,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: AppTheme.textSecondary,
                             height: 1.4,
                           ),
@@ -426,7 +426,7 @@ class _DutiesScreenState extends State<DutiesScreen> {
                           const SizedBox(height: 8),
                           Text(
                             'By: $createdByName',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
                               color: AppTheme.textSecondary,
                             ),
@@ -460,7 +460,7 @@ class _DutiesScreenState extends State<DutiesScreen> {
               }),
               const SizedBox(height: 20),
             ],
-            const Text(
+            Text(
               'Post Orders',
               style: TextStyle(
                 fontSize: 18,
@@ -470,7 +470,7 @@ class _DutiesScreenState extends State<DutiesScreen> {
             ),
             const SizedBox(height: 12),
             if (duty.orders.isEmpty)
-              const Card(
+              Card(
                 child: Padding(
                   padding: EdgeInsets.all(20),
                   child: Text(
@@ -551,14 +551,14 @@ class _DutiesScreenState extends State<DutiesScreen> {
                               : order.instructions,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: AppTheme.textSecondary),
+                          style: TextStyle(color: AppTheme.textSecondary),
                         ),
                         const SizedBox(height: 10),
                         Text(
                           order.checkpointName ??
                               order.siteName ??
                               'General site order',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 13,
                             color: AppTheme.primary,
                             fontWeight: FontWeight.w600,

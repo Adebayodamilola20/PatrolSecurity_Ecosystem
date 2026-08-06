@@ -175,14 +175,14 @@ Future<void> showClockInConfirmation(
                       color: AppTheme.verified.withValues(alpha: 0.12),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.check_rounded,
                       size: 34,
                       color: AppTheme.verified,
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     "You're on duty",
                     style: TextStyle(
                       fontSize: 18,
@@ -194,7 +194,7 @@ Future<void> showClockInConfirmation(
                   Text(
                     'Clocked in at ${AppTime.time(clockInTime)}',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 15,
                       color: AppTheme.text,
                     ),
@@ -204,7 +204,7 @@ Future<void> showClockInConfirmation(
                     Text(
                       siteLabel,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
                         color: AppTheme.textSecondary,
                       ),
@@ -276,14 +276,14 @@ Future<void> showClockInRequired(BuildContext context) {
                     color: AppTheme.flagged.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.schedule_rounded,
                     size: 32,
                     color: AppTheme.flagged,
                   ),
                 ),
                 const SizedBox(height: 16),
-                const Text(
+                Text(
                   'Clock in first',
                   style: TextStyle(
                     fontSize: 18,
@@ -292,7 +292,7 @@ Future<void> showClockInRequired(BuildContext context) {
                   ),
                 ),
                 const SizedBox(height: 6),
-                const Text(
+                Text(
                   'Start your shift before patrolling. Scans taken off duty '
                   'are not recorded and never reach the dashboard.',
                   textAlign: TextAlign.center,

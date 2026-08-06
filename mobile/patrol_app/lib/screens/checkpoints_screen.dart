@@ -32,7 +32,7 @@ class CheckpointsScreen extends StatelessWidget {
                     color: AppTheme.textSecondary.withValues(alpha: 0.5),
                   ),
                   const SizedBox(height: 12),
-                  const Text(
+                  Text(
                     'No checkpoints loaded',
                     style: TextStyle(color: AppTheme.textSecondary),
                   ),
@@ -81,7 +81,7 @@ class CheckpointsScreen extends StatelessWidget {
                                 children: [
                                   Text(
                                     cp.name,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontWeight: FontWeight.w600,
                                       fontSize: 15,
                                       color: AppTheme.text,
@@ -92,7 +92,7 @@ class CheckpointsScreen extends StatelessWidget {
                                   const SizedBox(height: 2),
                                   Text(
                                     '${cp.code} · ${cp.location}',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 12,
                                       color: AppTheme.textSecondary,
                                     ),

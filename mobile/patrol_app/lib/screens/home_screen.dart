@@ -77,12 +77,17 @@ class _HomeScreenState extends State<HomeScreen> {
             return AlertDialog(
               title: Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.receipt_long_outlined,
                     color: AppTheme.primary,
                   ),
                   const SizedBox(width: 8),
-                  Text('Pass-On Log (${currentIndex + 1}/${logs.length})'),
+                  Expanded(
+                    child: Text(
+                      'Pass-On Log (${currentIndex + 1}/${logs.length})',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ],
               ),
               content: SizedBox(
@@ -107,7 +112,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           children: [
                             Text(
                               log['title'] ?? 'Untitled',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontWeight: FontWeight.w700,
                                 fontSize: 16,
                                 color: AppTheme.text,
@@ -128,7 +133,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                                 child: Text(
                                   (log['priority'] as String).toUpperCase(),
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w700,
                                     color: AppTheme.flagged,
@@ -140,7 +145,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       const SizedBox(height: 14),
-                      const Text(
+                      Text(
                         'Instructions',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
@@ -153,7 +158,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         log['instruction'] ??
                             log['description'] ??
                             'No details',
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AppTheme.text,
                           height: 1.5,
                         ),
@@ -162,7 +167,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         const SizedBox(height: 12),
                         Text(
                           'Created: ${log['createdAt']}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
                             color: AppTheme.textSecondary,
                           ),
@@ -261,7 +266,7 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: AppTheme.surface,
       appBar: AppBar(
         title: const Text('Dashboard'),
-        backgroundColor: Colors.white,
+        backgroundColor: AppTheme.card,
         surfaceTintColor: Colors.transparent,
         actions: [
           IconButton(
@@ -272,12 +277,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       drawer: _buildDrawer(context, user, role),
       body: const _DashboardTab(),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _openScannerOrExplain(context),
-        backgroundColor: AppTheme.primary,
-        child: const Icon(Icons.route_outlined, color: Colors.white),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
     );
   }
 
@@ -409,11 +408,11 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             ...beforeReports.map(tile),
             ListTile(
-              leading: const Icon(
+              leading: Icon(
                 Icons.description_outlined,
                 color: AppTheme.primary,
               ),
-              title: const Text(
+              title: Text(
                 'Reports',
                 style: TextStyle(
                   fontWeight: FontWeight.w700,
@@ -434,7 +433,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   contentPadding: const EdgeInsets.only(left: 72),
                   title: Text(
                     item['title'] as String,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w500,
                       color: AppTheme.text,
                       fontSize: 14,
@@ -581,7 +580,7 @@ class _DashboardTab extends StatelessWidget {
                       width: 40,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: Colors.grey[300],
+                        color: AppTheme.border,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -595,11 +594,11 @@ class _DashboardTab extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
                       child: Text(
                         'Select the type of emergency',
-                        style: TextStyle(fontSize: 14, color: Colors.grey),
+                        style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
                       ),
                     ),
                     Expanded(
@@ -713,7 +712,7 @@ class _DashboardTab extends StatelessWidget {
     final scanProvider = context.read<ScanProvider>();
 
     messenger.showSnackBar(
-      const SnackBar(
+      SnackBar(
         content: Text(
           'Emergency alert triggered. Getting GPS and notifying response contacts...',
         ),
@@ -835,7 +834,7 @@ class _DashboardTab extends StatelessWidget {
 
     return RefreshIndicator(
       color: AppTheme.primaryDark,
-      backgroundColor: Colors.white,
+      backgroundColor: AppTheme.card,
       onRefresh: () async {
         await Future.wait([
           scan.loadScans(force: true),
@@ -856,7 +855,7 @@ class _DashboardTab extends StatelessWidget {
                   children: [
                     Text(
                       'Good ${_greeting()},',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppTheme.textSecondary,
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -867,7 +866,7 @@ class _DashboardTab extends StatelessWidget {
                       auth.user?.name ?? 'Officer',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppTheme.text,
                         fontSize: 27,
                         fontWeight: FontWeight.w800,
@@ -879,7 +878,7 @@ class _DashboardTab extends StatelessWidget {
                       '${role.label} · ${role.scopeLabel}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppTheme.primaryDark,
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -1045,7 +1044,7 @@ class _DashboardTab extends StatelessWidget {
               margin: const EdgeInsets.only(top: 12),
               padding: const EdgeInsets.symmetric(vertical: 28),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppTheme.card,
                 borderRadius: BorderRadius.circular(18),
                 border: Border.all(color: AppTheme.border),
               ),
@@ -1057,7 +1056,7 @@ class _DashboardTab extends StatelessWidget {
                     size: 30,
                   ),
                   const SizedBox(height: 9),
-                  const Text(
+                  Text(
                     'No scans yet',
                     style: TextStyle(
                       color: AppTheme.text,
@@ -1065,7 +1064,7 @@ class _DashboardTab extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 3),
-                  const Text(
+                  Text(
                     'Start a patrol to see activity here.',
                     style: TextStyle(
                       color: AppTheme.textSecondary,
@@ -1246,7 +1245,7 @@ class _ShiftOverviewCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: onDuty ? AppTheme.onboardingInk : Colors.white,
+        color: onDuty ? AppTheme.onboardingInk : AppTheme.card,
         borderRadius: BorderRadius.circular(20),
         border: onDuty ? null : Border.all(color: AppTheme.border),
         boxShadow: onDuty
@@ -1302,12 +1301,16 @@ class _ShiftOverviewCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 7),
-                    Text(
-                      onDuty ? 'On duty' : 'Off duty',
-                      style: TextStyle(
-                        color: foreground,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
+                    Flexible(
+                      child: Text(
+                        onDuty ? 'On duty' : 'Off duty',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: foreground,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
                   ],
@@ -1329,25 +1332,33 @@ class _ShiftOverviewCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                onDuty ? time : 'Ready',
-                style: TextStyle(
-                  color: foreground,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              if (onDuty && clockInTime != null) ...[
-                const SizedBox(height: 4),
+          // Flexible, not a bare Column: the elapsed-time label grows with the
+          // shift and would otherwise squeeze the status column off-screen.
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
                 Text(
-                  'Since ${clockInTime!.hour.toString().padLeft(2, '0')}:${clockInTime!.minute.toString().padLeft(2, '0')}',
-                  style: TextStyle(color: muted, fontSize: 10),
+                  onDuty ? time : 'Ready',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: foreground,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
+                if (onDuty && clockInTime != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Since ${clockInTime!.hour.toString().padLeft(2, '0')}:${clockInTime!.minute.toString().padLeft(2, '0')}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: muted, fontSize: 10),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ],
       ),
@@ -1451,7 +1462,7 @@ class _ShiftControlCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.card,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: AppTheme.border),
       ),
@@ -1479,7 +1490,7 @@ class _ShiftControlCard extends StatelessWidget {
                   children: [
                     Text(
                       onDuty ? 'End your shift' : 'Start your shift',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppTheme.text,
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
@@ -1490,7 +1501,7 @@ class _ShiftControlCard extends StatelessWidget {
                       onDuty
                           ? 'Clock out when you leave site.'
                           : 'Clock in when you arrive on site.',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppTheme.textSecondary,
                         fontSize: 11,
                       ),
@@ -1546,16 +1557,20 @@ class _ShiftControlCard extends StatelessWidget {
                   color: gpsColor,
                 ),
                 const SizedBox(width: 5),
-                Text(
-                  gpsValid!
-                      ? 'Geofence verified'
-                      : distanceMeters != null
-                      ? '${distanceMeters!.toStringAsFixed(0)}m from checkpoint'
-                      : 'Outside geofence',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: gpsColor,
+                Flexible(
+                  child: Text(
+                    gpsValid!
+                        ? 'Geofence verified'
+                        : distanceMeters != null
+                        ? '${distanceMeters!.toStringAsFixed(0)}m from checkpoint'
+                        : 'Outside geofence',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: gpsColor,
+                    ),
                   ),
                 ),
               ],
@@ -1580,7 +1595,7 @@ class _SectionLabel extends StatelessWidget {
       children: [
         Text(
           eyebrow,
-          style: const TextStyle(
+          style: TextStyle(
             color: AppTheme.primaryDark,
             fontSize: 10,
             fontWeight: FontWeight.w800,
@@ -1590,7 +1605,7 @@ class _SectionLabel extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           title,
-          style: const TextStyle(
+          style: TextStyle(
             color: AppTheme.text,
             fontSize: 18,
             fontWeight: FontWeight.w800,
@@ -1615,7 +1630,7 @@ class _DashboardScanTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(top: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppTheme.border),
       ),
@@ -1650,7 +1665,7 @@ class _DashboardScanTile extends StatelessWidget {
                       scan.checkpointName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppTheme.text,
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
@@ -1661,7 +1676,7 @@ class _DashboardScanTile extends StatelessWidget {
                       '${scan.checkpointCode} · ${scan.officerName}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppTheme.textSecondary,
                         fontSize: 11,
                       ),
@@ -1675,7 +1690,7 @@ class _DashboardScanTile extends StatelessWidget {
                 children: [
                   Text(
                     scan.formattedTime,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: AppTheme.text,
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -1684,7 +1699,7 @@ class _DashboardScanTile extends StatelessWidget {
                   const SizedBox(height: 3),
                   Text(
                     '${scan.distanceMeters.toStringAsFixed(0)}m',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: AppTheme.textSecondary,
                       fontSize: 10,
                     ),
@@ -1721,7 +1736,7 @@ class _StatCard extends StatelessWidget {
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(17),
-          side: const BorderSide(color: AppTheme.border),
+          side: BorderSide(color: AppTheme.border),
         ),
         child: Padding(
           padding: const EdgeInsets.all(14),
@@ -1756,7 +1771,7 @@ class _StatCard extends StatelessWidget {
                       label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
                         color: AppTheme.textSecondary,
                         fontWeight: FontWeight.w600,
@@ -1791,7 +1806,7 @@ class _QuickAction extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: AppTheme.border),
+        side: BorderSide(color: AppTheme.border),
       ),
       child: InkWell(
         onTap: onTap,
@@ -1815,7 +1830,7 @@ class _QuickAction extends StatelessWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
                   color: AppTheme.textSecondary,
                   fontWeight: FontWeight.w700,

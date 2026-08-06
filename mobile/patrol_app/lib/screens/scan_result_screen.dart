@@ -136,7 +136,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
             const SizedBox(height: 8),
             Text(
               '$distanceText Move closer to $name and scan it again.',
-              style: TextStyle(color: Colors.grey.shade600),
+              style: TextStyle(color: AppTheme.textSecondary),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
@@ -212,7 +212,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                               Expanded(
                                 child: Text(
                                   order.title,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontWeight: FontWeight.w700,
                                     color: AppTheme.text,
                                   ),
@@ -221,7 +221,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                               const SizedBox(width: 8),
                               Text(
                                 order.priority.toUpperCase(),
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
                                   color: AppTheme.flagged,
@@ -233,7 +233,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                             const SizedBox(height: 6),
                             Text(
                               order.summary,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: AppTheme.textSecondary,
                                 height: 1.35,
                               ),
@@ -243,7 +243,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                             const SizedBox(height: 8),
                             Text(
                               order.instructions,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: AppTheme.text,
                                 height: 1.4,
                               ),
@@ -584,7 +584,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
               children: [
                 Text(
                   incident['title']?.toString() ?? result['title']!,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: AppTheme.text,
                   ),
@@ -594,7 +594,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                   incident['description']?.toString().isNotEmpty == true
                       ? incident['description'].toString()
                       : 'The control room can now review this incident report.',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppTheme.textSecondary,
                     height: 1.4,
                   ),
@@ -663,7 +663,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
             children: [
               CircularProgressIndicator(color: AppTheme.primary),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 'Capturing GPS and starting patrol scan...',
                 style: TextStyle(color: AppTheme.textSecondary, fontSize: 16),
               ),
@@ -727,7 +727,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                       color: AppTheme.verified.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(999),
                     ),
-                    child: const Text(
+                    child: Text(
                       'Post Orders Acknowledged',
                       style: TextStyle(
                         fontSize: 12,
@@ -853,7 +853,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                       color: AppTheme.primary.withValues(alpha: 0.15),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.qr_code,
                       size: 40,
                       color: AppTheme.primary,
@@ -862,7 +862,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                   const SizedBox(height: 12),
                   Text(
                     _checkpointName ?? 'Unknown Checkpoint',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
                       color: AppTheme.text,
@@ -874,7 +874,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                   if (_checkpoint != null)
                     Text(
                       'Code: ${_checkpoint!.code}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         color: AppTheme.textSecondary,
                       ),
@@ -919,39 +919,23 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
+                        Text(
                           'Status',
                           style: TextStyle(color: AppTheme.textSecondary),
                         ),
-                        Row(
-                          children: [
-                            Icon(
-                              widget.scanData?['gpsLatitude'] == null
-                                  ? Icons.location_off
-                                  : !_distanceKnown
-                                  ? Icons.gps_fixed
-                                  : _gpsValid
-                                  ? Icons.check_circle
-                                  : Icons.warning_amber,
-                              size: 16,
-                              color: widget.scanData?['gpsLatitude'] == null
-                                  ? Colors.orange
-                                  : !_distanceKnown
-                                  ? AppTheme.primary
-                                  : _gpsValid
-                                  ? AppTheme.verified
-                                  : AppTheme.flagged,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              widget.scanData?['gpsLatitude'] == null
-                                  ? 'Location Required'
-                                  : !_distanceKnown
-                                  ? 'Verifying location…'
-                                  : _gpsValid
-                                  ? 'Within Range'
-                                  : 'Outside ${(_checkpoint?.radiusMeters ?? strictScanRadiusMeters).toStringAsFixed(0)}m Limit',
-                              style: TextStyle(
+                        Flexible(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                widget.scanData?['gpsLatitude'] == null
+                                    ? Icons.location_off
+                                    : !_distanceKnown
+                                    ? Icons.gps_fixed
+                                    : _gpsValid
+                                    ? Icons.check_circle
+                                    : Icons.warning_amber,
+                                size: 16,
                                 color: widget.scanData?['gpsLatitude'] == null
                                     ? Colors.orange
                                     : !_distanceKnown
@@ -959,10 +943,35 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                                     : _gpsValid
                                     ? AppTheme.verified
                                     : AppTheme.flagged,
-                                fontWeight: FontWeight.w600,
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  widget.scanData?['gpsLatitude'] == null
+                                      ? 'Location Required'
+                                      : !_distanceKnown
+                                      ? 'Verifying location…'
+                                      : _gpsValid
+                                      ? 'Within Range'
+                                      : 'Outside ${(_checkpoint?.radiusMeters ?? strictScanRadiusMeters).toStringAsFixed(0)}m Limit',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.end,
+                                  style: TextStyle(
+                                    color:
+                                        widget.scanData?['gpsLatitude'] == null
+                                        ? Colors.orange
+                                        : !_distanceKnown
+                                        ? AppTheme.primary
+                                        : _gpsValid
+                                        ? AppTheme.verified
+                                        : AppTheme.flagged,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
@@ -970,7 +979,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                         _distanceKnown &&
                         !_gpsValid) ...[
                       const Divider(height: 16),
-                      const Align(
+                      Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
                           'Scans are verified against the assigned location’s geofence. Move closer and scan again.',
@@ -998,7 +1007,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Post Orders For This Tour Stop',
                         style: TextStyle(
                           fontSize: 16,
@@ -1007,7 +1016,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                         ),
                       ),
                       const SizedBox(height: 6),
-                      const Text(
+                      Text(
                         'Read these instructions before completing the patrol scan.',
                         style: TextStyle(
                           color: AppTheme.textSecondary,
@@ -1036,7 +1045,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                                     Expanded(
                                       child: Text(
                                         order.title,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontWeight: FontWeight.w700,
                                           color: AppTheme.text,
                                         ),
@@ -1057,7 +1066,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                                       ),
                                       child: Text(
                                         order.priority.toUpperCase(),
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 10,
                                           fontWeight: FontWeight.w700,
                                           color: AppTheme.flagged,
@@ -1070,7 +1079,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                                   const SizedBox(height: 8),
                                   Text(
                                     order.summary,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: AppTheme.textSecondary,
                                       height: 1.4,
                                     ),
@@ -1079,7 +1088,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                                 const SizedBox(height: 8),
                                 Text(
                                   order.instructions,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     color: AppTheme.text,
                                     height: 1.5,
                                   ),
@@ -1117,7 +1126,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                     Expanded(
                       child: Text(
                         _errorMessage!,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AppTheme.text,
                           fontSize: 13,
                         ),
@@ -1173,7 +1182,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(
+                      : Icon(
                           Icons.flash_on,
                           color: AppTheme.primary,
                           size: 20,
@@ -1186,7 +1195,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                           : widget.scanData?['gpsLatitude'] == null
                           ? 'GPS is required before this scan can start.'
                           : 'Scan starts automatically as soon as GPS is captured.',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppTheme.text,
                         fontSize: 13,
                         height: 1.4,
@@ -1261,14 +1270,14 @@ class _InfoRow extends StatelessWidget {
             children: [
               Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   color: AppTheme.textSecondary,
                 ),
               ),
               Text(
                 value,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                   color: AppTheme.text,
@@ -1294,11 +1303,11 @@ class _DetailRow extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(color: AppTheme.textSecondary)),
+        Text(label, style: TextStyle(color: AppTheme.textSecondary)),
         Flexible(
           child: Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontWeight: FontWeight.w600,
               color: AppTheme.text,
             ),

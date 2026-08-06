@@ -71,7 +71,7 @@ class _VisitorCheckScreenState extends State<VisitorCheckScreen> {
         _idCtrl.clear();
         _notesCtrl.clear();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Visitor checked in'), backgroundColor: AppTheme.verified),
+          SnackBar(content: Text('Visitor checked in'), backgroundColor: AppTheme.verified),
         );
         _load();
       }
@@ -93,7 +93,7 @@ class _VisitorCheckScreenState extends State<VisitorCheckScreen> {
       await ApiService.visitorCheckOut(id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Visitor checked out'), backgroundColor: AppTheme.verified),
+          SnackBar(content: Text('Visitor checked out'), backgroundColor: AppTheme.verified),
         );
         _load();
       }
@@ -161,7 +161,7 @@ class _VisitorCheckScreenState extends State<VisitorCheckScreen> {
           if (_loading)
             const Center(child: CircularProgressIndicator())
           else if (_activeVisitors.isEmpty)
-            const Card(
+            Card(
               child: Padding(
                 padding: EdgeInsets.all(24),
                 child: Center(child: Text('No active visitors', style: TextStyle(color: AppTheme.textSecondary))),
@@ -177,7 +177,7 @@ class _VisitorCheckScreenState extends State<VisitorCheckScreen> {
                   title: Text(v['visitorName'] ?? '', style: const TextStyle(fontWeight: FontWeight.w600)),
                   subtitle: Text('Host: ${v['hostName'] ?? '-'} • ${v['purpose'] ?? ''}'),
                   trailing: checkedOut
-                      ? const Icon(Icons.check_circle, color: AppTheme.verified)
+                      ? Icon(Icons.check_circle, color: AppTheme.verified)
                       : FilledButton.tonalIcon(
                           onPressed: () => _checkOut(v['id']),
                           icon: const Icon(Icons.logout, size: 16),

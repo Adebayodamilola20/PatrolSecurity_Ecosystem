@@ -138,7 +138,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
               margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppTheme.card,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: AppTheme.border),
               ),
@@ -147,7 +147,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 children: [
                   Text(
                     'Signed in as ${auth.user?.role ?? 'officer'}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w700,
                       color: AppTheme.text,
                     ),
@@ -157,13 +157,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     (shift.siteLabel ?? '').isNotEmpty
                         ? 'Current site: ${shift.siteLabel}'
                         : 'No active site has been attached to this shift yet.',
-                    style: const TextStyle(color: AppTheme.textSecondary),
+                    style: TextStyle(color: AppTheme.textSecondary),
                   ),
                   if (_statusMessage.isNotEmpty) ...[
                     const SizedBox(height: 10),
                     Text(
                       _statusMessage,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppTheme.primaryDark,
                         fontWeight: FontWeight.w600,
                       ),
@@ -456,11 +456,11 @@ class _DailyActivityTabState extends State<_DailyActivityTab> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppTheme.card,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: AppTheme.border),
               ),
-              child: const Text(
+              child: Text(
                 'No CSV exports have been generated yet.',
                 style: TextStyle(color: AppTheme.textSecondary),
               ),
@@ -499,7 +499,7 @@ class _ExportArchiveCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppTheme.border),
       ),
@@ -513,7 +513,7 @@ class _ExportArchiveCard extends StatelessWidget {
                   item.scopeLabel.isNotEmpty
                       ? item.scopeLabel
                       : 'Patrol Export',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 16,
                     color: AppTheme.text,
@@ -531,7 +531,7 @@ class _ExportArchiveCard extends StatelessWidget {
                 ),
                 child: Text(
                   item.status.toUpperCase(),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     color: AppTheme.primary,
@@ -543,7 +543,7 @@ class _ExportArchiveCard extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             '${item.date} • ${item.fileName}',
-            style: const TextStyle(color: AppTheme.textSecondary, height: 1.4),
+            style: TextStyle(color: AppTheme.textSecondary, height: 1.4),
           ),
           const SizedBox(height: 12),
           Wrap(
@@ -565,7 +565,7 @@ class _ExportArchiveCard extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             'Generated: $generatedLabel',
-            style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+            style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
           ),
           const SizedBox(height: 12),
           Row(
@@ -623,7 +623,7 @@ class _ExportMetric extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w600,
             color: AppTheme.textSecondary,
@@ -632,7 +632,7 @@ class _ExportMetric extends StatelessWidget {
         const SizedBox(height: 2),
         Text(
           value,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w700,
             color: AppTheme.text,
@@ -722,6 +722,7 @@ class _IncidentTabState extends State<_IncidentTab> {
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
           initialValue: _category,
+          isExpanded: true,
           decoration: const InputDecoration(labelText: 'Category'),
           items: _incidentCategories
               .map(
@@ -743,6 +744,7 @@ class _IncidentTabState extends State<_IncidentTab> {
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
           initialValue: _severity,
+          isExpanded: true,
           decoration: const InputDecoration(labelText: 'Severity'),
           items: const ['low', 'medium', 'high', 'critical']
               .map(
@@ -921,6 +923,7 @@ class _MaintenanceTabState extends State<_MaintenanceTab> {
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
           initialValue: _severity,
+          isExpanded: true,
           decoration: const InputDecoration(labelText: 'Priority'),
           items: const ['low', 'medium', 'high']
               .map(
@@ -1174,6 +1177,7 @@ class _PassOnLogTabState extends State<_PassOnLogTab> {
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
           initialValue: _priority,
+          isExpanded: true,
           decoration: const InputDecoration(labelText: 'Priority'),
           items: const ['normal', 'urgent', 'critical']
               .map(
@@ -1259,6 +1263,7 @@ class _CustomReportTabState extends State<_CustomReportTab> {
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
           initialValue: _type,
+          isExpanded: true,
           decoration: const InputDecoration(labelText: 'Report type'),
           items:
               const [
@@ -1331,16 +1336,19 @@ class _CheckpointField extends StatelessWidget {
   Widget build(BuildContext context) {
     return DropdownButtonFormField<String?>(
       initialValue: value,
+      // Checkpoint names are free text, so the closed field has to take the
+      // full width and truncate instead of pushing the arrow off-screen.
+      isExpanded: true,
       decoration: const InputDecoration(labelText: 'Checkpoint / site'),
       items: [
         const DropdownMenuItem<String?>(
           value: null,
-          child: Text('General site report'),
+          child: Text('General site report', overflow: TextOverflow.ellipsis),
         ),
         ...checkpoints.map(
           (checkpoint) => DropdownMenuItem<String?>(
             value: checkpoint.id,
-            child: Text(checkpoint.name),
+            child: Text(checkpoint.name, overflow: TextOverflow.ellipsis),
           ),
         ),
       ],
@@ -1364,7 +1372,7 @@ class _SectionTitle extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w700,
               color: AppTheme.text,
@@ -1373,7 +1381,7 @@ class _SectionTitle extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             description,
-            style: const TextStyle(color: AppTheme.textSecondary, height: 1.4),
+            style: TextStyle(color: AppTheme.textSecondary, height: 1.4),
           ),
         ],
       ),

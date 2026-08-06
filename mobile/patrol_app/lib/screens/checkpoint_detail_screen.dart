@@ -25,7 +25,7 @@ class CheckpointDetailScreen extends StatelessWidget {
                 message: scan.checkpointsError!,
                 onRetry: scan.loadCheckpoints,
               )
-            : const Center(
+            : Center(
                 child: Text(
                   'Checkpoint not found',
                   style: TextStyle(color: AppTheme.textSecondary),
@@ -60,7 +60,7 @@ class CheckpointDetailScreen extends StatelessWidget {
                   const SizedBox(height: 12),
                   Text(
                     cp.name,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
                       color: AppTheme.text,
@@ -72,7 +72,7 @@ class CheckpointDetailScreen extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     '${cp.code} · ${cp.location}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
                       color: AppTheme.textSecondary,
                     ),
@@ -194,14 +194,14 @@ class _DetailRow extends StatelessWidget {
             children: [
               Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   color: AppTheme.textSecondary,
                 ),
               ),
               Text(
                 value,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                   color: AppTheme.text,

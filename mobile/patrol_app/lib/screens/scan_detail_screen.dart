@@ -36,7 +36,7 @@ class ScanDetailScreen extends StatelessWidget {
                 message: provider.scansError!,
                 onRetry: provider.loadScans,
               )
-            : const Center(
+            : Center(
                 child: Text(
                   'Scan not found',
                   style: TextStyle(color: AppTheme.textSecondary),
@@ -126,7 +126,7 @@ class ScanDetailScreen extends StatelessWidget {
                       color: AppTheme.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.notes_rounded,
                       color: AppTheme.primaryDark,
                       size: 20,
@@ -136,7 +136,7 @@ class ScanDetailScreen extends StatelessWidget {
                   Expanded(
                     child: Text(
                       item.notes!,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppTheme.text,
                         fontSize: 14,
                         height: 1.5,
@@ -172,7 +172,7 @@ class _ScanSummaryCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.card,
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: AppTheme.border),
         boxShadow: [
@@ -213,7 +213,7 @@ class _ScanSummaryCard extends StatelessWidget {
                   checkpointName,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppTheme.text,
                     fontSize: 18,
                     height: 1.15,
@@ -226,7 +226,7 @@ class _ScanSummaryCard extends StatelessWidget {
                   'Checkpoint code · $checkpointCode',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppTheme.textSecondary,
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
@@ -254,7 +254,7 @@ class _SectionHeading extends StatelessWidget {
       children: [
         Text(
           eyebrow,
-          style: const TextStyle(
+          style: TextStyle(
             color: AppTheme.primaryDark,
             fontSize: 10,
             fontWeight: FontWeight.w800,
@@ -264,7 +264,7 @@ class _SectionHeading extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           title,
-          style: const TextStyle(
+          style: TextStyle(
             color: AppTheme.text,
             fontSize: 18,
             fontWeight: FontWeight.w800,
@@ -287,7 +287,7 @@ class _ScanCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.card,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppTheme.border),
       ),
@@ -330,7 +330,7 @@ class _DetailRow extends StatelessWidget {
             children: [
               Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppTheme.textSecondary,
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
@@ -341,7 +341,7 @@ class _DetailRow extends StatelessWidget {
                 value,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppTheme.text,
                   fontSize: 14,
                   height: 1.3,
@@ -362,7 +362,7 @@ class _DetailDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
+    return Padding(
       padding: EdgeInsets.only(left: 50, top: 14, bottom: 14),
       child: Divider(height: 1, color: AppTheme.border),
     );

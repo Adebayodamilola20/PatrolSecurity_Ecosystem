@@ -50,6 +50,19 @@ void main() async {
     );
   }
 
+  // Restore the appearance choice before the first frame, otherwise a guard
+  // who picked dark mode gets a white flash on every cold start. A keychain
+  // read can fail on a fresh install, and appearance is not worth blocking
+  // launch over, so fall back to light.
+  try {
+    const storage = FlutterSecureStorage();
+    AppTheme.darkMode.value =
+        (await storage.read(key: 'setting_darkmode')) == 'true';
+  } catch (_) {
+    AppTheme.darkMode.value = false;
+  }
+  AppTheme.applySystemChrome();
+
   bool loggingOut = false;
   ApiService.onUnauthorized = () {
     if (loggingOut) return;
@@ -133,11 +146,23 @@ class _PatrolAppState extends State<PatrolApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    // AppTheme's colour tokens are read directly by the screens rather than
+    // through Theme.of(context), so the whole app has to rebuild when the mode
+    // flips — not just the widgets that happen to depend on an InheritedWidget.
+    return ValueListenableBuilder<bool>(
+      valueListenable: AppTheme.darkMode,
+      builder: (context, isDark, _) => _buildApp(isDark),
+    );
+  }
+
+  Widget _buildApp(bool isDark) {
     return MaterialApp(
       navigatorKey: navigatorKey,
       title: 'Patrol Command',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
       initialRoute: AppRoutes.splash,
       onGenerateRoute: (settings) {
         final args = settings.arguments as Map<String, dynamic>?;

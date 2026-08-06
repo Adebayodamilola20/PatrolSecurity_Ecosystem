@@ -23,6 +23,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // consulted, so switching them appeared to do something and did not.
   bool _vibrationEnabled = true;
   bool _alertSound = true;
+  bool _darkMode = false;
 
   bool _loaded = false;
 
@@ -37,6 +38,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         (await _storage.read(key: 'setting_vibration') ?? 'true') == 'true';
     _alertSound =
         (await _storage.read(key: 'setting_alertsound') ?? 'true') == 'true';
+    _darkMode = AppTheme.darkMode.value;
     if (mounted) setState(() => _loaded = true);
   }
 
@@ -129,14 +131,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ],
                 ),
                 const SizedBox(height: 24),
+                _SectionLabel(label: 'APPEARANCE'),
+                const SizedBox(height: 8),
+                _Card(
+                  children: [
+                    _SettingTile(
+                      icon: Icons.dark_mode_outlined,
+                      iconColor: const Color(0xFF6366F1),
+                      iconBg: const Color(0xFF6366F1).withValues(alpha: 0.1),
+                      title: 'Dark Mode',
+                      subtitle: 'Black background with light text',
+                      trailing: Switch.adaptive(
+                        value: _darkMode,
+                        onChanged: (v) {
+                          setState(() => _darkMode = v);
+                          AppTheme.setDarkMode(v);
+                          _save('setting_darkmode', v.toString());
+                        },
+                        activeTrackColor: AppTheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
                 _SectionLabel(label: 'DATA & STORAGE'),
                 const SizedBox(height: 8),
                 _Card(
                   children: [
-                    _StorageTile(
-                      scanCount: scan.totalScans,
-                      onClear: () => _confirmClearCache(context, scan),
-                    ),
+                    _StorageTile(scanCount: scan.totalScans),
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -260,54 +282,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  void _confirmClearCache(BuildContext context, ScanProvider scan) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(
-              Icons.delete_outline_rounded,
-              color: Color(0xFFF59E0B),
-              size: 24,
-            ),
-            SizedBox(width: 10),
-            Text(
-              'Clear Cache?',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-        content: Text(
-          'Remove ${scan.totalScans} locally cached ${scan.totalScans == 1 ? 'scan' : 'scans'}? Data re-syncs from the server on next load.',
-          style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              scan.clearData();
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Cache cleared'),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            },
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFF59E0B),
-            ),
-            child: const Text('Clear'),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _ProfileHeader extends StatelessWidget {
@@ -340,8 +314,8 @@ class _ProfileHeader extends StatelessWidget {
       expandedHeight: 260,
       pinned: true,
       stretch: true,
-      backgroundColor: Colors.white,
-      surfaceTintColor: Colors.white,
+      backgroundColor: AppTheme.card,
+      surfaceTintColor: AppTheme.card,
       flexibleSpace: FlexibleSpaceBar(
         stretchModes: const [StretchMode.zoomBackground],
         background: Container(
@@ -517,7 +491,7 @@ class _SectionLabel extends StatelessWidget {
       padding: const EdgeInsets.only(left: 4, bottom: 2),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w700,
           color: AppTheme.textSecondary,
@@ -536,7 +510,7 @@ class _Card extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppTheme.border),
         boxShadow: [
@@ -600,7 +574,7 @@ class _SettingTile extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                         color: AppTheme.text,
@@ -611,7 +585,7 @@ class _SettingTile extends StatelessWidget {
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
                           subtitle!,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
                             color: AppTheme.textSecondary,
                           ),
@@ -622,7 +596,7 @@ class _SettingTile extends StatelessWidget {
               ),
               if (trailing != null) trailing!,
               if (onTap != null && trailing == null)
-                const Icon(
+                Icon(
                   Icons.chevron_right_rounded,
                   size: 20,
                   color: AppTheme.textSecondary,
@@ -637,9 +611,8 @@ class _SettingTile extends StatelessWidget {
 
 class _StorageTile extends StatelessWidget {
   final int scanCount;
-  final VoidCallback onClear;
 
-  const _StorageTile({required this.scanCount, required this.onClear});
+  const _StorageTile({required this.scanCount});
 
   @override
   Widget build(BuildContext context) {
@@ -666,7 +639,7 @@ class _StorageTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Cached Data',
                     style: TextStyle(
                       fontSize: 14,
@@ -677,11 +650,15 @@ class _StorageTile extends StatelessWidget {
                   const SizedBox(height: 2),
                   Row(
                     children: [
-                      Text(
-                        'Stored scans and checkpoints',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.textSecondary,
+                      Flexible(
+                        child: Text(
+                          'Stored scans and checkpoints',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.textSecondary,
+                          ),
                         ),
                       ),
                       if (scanCount > 0) ...[
@@ -712,40 +689,6 @@ class _StorageTile extends StatelessWidget {
                 ],
               ),
             ),
-            if (scanCount > 0)
-              InkWell(
-                onTap: onClear,
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF59E0B).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.delete_outline_rounded,
-                        size: 14,
-                        color: Color(0xFFF59E0B),
-                      ),
-                      SizedBox(width: 4),
-                      Text(
-                        'Clear',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFFF59E0B),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
           ],
         ),
       ),
@@ -767,7 +710,7 @@ class _LogoutButton extends StatelessWidget {
         child: InkWell(
           onTap: () => _confirmLogout(context),
           borderRadius: BorderRadius.circular(16),
-          child: const Padding(
+          child: Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -800,7 +743,7 @@ class _LogoutButton extends StatelessWidget {
           'Sign Out',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
         ),
-        content: const Text(
+        content: Text(
           'Are you sure you want to sign out? Any unsynced scans will be lost.',
           style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
         ),

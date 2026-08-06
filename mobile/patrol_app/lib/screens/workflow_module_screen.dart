@@ -31,7 +31,7 @@ class WorkflowModuleScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: AppTheme.card,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: AppTheme.border),
             ),
@@ -53,7 +53,7 @@ class WorkflowModuleScreen extends StatelessWidget {
                     children: [
                       Text(
                         role.label,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w800,
                           color: AppTheme.text,
                           fontSize: 16,
@@ -62,7 +62,7 @@ class WorkflowModuleScreen extends StatelessWidget {
                       const SizedBox(height: 3),
                       Text(
                         role.scopeLabel,
-                        style: const TextStyle(color: AppTheme.textSecondary),
+                        style: TextStyle(color: AppTheme.textSecondary),
                       ),
                     ],
                   ),
@@ -74,7 +74,7 @@ class WorkflowModuleScreen extends StatelessWidget {
           ...capabilities.map(
             (item) => Card(
               child: ListTile(
-                leading: const Icon(
+                leading: Icon(
                   Icons.check_circle_outline,
                   color: AppTheme.primary,
                 ),
@@ -89,7 +89,7 @@ class WorkflowModuleScreen extends StatelessWidget {
                 padding: const EdgeInsets.all(16),
                 child: Text(
                   'Access: ${visibleFor.join(', ')}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppTheme.textSecondary,
                     fontWeight: FontWeight.w600,
                   ),

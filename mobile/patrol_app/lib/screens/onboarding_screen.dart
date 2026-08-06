@@ -122,19 +122,23 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 children: [
                   const _BrandMark(),
                   const SizedBox(width: 10),
-                  const Text(
-                    'PATROL COMMAND',
-                    style: TextStyle(
-                      color: AppTheme.onboardingInk,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.7,
+                  Flexible(
+                    child: Text(
+                      'PATROL COMMAND',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppTheme.onboardingInk,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.7,
+                      ),
                     ),
                   ),
                   const Spacer(),
                   Text(
                     '${(_currentPage + 1).toString().padLeft(2, '0')} / ${_pages.length.toString().padLeft(2, '0')}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: AppTheme.onboardingMuted,
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -190,7 +194,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           : _previous,
                       style: OutlinedButton.styleFrom(
                         padding: EdgeInsets.zero,
-                        side: const BorderSide(
+                        side: BorderSide(
                           color: AppTheme.onboardingBorder,
                         ),
                         foregroundColor: AppTheme.onboardingInk,
@@ -282,7 +286,7 @@ class _OnboardingPage extends StatelessWidget {
           const SizedBox(height: 30),
           Text(
             data.eyebrow,
-            style: const TextStyle(
+            style: TextStyle(
               color: AppTheme.primaryDark,
               fontSize: 11,
               fontWeight: FontWeight.w800,
@@ -292,7 +296,7 @@ class _OnboardingPage extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             data.title,
-            style: const TextStyle(
+            style: TextStyle(
               color: AppTheme.onboardingInk,
               fontSize: 32,
               height: 1.08,
@@ -303,7 +307,7 @@ class _OnboardingPage extends StatelessWidget {
           const SizedBox(height: 14),
           Text(
             data.description,
-            style: const TextStyle(
+            style: TextStyle(
               color: AppTheme.onboardingMuted,
               fontSize: 15,
               height: 1.55,
@@ -451,7 +455,7 @@ class _WelcomeScene extends StatelessWidget {
                   ),
                 ],
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.shield_rounded,
                 color: AppTheme.onboardingInk,
                 size: 57,
@@ -612,14 +616,14 @@ class _RecordScene extends StatelessWidget {
                             color: data.accent,
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.priority_high_rounded,
                             size: 17,
                             color: AppTheme.onboardingInk,
                           ),
                         ),
                         const SizedBox(width: 9),
-                        const Text(
+                        Text(
                           'INCIDENT LOG',
                           style: TextStyle(
                             color: AppTheme.onboardingInk,
@@ -645,7 +649,7 @@ class _RecordScene extends StatelessWidget {
                           color: AppTheme.primaryDark,
                         ),
                         const SizedBox(width: 5),
-                        const Text(
+                        Text(
                           'Details saved',
                           style: TextStyle(
                             color: AppTheme.onboardingMuted,
@@ -787,7 +791,7 @@ class _ReadyScene extends StatelessWidget {
                 ),
               ],
             ),
-            child: const Icon(
+            child: Icon(
               Icons.login_rounded,
               color: AppTheme.onboardingInk,
               size: 54,
@@ -1002,7 +1006,7 @@ class _BrandMark extends StatelessWidget {
         color: AppTheme.primary,
         borderRadius: BorderRadius.circular(9),
       ),
-      child: const Icon(
+      child: Icon(
         Icons.shield_rounded,
         color: AppTheme.onboardingInk,
         size: 17,

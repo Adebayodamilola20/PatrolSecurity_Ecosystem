@@ -67,7 +67,7 @@ class _TruckCheckScreenState extends State<TruckCheckScreen> {
         _cargoCtrl.clear();
         _notesCtrl.clear();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Truck checked in'), backgroundColor: AppTheme.verified),
+          SnackBar(content: Text('Truck checked in'), backgroundColor: AppTheme.verified),
         );
         _load();
       }
@@ -89,7 +89,7 @@ class _TruckCheckScreenState extends State<TruckCheckScreen> {
       await ApiService.truckCheckOut(id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Truck checked out'), backgroundColor: AppTheme.verified),
+          SnackBar(content: Text('Truck checked out'), backgroundColor: AppTheme.verified),
         );
         _load();
       }
@@ -155,7 +155,7 @@ class _TruckCheckScreenState extends State<TruckCheckScreen> {
           if (_loading)
             const Center(child: CircularProgressIndicator())
           else if (_activeTrucks.isEmpty)
-            const Card(
+            Card(
               child: Padding(
                 padding: EdgeInsets.all(24),
                 child: Center(child: Text('No active trucks', style: TextStyle(color: AppTheme.textSecondary))),

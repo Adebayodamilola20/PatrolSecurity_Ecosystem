@@ -43,7 +43,7 @@ class ScanTile extends StatelessWidget {
                   children: [
                     Text(
                       scan.checkpointName,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 15,
                         color: AppTheme.text,
@@ -54,7 +54,7 @@ class ScanTile extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       '${scan.checkpointCode} · ${scan.officerName}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         color: AppTheme.textSecondary,
                       ),
@@ -69,7 +69,7 @@ class ScanTile extends StatelessWidget {
                 children: [
                   Text(
                     scan.formattedTime,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w500,
                       fontSize: 13,
                       color: AppTheme.text,
@@ -78,7 +78,7 @@ class ScanTile extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     '${scan.distanceMeters.toStringAsFixed(0)}m',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
                       color: AppTheme.textSecondary,
                     ),

@@ -308,7 +308,7 @@ class _ProfileSectionHeading extends StatelessWidget {
       children: [
         Text(
           eyebrow,
-          style: const TextStyle(
+          style: TextStyle(
             color: AppTheme.primaryDark,
             fontSize: 10,
             fontWeight: FontWeight.w800,
@@ -318,7 +318,7 @@ class _ProfileSectionHeading extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           title,
-          style: const TextStyle(
+          style: TextStyle(
             color: AppTheme.text,
             fontSize: 18,
             fontWeight: FontWeight.w800,
@@ -345,7 +345,7 @@ class _ProfileCard extends StatelessWidget {
       width: double.infinity,
       padding: padding,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.card,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppTheme.border),
       ),
@@ -385,7 +385,7 @@ class _ProfileDetailTile extends StatelessWidget {
             children: [
               Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppTheme.textSecondary,
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
@@ -396,7 +396,7 @@ class _ProfileDetailTile extends StatelessWidget {
                 value,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppTheme.text,
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
@@ -448,7 +448,7 @@ class _ProfileStat extends StatelessWidget {
           value,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
+          style: TextStyle(
             color: AppTheme.text,
             fontSize: 21,
             fontWeight: FontWeight.w800,
@@ -459,7 +459,7 @@ class _ProfileStat extends StatelessWidget {
           label,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
+          style: TextStyle(
             color: AppTheme.textSecondary,
             fontSize: 10,
             fontWeight: FontWeight.w600,
@@ -533,7 +533,7 @@ class _ProfileActionTile extends StatelessWidget {
                   const SizedBox(height: 3),
                   Text(
                     subtitle,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: AppTheme.textSecondary,
                       fontSize: 11,
                     ),

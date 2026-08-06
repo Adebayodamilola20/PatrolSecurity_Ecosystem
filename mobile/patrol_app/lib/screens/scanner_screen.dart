@@ -154,7 +154,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.assignment_late_outlined,
                       size: 56,
                       color: AppTheme.flagged,
@@ -163,7 +163,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                     Text(
                       _blockedMessage!,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppTheme.text,
                         fontSize: 15,
                         height: 1.5,

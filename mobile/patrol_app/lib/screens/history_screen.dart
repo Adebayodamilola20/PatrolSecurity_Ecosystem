@@ -33,7 +33,7 @@ class HistoryScreen extends StatelessWidget {
                     color: AppTheme.textSecondary.withValues(alpha: 0.5),
                   ),
                   const SizedBox(height: 12),
-                  const Text(
+                  Text(
                     'No scans recorded yet',
                     style: TextStyle(color: AppTheme.textSecondary),
                   ),

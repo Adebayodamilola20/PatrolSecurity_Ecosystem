@@ -51,7 +51,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppTheme.card,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
@@ -68,7 +68,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 34),
                     const _LoginHero(),
                     const SizedBox(height: 30),
-                    const Text(
+                    Text(
                       'Welcome back',
                       style: TextStyle(
                         color: AppTheme.text,
@@ -78,7 +78,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
+                    Text(
                       'Sign in to continue managing your patrol shift.',
                       style: TextStyle(
                         color: AppTheme.textSecondary,
@@ -95,9 +95,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 8),
                     TextFormField(
                       controller: _emailCtrl,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         filled: true,
-                        fillColor: Color(0xFFF8FAF9),
+                        fillColor: AppTheme.muted,
                         hintText: 'you@company.com',
                         prefixIcon: Icon(
                           Icons.mail_outline_rounded,
@@ -118,9 +118,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       obscureText: _obscure,
                       decoration: InputDecoration(
                         filled: true,
-                        fillColor: const Color(0xFFF8FAF9),
+                        fillColor: AppTheme.muted,
                         hintText: 'Enter your password',
-                        prefixIcon: const Icon(
+                        prefixIcon: Icon(
                           Icons.lock_outline_rounded,
                           color: AppTheme.primaryDark,
                         ),
@@ -163,7 +163,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Icon(
+                              Icon(
                                 Icons.error_outline_rounded,
                                 color: AppTheme.error,
                                 size: 19,
@@ -172,7 +172,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               Expanded(
                                 child: Text(
                                   auth.error!,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     color: AppTheme.error,
                                     fontSize: 13,
                                     height: 1.35,
@@ -249,7 +249,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             size: 15,
                             color: AppTheme.primaryDark.withValues(alpha: 0.8),
                           ),
-                          const Text(
+                          Text(
                             'Guard and supervisor accounts',
                             style: TextStyle(
                               color: AppTheme.textSecondary,
@@ -284,14 +284,14 @@ class _LoginBrand extends StatelessWidget {
             color: AppTheme.primary,
             borderRadius: BorderRadius.circular(13),
           ),
-          child: const Icon(
+          child: Icon(
             Icons.shield_rounded,
             color: AppTheme.text,
             size: 23,
           ),
         ),
         const SizedBox(width: 11),
-        const Column(
+        Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
@@ -330,9 +330,9 @@ class _LoginHero extends StatelessWidget {
       height: 156,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: const Color(0xFFEAF8F0),
+        color: AppTheme.primarySurface,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFD5EDDF)),
+        border: Border.all(color: AppTheme.primary.withValues(alpha: 0.2)),
       ),
       child: Stack(
         children: [
@@ -368,24 +368,29 @@ class _LoginHero extends StatelessWidget {
                   width: 88,
                   height: 88,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.8),
+                    color: AppTheme.card.withValues(alpha: 0.85),
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 5),
+                    border: Border.all(color: AppTheme.card, width: 5),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.shield_outlined,
                     color: AppTheme.primaryDark,
                     size: 48,
                   ),
                 ),
                 const SizedBox(width: 18),
-                const Expanded(
+                Expanded(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // The hero is a fixed-height box, so both lines are
+                      // capped: on a 320pt screen the copy would otherwise
+                      // wrap past the bottom edge.
                       Text(
                         'Secure access',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: AppTheme.text,
                           fontSize: 18,
@@ -395,6 +400,8 @@ class _LoginHero extends StatelessWidget {
                       SizedBox(height: 7),
                       Text(
                         'Your shift starts with a clear view of what matters.',
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: AppTheme.textSecondary,
                           fontSize: 12,
@@ -422,7 +429,7 @@ class _FieldLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       label,
-      style: const TextStyle(
+      style: TextStyle(
         color: AppTheme.text,
         fontSize: 13,
         fontWeight: FontWeight.w700,

@@ -170,7 +170,7 @@ class _PatrolScreenState extends State<PatrolScreen> {
       );
 
       messenger.showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
             'Emergency submitted with officer, timestamp, and GPS status.',
           ),
@@ -357,7 +357,7 @@ class _PatrolSummaryCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Last Patrol Information',
               style: TextStyle(
                 fontSize: 18,
@@ -397,13 +397,13 @@ class _InfoRow extends StatelessWidget {
             width: 130,
             child: Text(
               label,
-              style: const TextStyle(color: AppTheme.textSecondary),
+              style: TextStyle(color: AppTheme.textSecondary),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.w700,
                 color: AppTheme.text,
               ),
@@ -450,7 +450,7 @@ class _StatusCard extends StatelessWidget {
             const SizedBox(height: 2),
             Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppTheme.textSecondary,
                 fontSize: 12,
               ),
