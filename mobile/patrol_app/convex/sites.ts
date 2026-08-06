@@ -203,6 +203,11 @@ export const remove = internalMutation({
       await recordTombstone(ctx, {
         entityType: "checkpoint",
         entityId: checkpoint._id,
+        // Both id forms and the parent name: a guard scanning this QR after the
+        // location is gone has to be told which site was withdrawn, and the QR
+        // may carry either id.
+        legacyId: checkpoint.legacyId,
+        contextName: site.name,
         name: checkpoint.name,
         deletedByUserId: args.deletedByUserId,
         deletedByName: args.deletedByName,

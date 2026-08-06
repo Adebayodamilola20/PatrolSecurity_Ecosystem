@@ -23,6 +23,19 @@ function normalizeApiBase(rawUrl: string | undefined) {
 
 export const API_BASE = normalizeApiBase(import.meta.env.VITE_API_URL)
 
+// VITE_API_URL lives in .env.local, which is gitignored and so never arrives
+// with a clone or a pull. Missing it used to be invisible: the app silently
+// fell back to a relative path. Say so loudly instead — a wrong backend looks
+// exactly like wrong data in production.
+if (!import.meta.env.VITE_API_URL) {
+  console.error(
+    '[config] VITE_API_URL is not set — falling back to "%s". ' +
+      'Create web/.env.local with VITE_API_URL=https://<deployment>.convex.site ' +
+      'or the data you see will not be real.',
+    API_BASE,
+  )
+}
+
 export function apiFileUrl(path: string) {
   if (!path) return ''
   if (/^https?:\/\//i.test(path)) return path

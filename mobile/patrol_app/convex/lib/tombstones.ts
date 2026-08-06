@@ -16,12 +16,40 @@ export async function recordTombstone(
   args: {
     entityType: DeletedEntityType;
     entityId: string;
+    legacyId?: string;
+    contextName?: string;
     name: string;
     deletedByUserId?: Id<"users">;
     deletedByName?: string;
   },
 ) {
   await ctx.db.insert("deletedEntities", { ...args, deletedAt: Date.now() });
+}
+
+/**
+ * The tombstone for a checkpoint QR that no longer resolves, matched on either
+ * id form the QR may carry.
+ *
+ * This is what separates "this location was withdrawn" from "we have never
+ * seen this code": both leave the checkpoint unresolvable, but only the first
+ * is something the guard should call the office about.
+ */
+export async function findDeletedCheckpoint(
+  ctx: QueryCtx | MutationCtx,
+  rawId: string,
+) {
+  const byEntityId = await ctx.db
+    .query("deletedEntities")
+    .withIndex("by_entityId", (q) => q.eq("entityId", rawId))
+    .collect();
+  const direct = byEntityId.find((r) => r.entityType === "checkpoint");
+  if (direct) return direct;
+
+  const byLegacyId = await ctx.db
+    .query("deletedEntities")
+    .withIndex("by_legacyId", (q) => q.eq("legacyId", rawId))
+    .collect();
+  return byLegacyId.find((r) => r.entityType === "checkpoint") ?? null;
 }
 
 /**

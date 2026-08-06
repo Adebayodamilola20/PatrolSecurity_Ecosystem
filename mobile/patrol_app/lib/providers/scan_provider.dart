@@ -149,6 +149,13 @@ class ScanProvider extends ChangeNotifier {
       _scans.insert(0, _lastScan!);
       notifyListeners();
       return true;
+    } on PermanentRejectionException catch (e) {
+      // The server has ruled on this scan — a withdrawn location, a post the
+      // guard does not hold. Queueing it would retry a refusal forever and
+      // leave the guard staring at "will be retried" that never resolves.
+      _scansError = e.message;
+      notifyListeners();
+      return false;
     } catch (e) {
       await _addPendingScan(data);
       _scansError = e.toString().replaceFirst('Exception: ', '');
@@ -202,6 +209,12 @@ class ScanProvider extends ChangeNotifier {
         final result = await ApiService.submitScan(data);
         _lastScan = Scan.fromJson(result);
         _scans.insert(0, _lastScan!);
+        notifyListeners();
+      } on PermanentRejectionException catch (e) {
+        // Dropped, not requeued: the location was withdrawn or the posting
+        // removed while this scan sat offline, and no amount of retrying will
+        // change that answer.
+        _scansError = e.message;
         notifyListeners();
       } catch (e) {
         _pendingScans.add(data);

@@ -17,6 +17,20 @@ class TokenExpiredException implements Exception {
   String toString() => message;
 }
 
+/// A request the server refused on its merits, not because of a network or
+/// capacity problem.
+///
+/// The difference matters for scans: a transient failure is queued and retried,
+/// but a scan at a withdrawn location would sit in that queue being rejected
+/// forever, so it must never be queued at all.
+class PermanentRejectionException implements Exception {
+  final String message;
+  final int statusCode;
+  const PermanentRejectionException(this.message, this.statusCode);
+  @override
+  String toString() => message;
+}
+
 // Outcome of an /auth/refresh attempt. `transientFailure` (offline, timeout)
 // keeps the session; only `sessionDead` (server rejected the refresh token)
 // forces a re-login.
@@ -155,13 +169,43 @@ class ApiService {
       onUnauthorized?.call();
       return const TokenExpiredException();
     }
+    String? serverMessage;
     try {
       final body = jsonDecode(res.body);
       if (body is Map<String, dynamic> && body['message'] is String) {
-        return Exception(body['message']);
+        serverMessage = body['message'] as String;
       }
     } catch (_) {}
+    // 403/404/410 are verdicts, not outages: retrying changes nothing.
+    if (res.statusCode == 403 ||
+        res.statusCode == 404 ||
+        res.statusCode == 410) {
+      return PermanentRejectionException(
+        serverMessage ?? fallback,
+        res.statusCode,
+      );
+    }
+    if (serverMessage != null) return Exception(serverMessage);
     return Exception(fallback);
+  }
+
+  /// Asks the server what a scanned QR code actually is.
+  ///
+  /// The app only holds the checkpoints it was served, so a code missing from
+  /// that list could be a withdrawn location, a post this guard does not hold,
+  /// or just stale offline data — and only the server can tell them apart.
+  static Future<Map<String, dynamic>> lookupCheckpoint(String code) async {
+    _ensureHttps();
+    final uri = Uri.parse(
+      '$baseUrl/checkpoints/lookup',
+    ).replace(queryParameters: {'code': code});
+    final res = await _client
+        .get(uri, headers: await _headers())
+        .timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Could not check this location');
+    }
+    return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
   static Future<String?> getToken() async =>

@@ -49,6 +49,14 @@ export function conflict(message = "Conflict") {
   return errorResponse(message, 409);
 }
 
+// 410 for a location the company has removed from service. Distinct from 404
+// ("we don't recognise this QR at all") so the app can tell a guard standing at
+// a decommissioned site to call the office, instead of telling them to retry a
+// scan that can never succeed.
+export function gone(message = "No longer available") {
+  return errorResponse(message, 410);
+}
+
 export function tooManyRequests(
   message = "Too many requests. Please try again later.",
   retryAfterMs?: number,

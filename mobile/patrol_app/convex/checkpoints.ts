@@ -1,5 +1,6 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
+import { findDeletedCheckpoint, recordTombstone } from "./lib/tombstones";
 
 export const list = internalQuery({
   args: {
@@ -201,9 +202,114 @@ export const update = internalMutation({
 });
 
 export const remove = internalMutation({
-  args: { checkpointId: v.id("checkpoints") },
+  args: {
+    checkpointId: v.id("checkpoints"),
+    deletedByUserId: v.optional(v.id("users")),
+    deletedByName: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
+    // Tombstone first, same as deleting a whole location: without it the QR
+    // becomes an unrecognised code rather than a withdrawn one, and the name
+    // disappears from every scan already recorded against it.
+    const checkpoint = await ctx.db.get(args.checkpointId);
+    if (checkpoint) {
+      const site = checkpoint.siteId
+        ? await ctx.db.get(checkpoint.siteId)
+        : null;
+      await recordTombstone(ctx, {
+        entityType: "checkpoint",
+        entityId: checkpoint._id,
+        legacyId: checkpoint.legacyId,
+        contextName: site?.name,
+        name: checkpoint.name,
+        deletedByUserId: args.deletedByUserId,
+        deletedByName: args.deletedByName,
+      });
+    }
     await ctx.db.delete(args.checkpointId);
+  },
+});
+
+/**
+ * What a scanned QR code actually is, from the server's point of view.
+ *
+ * The app can only see checkpoints it was served, so a code missing from its
+ * list is ambiguous: withdrawn location, a post this guard does not hold, a
+ * deactivated point, or a code from another company entirely. Guessing gets a
+ * guard standing at a gate retrying a scan that will never succeed, so the
+ * server says which it is and the app repeats that verdict verbatim.
+ */
+export const lookupForScan = internalQuery({
+  args: { code: v.string(), officerId: v.optional(v.id("users")) },
+  handler: async (ctx, args) => {
+    const raw = args.code.trim();
+    if (!raw) return { status: "unknown" as const };
+
+    const byLegacyId = await ctx.db
+      .query("checkpoints")
+      .withIndex("by_legacyId", (q) => q.eq("legacyId", raw))
+      .unique();
+    const all = byLegacyId
+      ? null
+      : await ctx.db.query("checkpoints").collect();
+    const checkpoint =
+      byLegacyId ??
+      all?.find((c) => c._id === raw || c.code === raw) ??
+      null;
+
+    if (!checkpoint) {
+      const tombstone = await findDeletedCheckpoint(ctx, raw);
+      if (tombstone) {
+        return {
+          status: "deleted" as const,
+          name: tombstone.name,
+          siteName: tombstone.contextName ?? null,
+          deletedAt: new Date(tombstone.deletedAt).toISOString(),
+        };
+      }
+      return { status: "unknown" as const };
+    }
+
+    const site = checkpoint.siteId ? await ctx.db.get(checkpoint.siteId) : null;
+    // A checkpoint whose parent location row is gone is withdrawn in every way
+    // that matters to a guard, even though this row outlived the cascade.
+    if (checkpoint.siteId && !site) {
+      return {
+        status: "deleted" as const,
+        name: checkpoint.name,
+        siteName: null,
+        deletedAt: null,
+      };
+    }
+    if (!checkpoint.active) {
+      return {
+        status: "inactive" as const,
+        name: checkpoint.name,
+        siteName: site?.name ?? null,
+      };
+    }
+
+    if (args.officerId && checkpoint.siteId) {
+      const assignment = await ctx.db
+        .query("userSiteAssignments")
+        .withIndex("by_userId_siteId", (q) =>
+          q.eq("userId", args.officerId!).eq("siteId", checkpoint.siteId!),
+        )
+        .first();
+      if (!assignment) {
+        return {
+          status: "not_assigned" as const,
+          name: checkpoint.name,
+          siteName: site?.name ?? null,
+        };
+      }
+    }
+
+    return {
+      status: "active" as const,
+      name: checkpoint.name,
+      siteName: site?.name ?? null,
+    };
   },
 });
 

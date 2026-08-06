@@ -125,13 +125,20 @@ export default defineSchema({
       v.literal("checkpoint"),
     ),
     entityId: v.string(),
+    // A checkpoint QR can carry either the Convex id or the pre-migration
+    // legacyId, so both have to be recognisable after the row is gone —
+    // otherwise an old QR looks like an unknown code rather than a deleted one.
+    legacyId: v.optional(v.string()),
+    // Parent location name, so a guard can be told which site was withdrawn.
+    contextName: v.optional(v.string()),
     name: v.string(),
     deletedAt: v.number(),
     deletedByUserId: v.optional(v.id("users")),
     deletedByName: v.optional(v.string()),
   })
     .index("by_entityType", ["entityType"])
-    .index("by_entityId", ["entityId"]),
+    .index("by_entityId", ["entityId"])
+    .index("by_legacyId", ["legacyId"]),
 
   // Server-side sessions: one row per refresh token, stored as a SHA-256
   // hash (a database leak never exposes usable tokens). Tokens are single-use

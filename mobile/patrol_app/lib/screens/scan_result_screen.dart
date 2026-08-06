@@ -324,6 +324,43 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
     return R * c;
   }
 
+  /// Why a scanned code is not among the checkpoints this app was served.
+  ///
+  /// Falls back to an offline-shaped message rather than guessing: telling a
+  /// guard a location was withdrawn because their signal dropped would be worse
+  /// than telling them nothing.
+  Future<({String? name, String message})> _explainMissingCheckpoint(
+    String code,
+  ) async {
+    try {
+      final verdict = await ApiService.lookupCheckpoint(code);
+      final name = verdict['name'] as String?;
+      final siteName = verdict['siteName'] as String?;
+      final label = (name != null && siteName != null)
+          ? '$name ($siteName)'
+          : name;
+      final message = verdict['message'] as String?;
+      if (message != null && message.isNotEmpty) {
+        return (name: label, message: message);
+      }
+      return (
+        name: label,
+        message:
+            'This patrol point could not be verified. Please contact the office.',
+      );
+    } on PermanentRejectionException catch (e) {
+      return (name: null, message: e.message);
+    } catch (_) {
+      return (
+        name: null,
+        message:
+            'This patrol point is not in your list and could not be checked — '
+            'you may be offline. Try again in range, and contact the office if '
+            'it keeps failing.',
+      );
+    }
+  }
+
   Future<void> _loadCheckpoint() async {
     final data = widget.scanData;
     if (data == null) {
@@ -350,9 +387,15 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
     } catch (_) {}
 
     if (checkpoint == null) {
+      // The guard is standing at the point right now, so "not found" is not an
+      // answer they can act on. Ask the server which of the several reasons it
+      // is — withdrawn location, post they do not hold, code we do not know —
+      // and show that instead.
+      final verdict = await _explainMissingCheckpoint(code);
+      if (!mounted) return;
       setState(() {
-        _checkpointName = code;
-        _errorMessage = scanProvider.error ?? 'Checkpoint not found in API.';
+        _checkpointName = verdict.name ?? code;
+        _errorMessage = verdict.message;
         _loading = false;
       });
       return;
@@ -1105,64 +1148,79 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
             ],
             if (_errorMessage != null) ...[
               const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Colors.orange.withValues(alpha: 0.25),
-                  ),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(
-                      Icons.info_outline,
-                      color: Colors.orange,
-                      size: 18,
+              // Red when the point itself did not resolve: that scan can never
+              // be recorded and the guard has to act on it. Orange stays for
+              // advisories like a missing GPS fix, where the patrol continues.
+              Builder(
+                builder: (context) {
+                  final blocking = _checkpoint == null;
+                  final tone = blocking ? AppTheme.error : Colors.orange;
+                  return Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: tone.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: tone.withValues(alpha: 0.25)),
                     ),
-                    const SizedBox(width: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          blocking
+                              ? Icons.error_outline_rounded
+                              : Icons.info_outline,
+                          color: tone,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: TextStyle(
+                              color: AppTheme.text,
+                              fontSize: 13,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+              // GPS remedies only belong under a GPS problem. Offering them for
+              // a location the company has withdrawn sends the guard fiddling
+              // with permissions instead of ringing the office.
+              if (_checkpoint != null) ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
                     Expanded(
-                      child: Text(
-                        _errorMessage!,
-                        style: TextStyle(
-                          color: AppTheme.text,
-                          fontSize: 13,
+                      child: OutlinedButton.icon(
+                        onPressed: _retryLocation,
+                        icon: const Icon(Icons.my_location),
+                        label: const Text('Retry GPS'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _openLocationFixSettings,
+                        icon: Icon(
+                          _locationServiceDisabled
+                              ? Icons.location_on_outlined
+                              : Icons.settings,
+                        ),
+                        label: Text(
+                          _locationServiceDisabled
+                              ? 'Location Settings'
+                              : 'App Settings',
                         ),
                       ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _retryLocation,
-                      icon: const Icon(Icons.my_location),
-                      label: const Text('Retry GPS'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _openLocationFixSettings,
-                      icon: Icon(
-                        _locationServiceDisabled
-                            ? Icons.location_on_outlined
-                            : Icons.settings,
-                      ),
-                      label: Text(
-                        _locationServiceDisabled
-                            ? 'Location Settings'
-                            : 'App Settings',
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+              ],
             ],
             const SizedBox(height: 16),
             Container(

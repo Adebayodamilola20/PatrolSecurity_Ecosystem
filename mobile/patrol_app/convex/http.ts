@@ -7,7 +7,7 @@ import bcrypt from "bcryptjs";
 import { signPatrolToken } from "./lib/jwt";
 import { requireAuth } from "./lib/httpAuth";
 import type { SensitiveAction } from "./audit";
-import { badRequest, conflict, errorResponse, forbidden, notFound, serviceUnavailable, tooManyRequests, unauthorized } from "./lib/errors";
+import { badRequest, conflict, errorResponse, forbidden, gone, notFound, serviceUnavailable, tooManyRequests, unauthorized } from "./lib/errors";
 import {
   resolveFileRef,
   resolvePhotoRef,
@@ -326,6 +326,31 @@ async function jsonWithFile(
 ) {
   return json(await withSignedFiles(user, payload), init);
 }
+
+/**
+ * The line a guard reads when they scan a point the company has withdrawn.
+ *
+ * Written for someone standing at a gate in the dark, so it says what happened,
+ * that the scan will not be recorded, and who to call — not "not found".
+ */
+function withdrawnLocationMessage(verdict: {
+  name?: string | null;
+  siteName?: string | null;
+}) {
+  const where = verdict.siteName
+    ? `${verdict.name ?? "This point"} (${verdict.siteName})`
+    : (verdict.name ?? "This location");
+  return `${where} is no longer serviced by the company. Patrols here cannot be recorded. Please contact the office before continuing your shift.`;
+}
+
+const SCAN_LOOKUP_MESSAGES: Record<string, string> = {
+  inactive:
+    "This patrol point has been switched off by the company. Patrols here cannot be recorded. Please contact the office.",
+  not_assigned:
+    "You are not posted to this location, so this scan cannot be recorded. Please contact the office if you were sent here.",
+  unknown:
+    "This QR code is not recognised. Check you scanned a patrol point, or contact the company.",
+};
 
 async function maybeResolveCheckpointId(
   ctx: any,
@@ -746,6 +771,13 @@ function requestIp(request: Request) {
 // `skipGlobal` exempts a route from global shedding (its per-actor limit still
 // applies) — used for safety-critical endpoints like emergency triggers that
 // must go through even when the system is shedding other load.
+// When this isolate last saw the global budget reject a request. Used to decide
+// whether a limiter failure is ordinary write contention (fail open) or part of
+// a flood (fail closed). Per-isolate and best-effort by design: it costs nothing
+// to read, and being wrong only affects a few requests either way.
+let lastGlobalShedAt = 0;
+const SHED_MEMORY_MS = 10_000;
+
 async function enforceLimit(
   ctx: any,
   action: string,
@@ -769,13 +801,23 @@ async function enforceLimit(
     // be the thing that takes a request down — admit it rather than 500. Worst
     // case a few extra requests slip through under contention, which is exactly
     // the regime where a per-actor cap matters least anyway.
+    //
+    // ...unless the system is already shedding. Then contention is the attack,
+    // not a coincidence, and failing open admits exactly the flood the limiter
+    // exists to stop. Shed instead.
+    if (Date.now() - lastGlobalShedAt < SHED_MEMORY_MS) {
+      console.error(`rate limiter failed CLOSED (shedding) for action=${action}:`, err);
+      return serviceUnavailable();
+    }
     console.error(`rate limiter failed open for action=${action}:`, err);
     return null;
   }
   if (result.allowed) return null;
-  return result.scope === "global"
-    ? serviceUnavailable(result.reason, result.retryAfterMs)
-    : tooManyRequests(result.reason, result.retryAfterMs);
+  if (result.scope === "global") {
+    lastGlobalShedAt = Date.now();
+    return serviceUnavailable(result.reason, result.retryAfterMs);
+  }
+  return tooManyRequests(result.reason, result.retryAfterMs);
 }
 
 async function recordAudit(
@@ -1181,14 +1223,16 @@ http.route({
     }
 
     // Rate-limit BEFORE the user lookup so failed attempts against unknown
-    // emails are capped too (credential stuffing / enumeration). Keyed by
-    // email+IP so one attacker can't burn a victim's whole budget from afar,
-    // and one IP can't spray many emails.
-    const loginLimited = await enforceLimit(
-      ctx,
-      "login",
-      `${email}|${requestIp(request) ?? "noip"}`,
-    );
+    // emails are capped too (credential stuffing / enumeration).
+    //
+    // Two buckets, because one is not enough. The email+IP key stops an
+    // attacker burning a victim's budget from afar, but on its own it hands a
+    // single address a fresh budget for every email it invents. The IP-only
+    // bucket is what actually caps the spray.
+    const ip = requestIp(request) ?? "noip";
+    const ipLimited = await enforceLimit(ctx, "loginIp", ip);
+    if (ipLimited) return ipLimited;
+    const loginLimited = await enforceLimit(ctx, "login", `${email}|${ip}`);
     if (loginLimited) return loginLimited;
 
     const user = await ctx.runQuery(internal.users.findByEmail, { email });
@@ -1297,6 +1341,14 @@ http.route({
   path: "/auth/refresh",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
+    // Capped before the token hash runs: an unauthenticated caller must not be
+    // able to buy a bcrypt-class hash plus a lookup for the price of one POST.
+    const refreshLimited = await enforceLimit(
+      ctx,
+      "refresh",
+      requestIp(request) ?? "noip",
+    );
+    if (refreshLimited) return refreshLimited;
     const body = await parseJson(request);
     const raw = String(body?.refreshToken ?? "").trim();
     if (!raw) return unauthorized("Refresh token required");
@@ -1374,6 +1426,12 @@ http.route({
   path: "/auth/logout",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
+    const logoutLimited = await enforceLimit(
+      ctx,
+      "logout",
+      requestIp(request) ?? "noip",
+    );
+    if (logoutLimited) return logoutLimited;
     const body = await parseJson(request);
     const raw = String(body?.refreshToken ?? "").trim();
     if (raw) {
@@ -1502,6 +1560,29 @@ http.route({
     return json(await ctx.runQuery(internal.checkpoints.listForApi, {
       clientId: user.role === "admin" ? undefined : (_cid(user.clientId)),
     }));
+  }),
+});
+
+// Why a scanned code is not in the guard's checkpoint list. The app cannot tell
+// a withdrawn location from stale offline data on its own, and the difference
+// decides whether the guard should retry or ring the office.
+http.route({
+  path: "/checkpoints/lookup",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    const code = new URL(request.url).searchParams.get("code") ?? "";
+    if (!code.trim()) return badRequest("A code is required");
+    const verdict = await ctx.runQuery(internal.checkpoints.lookupForScan, {
+      code,
+      officerId: _uid(user.convexId),
+    });
+    const message =
+      verdict.status === "deleted"
+        ? withdrawnLocationMessage(verdict)
+        : SCAN_LOOKUP_MESSAGES[verdict.status] ?? null;
+    return json({ ...verdict, message });
   }),
 });
 
@@ -1691,7 +1772,19 @@ http.route({
     const body = await parseJson(request);
     const checkpointId = await maybeResolveCheckpointId(ctx, body?.checkpointId);
     if (!checkpointId) {
-      return notFound("Checkpoint not found");
+      // Say which kind of failure this is. A guard standing at a gate that the
+      // company no longer covers must be told to call the office, not left
+      // retrying a scan that can never be accepted.
+      const verdict = await ctx.runQuery(internal.checkpoints.lookupForScan, {
+        code: typeof body?.checkpointId === "string" ? body.checkpointId : "",
+        officerId: _uid(user.convexId),
+      });
+      if (verdict?.status === "deleted") {
+        return gone(withdrawnLocationMessage(verdict));
+      }
+      return notFound(
+        "This QR code is not recognised. Check you scanned a patrol point, or contact the company.",
+      );
     }
     let scan;
     try {
@@ -3552,7 +3645,15 @@ http.route({ path: "/sites", method: "POST", handler: httpAction(async (ctx, req
   return json(result, { status: 201 });
 })});
 
-http.route({ path: "/ai/architecture", method: "GET", handler: httpAction(async (_ctx, _request) => {
+// Describes the AI provider, the tables it can read and every report type the
+// system knows about. That is internal architecture, not public information —
+// it was previously served to anyone who asked.
+http.route({ path: "/ai/architecture", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  if (user.role === "guard") return forbidden("Supervisor access required");
+  const aiLimited = await enforceLimit(ctx, "ai", user.convexId);
+  if (aiLimited) return aiLimited;
   return json({
     provider: {
       name: "NVIDIA NIM Chat Completions",
@@ -3681,6 +3782,12 @@ http.route({
     // Authorization rides in the signed token rather than a Bearer header: an
     // <img> tag cannot set headers, and the alternative — handing out Convex's
     // permanent public storage URLs — is what this whole change exists to kill.
+    const mediaLimited = await enforceLimit(
+      ctx,
+      "media",
+      requestIp(request) ?? "noip",
+    );
+    if (mediaLimited) return mediaLimited;
     const storageId = lastPathPart(request);
     if (!storageId) return notFound("Photo not found");
     const token = new URL(request.url).searchParams.get("token");
@@ -3733,6 +3840,12 @@ http.route({
   pathPrefix: "/files/",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
+    const mediaLimited = await enforceLimit(
+      ctx,
+      "media",
+      requestIp(request) ?? "noip",
+    );
+    if (mediaLimited) return mediaLimited;
     const storageId = lastPathPart(request);
     if (!storageId) return notFound("File not found");
     const token = new URL(request.url).searchParams.get("token");

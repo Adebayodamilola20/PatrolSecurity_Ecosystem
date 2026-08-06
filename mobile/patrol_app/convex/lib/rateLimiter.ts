@@ -35,6 +35,20 @@ type RateLimitConfig = {
 // bursty, emergencies are rare and must never be throttled into uselessness.
 const limits: Record<string, RateLimitConfig> = {
   login: { windowMs: 15 * 60 * 1000, maxRequests: 10 },
+  // Keyed by IP alone, on top of the per-email `login` bucket. Without it one
+  // address can rotate through unlimited emails, getting a fresh 10-attempt
+  // budget for each — which is exactly how credential stuffing is run.
+  loginIp: { windowMs: 15 * 60 * 1000, maxRequests: 50 },
+  // Unauthenticated and not free: every attempt costs a token hash plus a
+  // lookup, so it must be capped before the work is done.
+  refresh: { windowMs: 15 * 60 * 1000, maxRequests: 30 },
+  logout: { windowMs: 60 * 1000, maxRequests: 20 },
+  ai: { windowMs: 60 * 1000, maxRequests: 20 },
+  // Deliberately loose. Keyed by IP because the signed URL carries no user, so
+  // a whole office behind one NAT shares this bucket, and a report page pulls
+  // dozens of photos at once. Still cuts a flood by three orders of magnitude,
+  // and the global budget is the real backstop.
+  media: { windowMs: 60 * 1000, maxRequests: 1200 },
   position: { windowMs: 60 * 1000, maxRequests: 120 },
   scan: { windowMs: 60 * 1000, maxRequests: 30 },
   incident: { windowMs: 60 * 1000, maxRequests: 10 },
