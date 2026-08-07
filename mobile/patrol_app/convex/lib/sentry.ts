@@ -160,12 +160,15 @@ export async function reportException(
       JSON.stringify(event),
     ].join("\n");
 
-    // A slow or unreachable Sentry must not hold a request open. The response
-    // is already an error by the time we get here; two seconds is the cap.
+    // A slow or unreachable Sentry must not hold a request open indefinitely,
+    // but the cap has to clear a cold connection or it drops the first report
+    // after every idle period: measured ~0.9s warm, and the first call also
+    // pays DNS and the TLS handshake. Five seconds leaves real headroom, and
+    // only ever delays a response that is already failing.
     const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(), 2000);
+    const timer = setTimeout(() => abort.abort(), 5000);
     try {
-      await fetch(parsed.envelopeUrl, {
+      const response = await fetch(parsed.envelopeUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/x-sentry-envelope",
@@ -174,6 +177,14 @@ export async function reportException(
         body: envelope,
         signal: abort.signal,
       });
+      // Sentry rejects a bad key or a malformed envelope with a 4xx and an
+      // empty body. Without this the events simply never appear and there is
+      // nothing anywhere saying why.
+      if (!response.ok) {
+        console.error(
+          `Sentry rejected an event: ${response.status} ${response.statusText}`,
+        );
+      }
     } finally {
       clearTimeout(timer);
     }
