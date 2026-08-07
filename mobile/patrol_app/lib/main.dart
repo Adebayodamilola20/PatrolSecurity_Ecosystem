@@ -28,6 +28,7 @@ import 'providers/shift_provider.dart';
 import 'providers/duty_provider.dart';
 import 'services/api_service.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -79,7 +80,7 @@ void main() async {
     // re-arms so a session that dies AFTER a re-login still bounces here.
     Future.delayed(const Duration(seconds: 3), () => loggingOut = false);
   };
-  runApp(
+  void startApp() => runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
@@ -90,7 +91,53 @@ void main() async {
       child: const PatrolApp(),
     ),
   );
+
+  // Crash reporting is opt-in per build. A guard's phone gets no DSN unless one
+  // was baked in, and without it the app starts exactly as before -- Sentry
+  // never sits between the launch path and runApp.
+  if (_sentryDsn.isEmpty) {
+    startApp();
+    return;
+  }
+
+  await SentryFlutter.init(
+    (options) {
+      options.dsn = _sentryDsn;
+      options.environment = _sentryEnvironment;
+      if (_sentryRelease.isNotEmpty) options.release = _sentryRelease;
+      // 100% tracing would exhaust the monthly quota from the phones alone.
+      options.tracesSampleRate = 0.1;
+      // Guards' names, emails, phone numbers and GPS are the whole point of
+      // this app; none of it belongs in a third-party error tracker.
+      options.sendDefaultPii = false;
+      options.beforeSend = (event, hint) {
+        // Signed photo URLs carry a token in the query string, and request
+        // URLs ride along on network breadcrumbs.
+        for (final crumb in event.breadcrumbs ?? const <Breadcrumb>[]) {
+          final url = crumb.data?['url'];
+          if (url is String) crumb.data?['url'] = _scrubUrl(url);
+        }
+        return event;
+      };
+    },
+    appRunner: startApp,
+  );
 }
+
+const _sentryDsn = String.fromEnvironment('SENTRY_DSN');
+const _sentryEnvironment =
+    String.fromEnvironment('SENTRY_ENVIRONMENT', defaultValue: 'production');
+const _sentryRelease = String.fromEnvironment('SENTRY_RELEASE');
+
+final _tokenParam = RegExp(
+  r'([?&](token|access_token|refresh|key|sig)=)[^&]*',
+  caseSensitive: false,
+);
+
+String _scrubUrl(String url) => url.replaceAllMapped(
+  _tokenParam,
+  (match) => '${match.group(1)}[redacted]',
+);
 
 class PatrolApp extends StatefulWidget {
   const PatrolApp({super.key});

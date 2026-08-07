@@ -110,6 +110,25 @@ export function getPhotoUrlTtlSeconds() {
   return positiveNumberEnv("PHOTO_URL_TTL_SECONDS", 600);
 }
 
+/**
+ * Sentry DSN for backend exception reporting.
+ *
+ * Deliberately optional: Convex's own Sentry integration is a Pro-plan feature,
+ * so lib/sentry.ts posts to the ingest API directly instead. Leaving this unset
+ * disables reporting entirely rather than failing a deployment.
+ */
+export function getSentryDsn() {
+  return optionalEnv("SENTRY_DSN");
+}
+
+export function getSentryEnvironment() {
+  return optionalEnv("SENTRY_ENVIRONMENT", process.env.CONVEX_DEPLOYMENT || "unknown");
+}
+
+export function getSentryRelease() {
+  return optionalEnv("SENTRY_RELEASE");
+}
+
 export function validateEnv() {
   getResendApiKey();
   getResendFromEmail();

@@ -1,5 +1,6 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
+import type { ActionCtx } from "./_generated/server";
 import { json, methodNotAllowed, parseJson } from "./lib/http";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -15,6 +16,7 @@ import {
   verifyPhotoToken,
 } from "./lib/photoRefs";
 import { getApiBaseUrl } from "./env";
+import { reportException } from "./lib/sentry";
 
 const _uid = (s: string): Id<"users"> => s as Id<"users">;
 const _cid = (s: string | null | undefined): Id<"clients"> | undefined => (s ?? undefined) as Id<"clients"> | undefined;
@@ -72,6 +74,41 @@ const REPORT_TYPES = [
 ];
 
 const http = httpRouter();
+
+// Route every registration below through exception reporting.
+//
+// Wrapping here rather than at each of the ~100 call sites means a new route is
+// covered the day it is written, with nothing to remember. httpAction stores
+// the undecorated function on `_handler`; if a future Convex release stops
+// doing that we register the route exactly as given, so the API keeps serving
+// and only the reporting is lost.
+const registerRoute = http.route.bind(http);
+http.route = ((spec: Parameters<typeof registerRoute>[0]) => {
+  const rawHandler = (spec.handler as unknown as {
+    _handler?: (ctx: ActionCtx, request: Request) => Promise<Response>;
+  })._handler;
+  if (!rawHandler) return registerRoute(spec);
+
+  const routeLabel = "path" in spec ? spec.path : `${spec.pathPrefix}*`;
+  return registerRoute({
+    ...spec,
+    handler: httpAction(async (ctx, request) => {
+      try {
+        return await rawHandler(ctx, request);
+      } catch (err) {
+        // Report, then rethrow untouched: Convex still logs it and still
+        // returns its own 500, so behaviour is identical with or without a
+        // configured DSN.
+        await reportException(err, {
+          route: routeLabel,
+          method: spec.method,
+          url: request.url,
+        });
+        throw err;
+      }
+    }),
+  });
+}) as typeof http.route;
 
 http.route({
   pathPrefix: "/",
