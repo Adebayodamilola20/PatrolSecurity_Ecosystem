@@ -83,14 +83,12 @@ export const getOperationalSnapshot = internalQuery({
         : ctx.db.query("users").withIndex("by_role", (q) => q.eq("role", "guard"));
 
     let guards = await guardsQuery.take(500);
-    guards = guards.filter((guard) =>
-      isScopedToRequester(requester, {
-        userId: guard._id,
-        clientId: guard.clientId,
-      }),
-    );
 
     if (requester.role === "supervisor") {
+      // Supervisors are scoped by site, but a user row carries no siteId —
+      // guards reach sites through userSiteAssignments — so the generic check
+      // can never match one and would drop every guard. Scope by assignment
+      // instead: a supervisor sees the guards posted to the sites they cover.
       const scopedGuardIds = new Set<Id<"users">>();
       for (const siteId of requester.siteIds) {
         const assignments = await ctx.db
@@ -99,7 +97,23 @@ export const getOperationalSnapshot = internalQuery({
           .take(200);
         for (const assignment of assignments) scopedGuardIds.add(assignment.userId);
       }
-      guards = guards.filter((guard) => scopedGuardIds.has(guard._id));
+      // A supervisor with no sites still sees nobody. The clientId check is
+      // belt-and-braces against a site assigned across tenants; guards
+      // predating clients carry no clientId, so only a mismatch excludes.
+      guards = guards.filter(
+        (guard) =>
+          scopedGuardIds.has(guard._id) &&
+          (!requester.clientId ||
+            !guard.clientId ||
+            guard.clientId === requester.clientId),
+      );
+    } else {
+      guards = guards.filter((guard) =>
+        isScopedToRequester(requester, {
+          userId: guard._id,
+          clientId: guard.clientId,
+        }),
+      );
     }
 
     const guardIds = new Set(guards.map((guard) => guard._id));
