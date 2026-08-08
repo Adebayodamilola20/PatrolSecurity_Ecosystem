@@ -1,5 +1,20 @@
 # System email sender: decided, waiting on DNS
 
+## Shorthand — say one of these and work resumes with no re-explaining
+
+| Say this | What it means | What happens next |
+|---|---|---|
+| **"email: A"** | Chief will add the DNS records | Send the 3 records, then verify, set `RESEND_FROM_EMAIL`, and test delivery to a non-owner address |
+| **"email: B"** | Chief will create the mailbox instead | First confirm the SMTP host/port and that external sending is permitted, then build the `"use node"` action. **Not a config change** |
+| **"email: C"** | Chief is too slow / said no | Register a separate domain (~$15/yr) we control; no code change, Resend stays |
+| **"email: replies yes"** / **"no"** | Whether `reports@` receives replies | "yes" means Chief must create a real mailbox even under option A |
+| **"email: done"** | Records are live in DNS | Verify from here, flip the sender, run a real delivery test |
+
+Everything below is the detail behind those.
+
+---
+
+
 **Status as of 2026-08-08:** address agreed, Resend configured, blocked only on
 three DNS records being added by the domain host.
 
