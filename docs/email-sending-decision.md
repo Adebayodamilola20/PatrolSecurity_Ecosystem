@@ -57,11 +57,49 @@ Worth knowing if EzNetTools query it.
 3. Send a test report and confirm delivery to a non-owner address -- that is the
    thing that has never worked
 
+## Who has to act, and why it is slow
+
+The domain is administered abroad. Every change goes through a contact the
+client calls **Chief**, including creating new email addresses. So this is a
+people bottleneck rather than a technical one, and each round trip is expensive.
+Client replied "noted" on 2026-08-08; nothing has been requested of Chief yet.
+
+Two options were put to him, deliberately in one message so a single round trip
+resolves it either way:
+
+**A — add the three DNS records above.** Preferred. One-time, no code change,
+and Resend then reports which alerts actually delivered.
+
+**B — create `reports@evergreenprotectiveservices.com` as an ordinary mailbox**
+and share the login; the system sends through Ezonline's own server. No DNS
+change at all, their existing SPF already authorises that server, and replies
+land somewhere real.
+
+### If B is chosen, two things must be settled first
+
+1. **It needs a code change.** Convex's default runtime cannot open SMTP
+   connections -- it does HTTP only. Sending through their server needs a
+   `"use node"` action plus an SMTP client. Budget real work, not a config edit.
+2. **Unconfirmed: does that host even allow it?** Many shared hosts refuse SMTP
+   from an outside application. The user chose not to ask this, so it remains an
+   open unknown -- confirm before building anything against option B.
+
+Shared-hosting send limits (often a few hundred per hour) are unlikely to matter
+at this volume, but are worth knowing.
+
+## Fallback if Chief becomes a bottleneck
+
+Register a separate domain (~$15/year) held directly by the team. No dependency
+on anyone abroad, and no code change since Resend stays. The cost is that alerts
+arrive from a domain that is not the company's main one. This is the answer if
+Chief stalls -- not the opening position.
+
 ## Still undecided
 
 Whether `reports@` should **receive** replies. Sending needs no mailbox, but a
 client hitting reply on a report needs somewhere for it to land, or it bounces
 silently. If replies are wanted, EzNetTools must also create the mailbox.
+Option B answers this for free, since it is a real mailbox either way.
 
 ## Why this matters
 

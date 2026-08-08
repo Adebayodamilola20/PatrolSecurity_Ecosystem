@@ -5,7 +5,22 @@ Granular, actionable items. Move finished items to [[Done]]. Big-picture directi
 > Tag owners with agent links: [[Claude_Code]] [[Codex_CLI]] [[Gemini_CLI]] [[OpenCode]] [[Antigravity]]
 
 ## In Progress
-- [ ] **Verify `mail.evergreenprotection.com` in Resend** — waiting on user to add 3 DNS records at Namecheap (see [[Session_2026-08-03_Alert_Delivery]]). Until done, emergency email reaches ONLY adebayodamilola2007@gmail.com; any client/supervisor address 403s. Then: `POST /domains/90d6a603-ebf9-43f9-a45d-cb589648a639/verify` + set `RESEND_FROM_EMAIL=alerts@mail.evergreenprotection.com` on prod.
+- [ ] **Email sender — waiting on Chief (2026-08-08).** Client agreed
+  `reports@evergreenprotectiveservices.com` and replied "noted" to the request.
+  The domain is administered abroad; every change goes through a contact called
+  Chief, so this is a people bottleneck, not a technical one. Two options were
+  put to him — (A) add 3 DNS records, preferred, or (B) create the address as a
+  normal mailbox and share the login, which is a routine request for them.
+  Full detail, records, and next steps: `docs/email-sending-decision.md`.
+  **If (B) is chosen it needs a code change** — Convex's default runtime cannot
+  open SMTP connections, so it would need a `"use node"` action. Also unverified,
+  because the user chose not to ask: whether that host permits an external
+  application to send through it at all. Confirm before building anything.
+  ⚠️ The earlier `mail.evergreenprotection.com` entry was **the wrong domain
+  entirely** (not the company's) and has been deleted from Resend. Correct
+  domain is now `evergreenprotectiveservices.com`,
+  id `93425d78-771c-4f7a-8e3a-efdd674f72c7`. Until this lands, every report and
+  alert reaches only the Resend account owner.
 - [ ] Merge `fix-emergency-alert-delivery` (`d9ed518`) into `main` — already deployed to prod, just not merged.
 - [ ] Rotate `NVIDIA_API_KEY` — still the leaked value; user deferred it 2026-08-03. RESEND + TERMII already rotated.
 - [ ] Uptime monitoring: UptimeRobot (free) + email alerts — runbook written ([[Uptime_Monitoring]]). Waiting on user: sign up + paste 2 Vercel prod URLs.
