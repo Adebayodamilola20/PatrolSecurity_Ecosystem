@@ -97,6 +97,9 @@ export type ReportContext = {
   tags?: Record<string, string>;
 };
 
+/** What became of a report. Returned so a diagnostic can tell these apart. */
+export type ReportOutcome = "sent" | "disabled" | "misconfigured" | "failed";
+
 /**
  * Ships one exception to Sentry. Resolves even when reporting fails, so callers
  * can `await` it on an error path without adding a second failure mode.
@@ -104,14 +107,14 @@ export type ReportContext = {
 export async function reportException(
   error: unknown,
   context: ReportContext = {},
-): Promise<void> {
+): Promise<ReportOutcome> {
   try {
     const dsn = getSentryDsn();
-    if (!dsn) return;
+    if (!dsn) return "disabled";
     const parsed = parseDsn(dsn);
     if (!parsed) {
       console.error("SENTRY_DSN is set but malformed; exception reporting is off");
-      return;
+      return "misconfigured";
     }
 
     const err = error instanceof Error ? error : new Error(String(error));
@@ -165,32 +168,45 @@ export async function reportException(
     // after every idle period: measured ~0.9s warm, and the first call also
     // pays DNS and the TLS handshake. Five seconds leaves real headroom, and
     // only ever delays a response that is already failing.
-    const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(), 5000);
+    //
+    // Feature-detected rather than assumed. Convex runs a custom V8 isolate,
+    // not Node, and its docs guarantee fetch and Web Crypto but say nothing
+    // about setTimeout or AbortController. Going without a timeout is
+    // survivable -- Convex caps function execution itself -- whereas a
+    // ReferenceError here would be swallowed by the catch below and every
+    // backend exception would vanish with nothing explaining why.
+    let signal: AbortSignal | undefined;
     try {
-      const response = await fetch(parsed.envelopeUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-sentry-envelope",
-          "X-Sentry-Auth": `Sentry sentry_version=7, sentry_client=patrol-convex/1.0, sentry_key=${parsed.publicKey}`,
-        },
-        body: envelope,
-        signal: abort.signal,
-      });
-      // Sentry rejects a bad key or a malformed envelope with a 4xx and an
-      // empty body. Without this the events simply never appear and there is
-      // nothing anywhere saying why.
-      if (!response.ok) {
-        console.error(
-          `Sentry rejected an event: ${response.status} ${response.statusText}`,
-        );
+      if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+        signal = AbortSignal.timeout(5000);
       }
-    } finally {
-      clearTimeout(timer);
+    } catch {
+      signal = undefined;
     }
+
+    const response = await fetch(parsed.envelopeUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-sentry-envelope",
+        "X-Sentry-Auth": `Sentry sentry_version=7, sentry_client=patrol-convex/1.0, sentry_key=${parsed.publicKey}`,
+      },
+      body: envelope,
+      ...(signal ? { signal } : {}),
+    });
+    // Sentry rejects a bad key or a malformed envelope with a 4xx and an
+    // empty body. Without this the events simply never appear and there is
+    // nothing anywhere saying why.
+    if (!response.ok) {
+      console.error(
+        `Sentry rejected an event: ${response.status} ${response.statusText}`,
+      );
+      return "failed";
+    }
+    return "sent";
   } catch (reportingError) {
     // Last line of defence: the original error still propagates to the caller
     // and to the Convex logs, we simply failed to forward it.
     console.error("failed to report exception to Sentry:", reportingError);
+    return "failed";
   }
 }

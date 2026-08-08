@@ -37,6 +37,7 @@ import type * as lib_phone from "../lib/phone.js";
 import type * as lib_photoRefs from "../lib/photoRefs.js";
 import type * as lib_rateLimiter from "../lib/rateLimiter.js";
 import type * as lib_reportTemplates from "../lib/reportTemplates.js";
+import type * as lib_sentry from "../lib/sentry.js";
 import type * as lib_tombstones from "../lib/tombstones.js";
 import type * as missedPatrolScheduler from "../missedPatrolScheduler.js";
 import type * as missedPatrols from "../missedPatrols.js";
@@ -95,6 +96,7 @@ declare const fullApi: ApiFromModules<{
   "lib/photoRefs": typeof lib_photoRefs;
   "lib/rateLimiter": typeof lib_rateLimiter;
   "lib/reportTemplates": typeof lib_reportTemplates;
+  "lib/sentry": typeof lib_sentry;
   "lib/tombstones": typeof lib_tombstones;
   missedPatrolScheduler: typeof missedPatrolScheduler;
   missedPatrols: typeof missedPatrols;

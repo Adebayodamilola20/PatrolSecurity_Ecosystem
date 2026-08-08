@@ -893,6 +893,47 @@ http.route({
   ),
 });
 
+// Proves the exception pipeline is alive without waiting for a real outage.
+//
+// Monitoring that has quietly stopped working is indistinguishable from
+// monitoring with nothing to report, and on this system the difference matters.
+// Sends one synthetic event and reports what became of it, so "sent" can be
+// told apart from "the DSN is unset" and from "the isolate cannot reach
+// Sentry". Deliberately does not throw: it verifies the reporter, not the
+// wrapper, and a route that 500s on demand is not something to leave in prod.
+http.route({
+  path: "/diagnostics/sentry",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    const roleErr = requireRole(user, ["admin"]);
+    if (roleErr) return roleErr;
+
+    const outcome = await reportException(
+      new Error("Sentry diagnostic check - triggered deliberately, safe to resolve"),
+      {
+        route: "/diagnostics/sentry",
+        method: "POST",
+        userId: user.convexId,
+        tags: { diagnostic: "true" },
+      },
+    );
+
+    return json({
+      outcome,
+      reporting: outcome === "sent" ? "working" : "not working",
+      hint: {
+        disabled: "SENTRY_DSN is not set on this deployment",
+        misconfigured: "SENTRY_DSN is set but is not a valid DSN",
+        failed: "Sentry rejected the event or was unreachable; see Convex logs",
+        sent: "Check the patrol-convex project for a 'Sentry diagnostic check' issue",
+      }[outcome],
+      timestamp: new Date().toISOString(),
+    });
+  }),
+});
+
 http.route({
   path: "/ai/chat",
   method: "POST",
