@@ -46,7 +46,11 @@ function isScopedToRequester(
   requester: { userId: Id<"users">; role: string; clientId?: Id<"clients">; siteIds: Id<"sites">[] },
   item: { userId?: Id<"users">; clientId?: Id<"clients">; siteId?: Id<"sites"> },
 ) {
-  if (requester.role === "admin") return true;
+  // Supervisors are unscoped staff, the same as admins. That is the rule the
+  // REST layer already applies -- see the admin/supervisor pairing throughout
+  // http.ts -- and AI chat answering more narrowly than the endpoints behind
+  // it made the two disagree about what one role can see.
+  if (requester.role === "admin" || requester.role === "supervisor") return true;
   if (requester.role === "main_account") return !!requester.clientId && item.clientId === requester.clientId;
   if (requester.role === "guard") return item.userId === requester.userId;
   return !!item.siteId && requester.siteIds.includes(item.siteId);
@@ -83,38 +87,12 @@ export const getOperationalSnapshot = internalQuery({
         : ctx.db.query("users").withIndex("by_role", (q) => q.eq("role", "guard"));
 
     let guards = await guardsQuery.take(500);
-
-    if (requester.role === "supervisor") {
-      // Supervisors are scoped by site, but a user row carries no siteId —
-      // guards reach sites through userSiteAssignments — so the generic check
-      // can never match one and would drop every guard. Scope by assignment
-      // instead: a supervisor sees the guards posted to the sites they cover.
-      const scopedGuardIds = new Set<Id<"users">>();
-      for (const siteId of requester.siteIds) {
-        const assignments = await ctx.db
-          .query("userSiteAssignments")
-          .withIndex("by_siteId", (q) => q.eq("siteId", siteId))
-          .take(200);
-        for (const assignment of assignments) scopedGuardIds.add(assignment.userId);
-      }
-      // A supervisor with no sites still sees nobody. The clientId check is
-      // belt-and-braces against a site assigned across tenants; guards
-      // predating clients carry no clientId, so only a mismatch excludes.
-      guards = guards.filter(
-        (guard) =>
-          scopedGuardIds.has(guard._id) &&
-          (!requester.clientId ||
-            !guard.clientId ||
-            guard.clientId === requester.clientId),
-      );
-    } else {
-      guards = guards.filter((guard) =>
-        isScopedToRequester(requester, {
-          userId: guard._id,
-          clientId: guard.clientId,
-        }),
-      );
-    }
+    guards = guards.filter((guard) =>
+      isScopedToRequester(requester, {
+        userId: guard._id,
+        clientId: guard.clientId,
+      }),
+    );
 
     const guardIds = new Set(guards.map((guard) => guard._id));
 
@@ -128,6 +106,7 @@ export const getOperationalSnapshot = internalQuery({
         : await ctx.db.query("sites").take(500);
     scopedSites = scopedSites.filter((site) =>
       requester.role === "admin" ||
+      requester.role === "supervisor" ||
       (requester.role === "main_account" && site.clientId === requester.clientId) ||
       requester.siteIds.includes(site._id),
     );
