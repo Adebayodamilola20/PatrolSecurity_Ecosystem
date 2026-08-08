@@ -1,70 +1,70 @@
-# Pending decision: what address does the system send email from?
+# System email sender: decided, waiting on DNS
 
-**Status:** blocked on the client. Asked 2026-08-08, awaiting an answer.
+**Status as of 2026-08-08:** address agreed, Resend configured, blocked only on
+three DNS records being added by the domain host.
 
-## Where this stands today
+## The decision
 
-Resend has **no verified domain**, so the system falls back to Resend's shared
-`onboarding@resend.dev` sender. That address only delivers **to the Resend
-account owner**. Every report email and emergency alert addressed to a client or
-a guard is currently going nowhere, silently — no bounce, no error.
+The system sends as **`reports@evergreenprotectiveservices.com`**, confirmed by
+the client. A dedicated system address, not a company mailbox and not Gmail.
 
-Everything else is built and working. This is the only thing standing between
-the alerting system and real delivery.
+## The domain confusion this resolved
 
-## The question that was asked
+Two similar domains exist and the first attempt used the wrong one:
 
-> Should the system send reports and alerts from the existing company Gmail
-> address, or does the company have a separate domain/email for the system?
+| Domain | Reality |
+|---|---|
+| `evergreenprotection.com` | **Not the company's.** Namecheap nameservers, mail via `jellyfish.systems` |
+| `evergreenprotectiveservices.com` | **The company domain.** Own nameservers, mail via `ezmail.evergreenprotectiveservices.com`, SPF references `plesk04.eznettools.net` |
 
-## The catch in that question
+`eznettools.net` is what the client calls "Ezonline" -- they host the domain,
+its DNS, and the company mailboxes. A Resend domain for
+`mail.evergreenprotection.com` had been created and could never have verified,
+because that domain is not theirs. It has been deleted.
 
-**"Just use our Gmail" is not directly buildable.** Resend sends on behalf of a
-domain you own and prove you own, via DNS records. Nobody can add DNS records to
-`gmail.com`, so a plain `something@gmail.com` sender cannot be verified.
+## Current Resend state
 
-If the answer comes back "use our Gmail", the real follow-up is: *does the
-company own a domain at all?* — because that decides which option below applies.
+- Domain `evergreenprotectiveservices.com`, id `93425d78-771c-4f7a-8e3a-efdd674f72c7`
+- Status `not_started` -- waiting on DNS
+- The free plan allows exactly **one** domain, which is why the wrong entry had
+  to be removed before the right one could be added
 
-## The three viable options
+## The three records Ezonline/EzNetTools must add
 
-**1. Company owns a domain (best).**
-Add three DNS records at the registrar and verify in Resend. Sends as
-`reports@theirdomain.com`. Best deliverability, looks professional, scales.
-Cost: nothing beyond the domain they already pay for.
+Host values are **relative** to the domain -- entered as written, not as full
+hostnames.
 
-**2. Company has no domain.**
-They buy one (~$10–15/year). Same as option 1 from there. Worth pushing for —
-a security company emailing clients from a free address undercuts trust, and
-this is a one-time setup.
+| Type | Host | Priority | Value |
+|---|---|---|---|
+| TXT | `resend._domainkey` | — | `p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDb+Th0bjsgxLAqKmI9IrYUkoH6xFMSf1QA8cu7OBzxYQV1HXdbEmy6d1w1NfT1yKIjeMi4kUMh0P50hfDbbNzurnQC0z8KmqUMh61X+f+T1zxoP9gfxq5k6ZsjoIUVHo135+Q73n5nDH1NIvI45nSnl68foB/SR0zwpVH1ARXiqwIDAQAB` |
+| MX | `send` | 10 | `feedback-smtp.us-east-1.amazonses.com` |
+| TXT | `send` | — | `v=spf1 include:amazonses.com ~all` |
 
-**3. Genuinely must send from Gmail.**
-Requires dropping Resend for Gmail SMTP with an app password. Caveats worth
-stating plainly: ~500 emails/day cap, higher spam-folder risk for bulk/
-transactional mail, and the credential is a standing password rather than a
-revocable API key. This is a real code change, not a config change.
+**These cannot break the existing company email.** Every record sits under
+`send.` or `resend._domainkey.`, never on the root, so the existing root MX
+(`ezmail.…`) and mailboxes are untouched.
 
-## Once there is an answer
+The root SPF ends in `-all` (hard fail), stricter than usual. It does not
+conflict: Resend's envelope sender is `send.evergreenprotectiveservices.com`,
+which carries its own SPF, so the root rule is never evaluated for this mail.
+Worth knowing if EzNetTools query it.
 
-For options 1 and 2, everything needed is already in place:
+## Once the records are live
 
-1. Resend dashboard → Domains → add the domain → it shows three records
-2. At the registrar (Namecheap for `evergreenprotection.com`) → Advanced DNS.
-   The Host field is **relative** to the domain — enter `resend._domainkey.mail`
-   and `send.mail` exactly, without appending the domain. Namecheap adds it, and
-   appending it yourself is the usual reason verification fails.
-3. Reveal each full value with the `[...]` toggle; truncated values never verify
-4. Verify in Resend, then set `RESEND_FROM_EMAIL` on the Convex prod deployment:
-   `npx convex env set RESEND_FROM_EMAIL "reports@theirdomain.com" --prod`
+1. Verify in Resend (dashboard, or `POST /domains/<id>/verify`)
+2. Point the backend at the new sender:
+   `npx convex env set RESEND_FROM_EMAIL "reports@evergreenprotectiveservices.com" --prod`
+3. Send a test report and confirm delivery to a non-owner address -- that is the
+   thing that has never worked
 
-Alert recipients themselves live in the `communicationSettings` table, not in
-environment variables.
+## Still undecided
 
-## Prior attempt
+Whether `reports@` should **receive** replies. Sending needs no mailbox, but a
+client hitting reply on a report needs somewhere for it to land, or it bounces
+silently. If replies are wanted, EzNetTools must also create the mailbox.
 
-A domain `mail.evergreenprotection.com` was added in Resend
-(id `90d6a603-ebf9-43f9-a45d-cb589648a639`) but its three records were never
-added at Namecheap — all three read "Failed", and a DNS lookup on 2026-08-08
-confirmed none of them exist. If that domain is the answer, the work is just
-step 2 above. If the company uses a different domain, delete this one from
-Resend first so it stops showing as failed.
+## Why this matters
+
+Until this is done, Resend falls back to the shared `onboarding@resend.dev`
+sender, which delivers **only to the Resend account owner**. Every report and
+emergency alert aimed at a client or guard is silently going nowhere.
