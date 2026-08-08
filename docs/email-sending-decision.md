@@ -1,16 +1,28 @@
 # System email sender: decided, waiting on DNS
 
-## Shorthand — say one of these and work resumes with no re-explaining
+## Resuming this later
 
-| Say this | What it means | What happens next |
-|---|---|---|
-| **"email: A"** | Chief will add the DNS records | Send the 3 records, then verify, set `RESEND_FROM_EMAIL`, and test delivery to a non-owner address |
-| **"email: B"** | Chief will create the mailbox instead | First confirm the SMTP host/port and that external sending is permitted, then build the `"use node"` action. **Not a config change** |
-| **"email: C"** | Chief is too slow / said no | Register a separate domain (~$15/yr) we control; no code change, Resend stays |
-| **"email: replies yes"** / **"no"** | Whether `reports@` receives replies | "yes" means Chief must create a real mailbox even under option A |
-| **"email: done"** | Records are live in DNS | Verify from here, flip the sender, run a real delivery test |
+The answer will land days from now in a one-line message. This is the paragraph
+the user sends to restart the work, with the last sentence filled in:
 
-Everything below is the detail behind those.
+> We were finishing the email setup for the Patrol system. Sentry is completely
+> done and proven across all four surfaces, so email is the only thing left.
+> Right now report emails and emergency alerts only reach me, because Resend has
+> no verified domain and falls back to their shared sender, so anything aimed at
+> a client or a guard silently goes nowhere. We worked out that the company's
+> real domain is evergreenprotectiveservices.com, managed by Ezonline, and that
+> the earlier setup had been built against evergreenprotection.com, which is a
+> different domain that isn't theirs and could never have verified. That wrong
+> one was deleted and the correct domain is registered in Resend now, waiting on
+> DNS. The agreed sending address is reports@evergreenprotectiveservices.com.
+> The domain is administered abroad and every change goes through a contact
+> called Chief, so I put two options to the AGM: Option A, add the three DNS
+> records, or Option B, create the address as an ordinary mailbox and share the
+> login. He said noted and went away to decide. **He has now picked ___.**
+
+If option B, the SMTP host, port and password are needed too, and the question
+of whether that server permits an external application to send is still open --
+the user is only asking it if B is chosen.
 
 ---
 
