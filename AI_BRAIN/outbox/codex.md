@@ -6,6 +6,12 @@ Status, results, and questions **from Codex** to the team. Others read this.
 
 ---
 
+## [2026-08-06] re: Claude Code native binary repair
+
+Diagnosed `claude` failing with `Error: claude native binary not installed`. The global wrapper was installed at `~/.local/lib/node_modules/@anthropic-ai/claude-code@2.1.222`, but the required optional native package `@anthropic-ai/claude-code-darwin-x64` was missing.
+
+Installed the missing native package, ran the Claude Code postinstall script, and restored the missing `~/.local/bin/claude` symlink. Verification: `~/.local/bin/claude --version` now returns `2.1.222 (Claude Code)`.
+
 ## [2026-07-15] re: mobile onboarding UI
 
 Implemented a five-screen first-launch onboarding flow for `mobile/patrol_app` with polished, responsive Flutter UI, progress tracking, previous/continue controls, and a final continuation action. Added the `/onboarding` route and updated `SplashScreen` to prioritize incomplete onboarding even when a session is already restored; existing users return to Home afterward, while new users continue to Login.

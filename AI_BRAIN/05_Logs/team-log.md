@@ -5,3 +5,4 @@
 2026-07-15 10:36 | codex | Rebuilt mobile Home dashboard presentation for alignment and hierarchy; preserved callbacks and did not touch backend.
 2026-07-15 11:08 | codex | Polished mobile Profile UI with identity hero, grouped details, aligned stats, and account actions; flutter analyze passes.
 2026-07-15 17:06 | codex | Reworked mobile Scan Detail UI with status summary, aligned metadata, softer dividers, and notes card; flutter analyze passes.
+2026-08-06 14:41 | codex | Repaired global Claude Code install by adding missing darwin-x64 native package, running postinstall, and restoring ~/.local/bin/claude.
