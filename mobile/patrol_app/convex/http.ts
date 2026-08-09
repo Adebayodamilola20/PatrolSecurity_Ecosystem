@@ -2639,16 +2639,26 @@ http.route({
       if (claimed instanceof Response) return claimed;
       photoStorageId = claimed.storageId;
     }
-    const result = await ctx.runMutation(internal.handovers.create, {
-      userId: _uid(user.convexId),
-      summary,
-      openIssues: typeof body?.openIssues === "string" ? body.openIssues : undefined,
-      equipmentStatus:
-        typeof body?.equipmentStatus === "string" ? body.equipmentStatus : undefined,
-      siteLabel: typeof body?.siteLabel === "string" ? body.siteLabel : undefined,
-      photoStorageId,
-      checkpointId,
-    });
+    let result;
+    try {
+      result = await ctx.runMutation(internal.handovers.create, {
+        userId: _uid(user.convexId),
+        summary,
+        openIssues: typeof body?.openIssues === "string" ? body.openIssues : undefined,
+        equipmentStatus:
+          typeof body?.equipmentStatus === "string" ? body.equipmentStatus : undefined,
+        siteLabel: typeof body?.siteLabel === "string" ? body.siteLabel : undefined,
+        photoStorageId,
+        checkpointId,
+      });
+    } catch (err) {
+      // The scope check lives in the mutation, next to the insert. Same shape
+      // as the scan route: turn its refusal into an answer the app can show.
+      if (err instanceof Error && err.message.includes("not posted to this location")) {
+        return forbidden("You are not posted to this location");
+      }
+      throw err;
+    }
     if (photoStorageId) {
       await attachPhotos(ctx, user, [photoStorageId], "handovers", String(result.id));
     }

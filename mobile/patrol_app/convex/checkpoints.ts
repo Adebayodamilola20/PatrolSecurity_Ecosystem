@@ -1,6 +1,7 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { findDeletedCheckpoint, recordTombstone } from "./lib/tombstones";
+import { isAssignedToSite, isAssignedUnderClient } from "./lib/authHelpers";
 
 export const list = internalQuery({
   args: {
@@ -257,17 +258,46 @@ export const lookupForScan = internalQuery({
       all?.find((c) => c._id === raw || c.code === raw) ??
       null;
 
+    // [info-disclosure] Nameless on purpose, and the reason every refusal below
+    // is shaped the same way. A guard holding a code they are not posted to
+    // must learn that the scan cannot be recorded — not which company or
+    // location the code belongs to. Anything else turns a printed QR into a
+    // lookup service for another tenant's site names. The app renders the
+    // message on its own when these are null.
+    const refused = {
+      status: "not_assigned" as const,
+      name: null,
+      siteName: null,
+    };
+
     if (!checkpoint) {
       const tombstone = await findDeletedCheckpoint(ctx, raw);
       if (tombstone) {
+        // Deleting a location deletes its checkpoints and its assignments
+        // together, so by the time this row is a tombstone there is nothing
+        // left to check a guard against. The verdict still tells them to ring
+        // the office, which is the part of it they act on; the name is dropped
+        // because it cannot be shown to the right people only.
         return {
           status: "deleted" as const,
-          name: tombstone.name,
-          siteName: tombstone.contextName ?? null,
+          name: null,
+          siteName: null,
           deletedAt: new Date(tombstone.deletedAt).toISOString(),
         };
       }
       return { status: "unknown" as const };
+    }
+
+    // Scope first. Withdrawn, switched off and working are all facts about
+    // somebody's location, so the caller has to be posted there before any of
+    // them is an answer they are entitled to.
+    if (args.officerId) {
+      const posted = checkpoint.siteId
+        ? await isAssignedToSite(ctx, args.officerId, checkpoint.siteId)
+        : checkpoint.clientId
+          ? await isAssignedUnderClient(ctx, args.officerId, checkpoint.clientId)
+          : true;
+      if (!posted) return refused;
     }
 
     const site = checkpoint.siteId ? await ctx.db.get(checkpoint.siteId) : null;
@@ -287,27 +317,6 @@ export const lookupForScan = internalQuery({
         name: checkpoint.name,
         siteName: site?.name ?? null,
       };
-    }
-
-    if (args.officerId && checkpoint.siteId) {
-      const assignment = await ctx.db
-        .query("userSiteAssignments")
-        .withIndex("by_userId_siteId", (q) =>
-          q.eq("userId", args.officerId!).eq("siteId", checkpoint.siteId!),
-        )
-        .first();
-      if (!assignment) {
-        // [info-disclosure] Deliberately nameless. A guard holding a QR code
-        // they are not posted to must learn that the scan cannot be recorded,
-        // not which company or location the code belongs to — otherwise any
-        // printed code is a lookup service for another tenant's site names.
-        // The app renders the message alone when these are null.
-        return {
-          status: "not_assigned" as const,
-          name: null,
-          siteName: null,
-        };
-      }
     }
 
     return {

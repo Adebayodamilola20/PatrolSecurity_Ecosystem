@@ -2,6 +2,7 @@ import { internalMutation, internalQuery } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { v } from "convex/values";
+import { isAssignedToSite, isAssignedUnderClient } from "./lib/authHelpers";
 
 const handoverStatus = v.union(
   v.literal("pending"),
@@ -41,14 +42,8 @@ export async function handoverRefusalReason(
   if (handover.clientId && actor.clientId && handover.clientId !== actor.clientId) {
     return "This handover belongs to another company";
   }
-  if (handover.siteId) {
-    const assignment = await ctx.db
-      .query("userSiteAssignments")
-      .withIndex("by_userId_siteId", (q) =>
-        q.eq("userId", actor.userId).eq("siteId", handover.siteId!),
-      )
-      .first();
-    if (!assignment) return "You are not posted to this location";
+  if (handover.siteId && !(await isAssignedToSite(ctx, actor.userId, handover.siteId))) {
+    return "You are not posted to this location";
   }
   return null;
 }
@@ -184,6 +179,23 @@ export const create = internalMutation({
     const checkpoint = args.checkpointId
       ? await ctx.db.get(args.checkpointId)
       : null;
+    // [tenant-isolation] The checkpoint id arrives in the request body and it
+    // is what decides the company and location this handover is filed under.
+    // A guard who swapped it could post a shift note into another customer's
+    // records and stand in their handover list as the outgoing officer, so the
+    // same rule the scan path enforces applies: you may only file where you
+    // are posted. Without a checkpoint the scope comes from the guard's own
+    // shift and there is nothing to forge.
+    if (checkpoint && user?.role !== "admin" && user?.role !== "supervisor") {
+      const posted = checkpoint.siteId
+        ? await isAssignedToSite(ctx, args.userId, checkpoint.siteId)
+        : checkpoint.clientId
+          ? await isAssignedUnderClient(ctx, args.userId, checkpoint.clientId)
+          : true;
+      if (!posted) {
+        throw new Error("Access denied: you are not posted to this location");
+      }
+    }
     const now = Date.now();
     const id = await ctx.db.insert("handovers", {
       clientId: checkpoint?.clientId ?? activeShift?.clientId ?? user?.clientId,

@@ -4,7 +4,10 @@
   "type": "module",
   "scripts": {
     "convex:dev": "convex dev",
-    "convex:deploy": "convex deploy"
+    "convex:deploy": "convex deploy",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p convex/tsconfig.json"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
@@ -13,6 +16,9 @@
     "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
-    "typescript": "^5.8.3"
+    "@edge-runtime/vm": "^5.0.0",
+    "convex-test": "^0.0.55",
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.10"
   }
 }
