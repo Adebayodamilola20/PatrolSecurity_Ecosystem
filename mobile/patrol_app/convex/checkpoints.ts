@@ -297,10 +297,15 @@ export const lookupForScan = internalQuery({
         )
         .first();
       if (!assignment) {
+        // [info-disclosure] Deliberately nameless. A guard holding a QR code
+        // they are not posted to must learn that the scan cannot be recorded,
+        // not which company or location the code belongs to — otherwise any
+        // printed code is a lookup service for another tenant's site names.
+        // The app renders the message alone when these are null.
         return {
           status: "not_assigned" as const,
-          name: checkpoint.name,
-          siteName: site?.name ?? null,
+          name: null,
+          siteName: null,
         };
       }
     }

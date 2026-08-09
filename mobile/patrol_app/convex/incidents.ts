@@ -3,6 +3,12 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { deletedNamesByType } from "./lib/tombstones";
 
+const incidentStatus = v.union(
+  v.literal("open"),
+  v.literal("investigating"),
+  v.literal("resolved"),
+);
+
 const incidentCategory = v.union(
   v.literal("Security Incident"),
   v.literal("Theft"),
@@ -129,9 +135,28 @@ export const listForApi = internalQuery({
   },
 });
 
+// [authz] Closing an incident is a control-room decision about someone else's
+// record, so the actor travels with the request and is checked here as well as
+// at the route. An internal mutation is a second door into the same row: the
+// route in front of it today has the check, the caller written next year may
+// not, and by then this row is a client's audit trail.
 export const updateStatus = internalMutation({
-  args: { incidentId: v.id("incidents"), status: v.string() },
+  args: {
+    incidentId: v.id("incidents"),
+    status: incidentStatus,
+    actorRole: v.string(),
+    actorClientId: v.optional(v.id("clients")),
+  },
   handler: async (ctx, args) => {
+    const incident = await ctx.db.get(args.incidentId);
+    if (!incident) throw new Error("Incident not found");
+    // Staff are unscoped by design (see the supervisor decision, 2026-08-08).
+    // Everyone else may only touch incidents belonging to their own client.
+    if (args.actorRole !== "admin" && args.actorRole !== "supervisor") {
+      if (!args.actorClientId || incident.clientId !== args.actorClientId) {
+        throw new Error("Access denied: cannot change this incident's status");
+      }
+    }
     const patch: any = { status: args.status };
     if (args.status === "resolved") patch.resolvedAt = Date.now();
     await ctx.db.patch(args.incidentId, patch);
@@ -172,16 +197,26 @@ export const missedPatrols = internalQuery({
   },
 });
 
-export const resolveId = internalQuery({
+// Resolves a caller-supplied id (legacy or Convex) to the row, and hands back
+// exactly the fields an authorization decision needs. Returning the scope with
+// the id is what lets the route answer 403 instead of 500 — the mutation still
+// re-checks, but the caller gets a straight answer.
+export const resolveForAuth = internalQuery({
   args: { id: v.string() },
   handler: async (ctx, args) => {
     const byLegacyId = await ctx.db
       .query("incidents")
       .withIndex("by_legacyId", (q) => q.eq("legacyId", args.id))
       .unique();
-    if (byLegacyId) return byLegacyId._id;
-    const all = await ctx.db.query("incidents").collect();
-    return all.find(i => i._id === args.id)?._id ?? null;
+    const normalized = ctx.db.normalizeId("incidents", args.id);
+    const incident = byLegacyId ?? (normalized ? await ctx.db.get(normalized) : null);
+    if (!incident) return null;
+    return {
+      id: incident._id,
+      clientId: incident.clientId ?? null,
+      siteId: incident.siteId ?? null,
+      officerId: incident.officerId,
+    };
   },
 });
 

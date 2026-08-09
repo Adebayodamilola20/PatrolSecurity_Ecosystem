@@ -51,6 +51,10 @@ const INCIDENT_CATEGORIES = [
   "Other",
 ] as const;
 
+const INCIDENT_STATUSES = ["open", "investigating", "resolved"] as const;
+
+const HANDOVER_STATUSES = ["pending", "accepted", "closed"] as const;
+
 const EMERGENCY_TYPES = [
   "Armed Attack",
   "Medical Emergency",
@@ -450,6 +454,35 @@ function isExportRole(role: string) {
 function requireRole(user: { role: string }, roles: string[]): Response | null {
   if (roles.includes(user.role)) return null;
   return forbidden(`Access denied. Required role: ${roles.join(" or ")}`);
+}
+
+// [tenant-isolation] Route-side mirror of `handoverRefusalReason` in
+// handovers.ts, using the site assignments already carried on the profile so
+// the caller gets a real status code. The mutation repeats the checks against
+// the database — this one exists to answer well, not to be the only guard.
+function handoverAcceptRefusal(
+  user: { role: string; convexId: string; clientId: string | null; siteIds: string[] },
+  handover: {
+    status: string;
+    toUserId: string | null;
+    clientId: string | null;
+    siteId: string | null;
+  },
+): Response | null {
+  if (user.role === "admin" || user.role === "supervisor") return null;
+  if (handover.status !== "pending") {
+    return conflict("This handover has already been accepted or closed");
+  }
+  if (handover.toUserId && handover.toUserId !== user.convexId) {
+    return forbidden("This handover was passed to another guard");
+  }
+  if (handover.clientId && user.clientId && handover.clientId !== user.clientId) {
+    return forbidden("This handover belongs to another company");
+  }
+  if (handover.siteId && !user.siteIds.includes(handover.siteId)) {
+    return forbidden("You are not posted to this location");
+  }
+  return null;
 }
 
 function csvList(value: string | null) {
@@ -1578,6 +1611,12 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    // [info-disclosure] These rows are the escalation roster — the managers'
+    // inboxes and mobile numbers that emergencies and missed patrols are sent
+    // to. Reading it is as sensitive as changing it, so it matches the POST
+    // below and the admin-only /settings page that is its only caller.
+    const roleErr = requireRole(user, ["admin"]);
+    if (roleErr) return roleErr;
     return json(await ctx.runQuery(internal.settings.list, {}));
   }),
 });
@@ -2573,7 +2612,11 @@ http.route({
     if (!user) return unauthorized();
     return await jsonWithPhotos(
       user,
-      await ctx.runQuery(internal.handovers.listPendingForUser, { userId: _uid(user.convexId) }),
+      await ctx.runQuery(internal.handovers.listPendingForUser, {
+        userId: _uid(user.convexId),
+        role: user.role,
+        clientId: _cid(user.clientId),
+      }),
     );
   }),
 });
@@ -2630,15 +2673,37 @@ http.route({
     if (!id) return badRequest("Handover ID required");
     const body = await parseJson(request);
     if (action === "accept") {
-      const handoverId = await ctx.runQuery(internal.handovers.resolveId, { id });
-      if (!handoverId) return notFound("Handover not found");
-      return json(await ctx.runMutation(internal.handovers.accept, { handoverId, userId: _uid(user.convexId), acceptedNote: typeof body?.acceptedNote === "string" ? body.acceptedNote : undefined }));
+      const handover = await ctx.runQuery(internal.handovers.resolveForAuth, { id });
+      if (!handover) return notFound("Handover not found");
+      // [authz] Taking over a post is the incoming guard's action, and the
+      // record of who took it is evidence. The mutation refuses the same
+      // cases; this is here so a guard sees a 403 or 409 instead of a 500.
+      const refusal = handoverAcceptRefusal(user, handover);
+      if (refusal) return refusal;
+      return json(await ctx.runMutation(internal.handovers.accept, {
+        handoverId: handover.id,
+        userId: _uid(user.convexId),
+        acceptedNote: typeof body?.acceptedNote === "string" ? body.acceptedNote : undefined,
+        actorRole: user.role,
+        actorClientId: _cid(user.clientId),
+      }));
     }
     if (action === "status") {
-      const handoverId = await ctx.runQuery(internal.handovers.resolveId, { id });
-      if (!handoverId) return notFound("Handover not found");
+      // [authz] The only caller is the staff Handovers page. A guard reaching
+      // it could previously close any handover in the database by id.
+      const roleErr = requireRole(user, ["admin", "supervisor"]);
+      if (roleErr) return roleErr;
+      const handover = await ctx.runQuery(internal.handovers.resolveForAuth, { id });
+      if (!handover) return notFound("Handover not found");
+      const status = String(body?.status ?? "closed");
+      if (!HANDOVER_STATUSES.includes(status as (typeof HANDOVER_STATUSES)[number])) {
+        return badRequest(`status must be one of: ${HANDOVER_STATUSES.join(", ")}`);
+      }
       const updated = await ctx.runMutation(internal.handovers.updateStatus, {
-        handoverId, status: String(body?.status ?? "closed"),
+        handoverId: handover.id,
+        status: status as (typeof HANDOVER_STATUSES)[number],
+        actorRole: user.role,
+        actorClientId: _cid(user.clientId),
       });
       return json(updated);
     }
@@ -3186,11 +3251,24 @@ http.route({ pathPrefix: "/incidents/", method: "PATCH", handler: httpAction(asy
   const id = lastPathPart(request, 1);
   const action = lastPathPart(request);
   if (!id || action !== "status") return notFound("Incident route not found");
-  const incidentId = await ctx.runQuery(internal.incidents.resolveId, { id });
-  if (!incidentId) return notFound("Incident not found");
+  // [authz] Resolving an incident is the control room's call, and its only
+  // caller is the staff Alerts page. Being logged in was the whole check here
+  // before, which let any guard close — or re-open — any incident in the
+  // database by id, including another company's.
+  const roleErr = requireRole(user, ["admin", "supervisor"]);
+  if (roleErr) return roleErr;
+  const incident = await ctx.runQuery(internal.incidents.resolveForAuth, { id });
+  if (!incident) return notFound("Incident not found");
   const body = await parseJson(request);
+  const status = String(body?.status ?? "open");
+  if (!INCIDENT_STATUSES.includes(status as (typeof INCIDENT_STATUSES)[number])) {
+    return badRequest(`status must be one of: ${INCIDENT_STATUSES.join(", ")}`);
+  }
   return json(await ctx.runMutation(internal.incidents.updateStatus, {
-    incidentId, status: String(body?.status ?? "open"),
+    incidentId: incident.id,
+    status: status as (typeof INCIDENT_STATUSES)[number],
+    actorRole: user.role,
+    actorClientId: _cid(user.clientId),
   }));
 })});
 
