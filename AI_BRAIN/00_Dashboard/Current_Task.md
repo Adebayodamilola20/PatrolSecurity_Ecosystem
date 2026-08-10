@@ -119,9 +119,20 @@
    Also: `/auth/reset-password` still a stub; forgot-password sends no real email.
 
 ## Key facts / credentials (dev)
-- Deploy ONLY with `npx convex dev --once` from `~/Desktop/PatrolSecurity_Ecosystem/mobile/patrol_app`
-  (NEVER `convex deploy`, NEVER from the stale `~/PatrolSecurity_Ecosystem` home clone).
-- API base: `https://resilient-buffalo-226.convex.site/api/v1`.
+- **The repo moved on 2026-08-10.** It is now `~/dev/PatrolSecurity_Ecosystem` — it was
+  on the iCloud-synced Desktop, which was corrupting the git object store and every
+  `node_modules`. Never work in `~/Desktop/PatrolSecurity_Ecosystem` (left in place as
+  a fallback) or the stale `~/PatrolSecurity_Ecosystem` home clone.
+- Push to **dev** with `npx convex dev --once` from
+  `~/dev/PatrolSecurity_Ecosystem/mobile/patrol_app` → `resilient-buffalo-226`.
+- **Production is `harmless-pigeon-186`**, reached with `npx convex deploy`. That is a
+  live system serving real guards: deploy only when the user has said so in that
+  session.
+- Typechecking needs `npm ci` at the **repo root** as well as in `mobile/patrol_app`.
+  `@types/node` resolves from the root, and without it `tsc` reports 26 spurious
+  "Cannot find name 'process'" errors.
+- API base (dev): `https://resilient-buffalo-226.convex.site/api/v1`.
+- API base (prod): `https://harmless-pigeon-186.convex.site/api/v1`.
 - Logins: admin `admin@securecorp.com/123456` (clientType "web") · guard `guard@securecorp.com/123456`
   ("mobile") · portal `portal@acme-test.com/AcmePortal2026` ("client"). Real client: NAFDAC /
   `nafdac@idawostr.com`, location "IKA" (6.6315449, 3.5238621, 5000m).

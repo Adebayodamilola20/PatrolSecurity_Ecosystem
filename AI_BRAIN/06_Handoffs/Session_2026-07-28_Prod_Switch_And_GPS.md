@@ -122,20 +122,28 @@ from a clean clone. Reverted in `d5c9eb4`. **Stage against a clean file; check
 
 ## 5. Environment landmines
 
-- **The repo lives on `~/Desktop`, which is an iCloud Drive folder.** iCloud stamps
+> **Update 2026-08-10 — the iCloud item below is RESOLVED.** The user approved the
+> move after iCloud escalated from breaking release codesigning to corrupting the git
+> object store (16 missing trees, 10 missing blobs, one missing commit) and gutting
+> every `node_modules` while npm reported "up to date". The repo is now
+> **`~/dev/PatrolSecurity_Ecosystem`**; everything below about `~/Desktop` describes
+> the old location. The move was done by cloning from `git bundle --all`, not `mv` —
+> `rm -rf` and `find` on the iCloud copy each ran past 10 minutes without finishing.
+> Proof it worked: `npm ci` went from 3 minutes and a corrupt tree to 4 seconds clean.
+
+- **The repo lived on `~/Desktop`, which is an iCloud Drive folder.** iCloud stamps
   `com.apple.FinderInfo` on files, and `codesign` refuses to sign a binary carrying
   it. **`flutter build ios --release` therefore fails** with
   "resource fork, Finder information, or similar detritus not allowed". Debug
   builds are unaffected, which is how testing has been happening.
   - The `build 2/`, `.dart_tool 2/`, `ephemeral 2/` folders are iCloud conflict
     copies from the same cause.
-  - **The user has explicitly declined to move the repo.** Do not raise it again
-    unless a release build is actually needed. Fix would be
-    `mv ~/Desktop/PatrolSecurity_Ecosystem ~/dev/` (~2GB, slow — iCloud must
-    materialise offloaded files; it timed out at 5 minutes once).
-- There are **four** Patrol folders. Only `~/Desktop/PatrolSecurity_Ecosystem` is
-  the real git repo. `Patrol_monitoring`, `patrol-watcher-main` and
-  `~/PatrolSecurity_Ecosystem` are stale — never work in them.
+  - The user declined the move on 2026-07-28 and approved it on 2026-08-10; see the
+    update at the top of this section.
+- There are **five** Patrol folders. The real git repo is now
+  `~/dev/PatrolSecurity_Ecosystem`. `Patrol_monitoring`, `patrol-watcher-main`,
+  `~/PatrolSecurity_Ecosystem` and the old `~/Desktop/PatrolSecurity_Ecosystem` are
+  all stale — never work in them.
 - `flutter test` can fail on this Mac with "Connection closed before test suite
   loaded" — that's Gatekeeper quarantining `flutter_tester`, not a test bug. Fix:
   `xattr -r -d com.apple.quarantine /opt/homebrew/share/flutter/bin/cache`.
