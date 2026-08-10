@@ -100,6 +100,28 @@ patrol-monitoring/
 
 ## Quick Start
 
+### First-time setup (required)
+
+```bash
+./scripts/setup.sh
+```
+
+This enables the shared git hooks and installs dependencies. If you'd rather do
+it by hand, the one step you must not skip is:
+
+```bash
+git config core.hooksPath hooks
+```
+
+Git does **not** enable `hooks/` automatically on clone. Until you run that, the
+`pre-commit` guard that blocks `.env` files, certificates, Firebase service
+accounts and live API keys is inactive on your machine.
+
+> **Do not keep this repo in iCloud Drive** (`~/Desktop` or `~/Documents` with
+> "Desktop & Documents Folders" turned on). It corrupts `.git` and `node_modules`
+> — this repo has already lost git objects and had `node_modules` silently
+> gutted and duplicated into `node_modules 2` copies.
+
 ### Web Dashboard
 
 ```bash
