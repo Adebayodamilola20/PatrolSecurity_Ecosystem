@@ -1,0 +1,52 @@
+#!/bin/sh
+# Blocks secrets and machine-generated junk from being committed.
+#
+# This directory is tracked so every clone gets the hook, but git will not
+# activate it on its own. Each developer must run once, from the repo root:
+#
+#     git config core.hooksPath hooks
+#
+# .gitignore already covers accidental `git add .`; this also catches `git add -f`
+# and files that were tracked before a rule existed.
+# Deliberate override: git commit --no-verify
+
+blocked=""
+
+# --- 1. Paths that must never be committed ---------------------------------
+for f in $(git diff --cached --name-only --diff-filter=ACMR); do
+  case "$f" in
+    *.example|*.sample) continue ;;
+  esac
+  case "$f" in
+    .env|.env.*|*/.env|*/.env.*) blocked="$blocked\n  [env file]     $f" ;;
+    *google-services.json|*GoogleService-Info.plist) blocked="$blocked\n  [firebase]     $f" ;;
+    *firebase-adminsdk-*.json|*serviceAccount*.json) blocked="$blocked\n  [service acct] $f" ;;
+    *.pem|*.p12|*.pfx|*.cer|*.mobileprovision|*.jks|*.keystore) blocked="$blocked\n  [credential]   $f" ;;
+    *key.properties) blocked="$blocked\n  [signing]      $f" ;;
+    */ios/build/*|*/DerivedData/*|*.xcuserstate) blocked="$blocked\n  [build junk]   $f" ;;
+    *node_modules/*|*node_modules.nosync/*) blocked="$blocked\n  [node_modules] $f" ;;
+  esac
+  # macOS/iCloud conflict copies: "build 2/", "node_modules 3/", ".dart_tool 2/"
+  case "$f" in
+    *\ [0-9]/*|*\ [0-9][0-9]/*) blocked="$blocked\n  [icloud copy]  $f" ;;
+  esac
+done
+
+# --- 2. High-confidence secret patterns in staged content ------------------
+# Narrow on purpose: only shapes that are unambiguous, to avoid false alarms.
+patterns='AIza[0-9A-Za-z_-]{35}|sk_live_[0-9A-Za-z]{20,}|ghp_[0-9A-Za-z]{36}|npm_[0-9A-Za-z]{36}|re_[0-9A-Za-z]{20,}|xox[baprs]-[0-9A-Za-z-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----'
+hits=$(git diff --cached -U0 --diff-filter=ACMR | grep -nE "^\+" | grep -EO "$patterns" | sort -u)
+if [ -n "$hits" ]; then
+  blocked="$blocked\n  [live secret]  matched: $(echo "$hits" | head -3 | cut -c1-12 | tr '\n' ' ')..."
+fi
+
+if [ -n "$blocked" ]; then
+  printf '\n\033[31mpre-commit blocked this commit.\033[0m\n'
+  printf 'These staged entries look sensitive or machine-generated:\n'
+  printf "$blocked\n"
+  printf '\nUnstage them:  git restore --staged <file>\n'
+  printf 'If this is genuinely safe:  git commit --no-verify\n\n'
+  exit 1
+fi
+
+exit 0
