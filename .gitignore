@@ -1,6 +1,12 @@
 node_modules/
+node_modules
+# node_modules is installed into a .nosync sibling and symlinked, because
+# iCloud shreds it in place (conflict copies + gutted packages).
+node_modules.nosync/
+# macOS/iCloud conflict copies: "node_modules 2", "build 3", ".dart_tool 2", ...
+*\ [0-9]/
+*\ [0-9][0-9]/
 dist/
-.env
 *.db
 *.db-wal
 *.db-shm
@@ -10,7 +16,17 @@ uploads/*
 *.log
 backend/exports/
 
-.env.local
+# Environment files — every variant, at any depth. Only the committed
+# templates are allowed through. Covers .env, .env.local, .env.production,
+# .env.development, .env.staging, and anything else added later.
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+!.env.*.example
+!**/.env.*.example
 
 # Android signing
 android/*/upload.jks
@@ -21,6 +37,22 @@ key.properties
 # Firebase / Google services secrets — never commit (contains API keys)
 **/google-services.json
 **/GoogleService-Info.plist
+**/firebase-adminsdk-*.json
+**/serviceAccount*.json
+
+# Certificates, private keys and provisioning profiles
+*.pem
+*.p12
+*.pfx
+*.cer
+*.mobileprovision
+*.keystore
+id_rsa
+id_ed25519
+
+# Convex deploy keys / local state
+.convex/
+convex.json.local
 
 # Xcode/Flutter build output — regenerated on every build, never commit
 mobile/patrol_app/ios/build/
