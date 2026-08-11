@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mail, MapPin, Phone, Zap, Globe, ChevronDown, MessageCircle, Briefcase, Code } from 'lucide-react';
+import { Mail, MapPin, Phone, Zap, ChevronDown, MessageCircle, Briefcase, Code } from 'lucide-react';
 
 /**
  * FadeDown Component - OPTIMIZED
@@ -19,10 +19,15 @@ const FadeDown = ({ children, delay = 0, className = "" }: { children: React.Rea
 );
 
 // OPTIMIZATION: Moved static data OUTSIDE the component to prevent re-allocation on every render/state change.
+//
+// We are a Nigerian guarding operation serving Nigerian sites — the template
+// shipped a San Francisco address and a US phone number, which told every
+// visitor we were somebody else. Email and phone are tappable so a caller on a
+// phone does not have to copy them out by hand.
 const CONTACT_METHODS = [
-    { icon: Mail, title: "Chat to sales", value: "hello@evergreen.so", color: "text-teal-400", bg: "bg-teal-500/10", border: "border-teal-500/20" },
-    { icon: MapPin, title: "Visit us", value: "San Francisco, CA", color: "text-cyan-400", bg: "bg-cyan-500/10", border: "border-cyan-500/20" },
-    { icon: Phone, title: "Call us", value: "+1 (555) 000-0000", color: "text-teal-400", bg: "bg-teal-500/10", border: "border-teal-500/20" }
+    { icon: Mail, title: "Chat to sales", value: "hello@evergreenprotection.com", href: "mailto:hello@evergreenprotection.com", color: "text-teal-400", bg: "bg-teal-500/10", border: "border-teal-500/20" },
+    { icon: MapPin, title: "Visit us", value: "Lagos, Nigeria", href: null, color: "text-cyan-400", bg: "bg-cyan-500/10", border: "border-cyan-500/20" },
+    { icon: Phone, title: "Call us", value: "+234 800 000 0000", href: "tel:+2348000000000", color: "text-teal-400", bg: "bg-teal-500/10", border: "border-teal-500/20" }
 ];
 
 const SOCIAL_LINKS = [
@@ -32,27 +37,27 @@ const SOCIAL_LINKS = [
 ];
 
 const GLOBAL_HUBS = [
-    { city: "San Francisco", label: "HQ", icon: MapPin, glow: "bg-teal-500/5" },
-    { city: "London", label: "European Hub", icon: Globe, glow: "bg-cyan-500/5" },
-    { city: "Tokyo", label: "Asia Pacific", icon: MapPin, glow: "bg-teal-500/5" }
+    { city: "Lagos", label: "Head office", icon: MapPin, glow: "bg-teal-500/5" },
+    { city: "Abuja", label: "North central", icon: MapPin, glow: "bg-cyan-500/5" },
+    { city: "Port Harcourt", label: "South south", icon: MapPin, glow: "bg-teal-500/5" }
 ];
 
 const FAQS = [
     {
         question: "Do you offer enterprise support?",
-        answer: "Yes, our Enterprise plan includes a dedicated success manager, 24/7 priority phone support, and custom SLA agreements tailored to your organization's needs."
+        answer: "Yes. Our Custom plan includes a dedicated account manager, priority phone support and an SLA written around your posts and shift pattern."
     },
     {
-        question: "Can I book a personalized demo?",
-        answer: "Absolutely. Our solutions engineers are available for 1-on-1 walkthroughs to show you how Evergreen can specifically solve your team's knowledge management challenges."
+        question: "Can I book a personalised demo?",
+        answer: "Absolutely. We will walk your control room through a live patrol on one of your own sites — clock-in, QR scan, incident and the report your client would see."
     },
     {
         question: "What are your support hours?",
-        answer: "Our standard support operates 24/5 across all time zones. Enterprise customers enjoy 24/7/365 coverage with guaranteed response times under 2 hours."
+        answer: "Office support runs 8am–6pm WAT, Monday to Saturday. Guarding does not stop, so panic alerts and emergency escalations are monitored around the clock."
     },
     {
         question: "Is my data secure?",
-        answer: "Security is our top priority. We use AES-256 encryption at rest, TLS 1.3 in transit, and offer full SOC2 Type II compliance for all enterprise data processing."
+        answer: "Every request is encrypted in transit, photos are never served from a permanent public link, and each client only ever sees their own sites — tenant isolation is enforced on the server, not hidden in the interface."
     }
 ];
 
@@ -83,7 +88,7 @@ const ContactUs = () => {
                             </span>
                         </h1>
                         <p className="text-lg md:text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed mb-8">
-                            Have a question or want to scale your team's knowledge? We'd love to hear from you.
+                            Have a question, or want to see verified patrols running on your own sites? We'd love to hear from you.
                         </p>
                     </FadeDown>
 
@@ -103,21 +108,29 @@ const ContactUs = () => {
 
                     {/* LEFT COLUMN: CONTACT INFO */}
                     <div className="space-y-6">
-                        {CONTACT_METHODS.map((method, idx) => (
-                            <FadeDown key={idx} delay={0.1 + (idx * 0.1)}>
-                                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 backdrop-blur-md hover:bg-slate-100 transition-all duration-300 transform-gpu group">
-                                    <div className="flex items-center gap-4">
-                                        <div className={`w-12 h-12 rounded-xl ${method.bg} flex items-center justify-center border ${method.border} group-hover:scale-110 transition-transform`}>
-                                            <method.icon className={`w-6 h-6 ${method.color}`} />
+                        {CONTACT_METHODS.map((method, idx) => {
+                            const Card = method.href ? 'a' : 'div';
+                            return (
+                                <FadeDown key={idx} delay={0.1 + (idx * 0.1)}>
+                                    <Card
+                                        {...(method.href ? { href: method.href } : {})}
+                                        className="block bg-slate-50 border border-slate-200 rounded-2xl p-6 backdrop-blur-md hover:bg-slate-100 transition-all duration-300 transform-gpu group"
+                                    >
+                                        <div className="flex items-center gap-4">
+                                            <div className={`w-12 h-12 shrink-0 rounded-xl ${method.bg} flex items-center justify-center border ${method.border} group-hover:scale-110 transition-transform`}>
+                                                <method.icon className={`w-6 h-6 ${method.color}`} />
+                                            </div>
+                                            <div className="min-w-0">
+                                                <h3 className="text-sm font-medium text-slate-600 uppercase tracking-wider">{method.title}</h3>
+                                                {/* The address is long enough to overflow a phone-width
+                                                    card, so it wraps rather than pushing the layout wide. */}
+                                                <p className="text-lg font-semibold text-slate-900 break-words">{method.value}</p>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <h3 className="text-sm font-medium text-slate-600 uppercase tracking-wider">{method.title}</h3>
-                                            <p className="text-lg font-semibold text-slate-900">{method.value}</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </FadeDown>
-                        ))}
+                                    </Card>
+                                </FadeDown>
+                            );
+                        })}
 
                         {/* Social Links */}
                         <FadeDown delay={0.4} className="pt-6">
@@ -198,8 +211,8 @@ const ContactUs = () => {
                 <section className="mb-32">
                     <FadeDown>
                         <div className="text-center mb-16">
-                            <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-4">Our Global Hubs</h2>
-                            <p className="text-slate-600 max-w-xl mx-auto">Strategically located to support teams across every major time zone.</p>
+                            <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-4">Where we operate</h2>
+                            <p className="text-slate-600 max-w-xl mx-auto">On the ground across Nigeria, supporting control rooms and guard teams on Lagos time.</p>
                         </div>
                     </FadeDown>
 

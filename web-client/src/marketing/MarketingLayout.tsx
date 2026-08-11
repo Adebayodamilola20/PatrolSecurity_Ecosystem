@@ -2,8 +2,12 @@
 //
 // The nav and footer wrap every public marketing page, so the template's
 // top-level App became this route layout: <Routes> is now <Outlet />, and the
-// pages it renders are ordinary children. Auth CTAs ("Log in", "Get Started",
-// "Sign In") all lead to /login — the real client portal sign-in.
+// pages it renders are ordinary children.
+//
+// There is exactly one auth CTA on the site — "Sign In" — and it goes to
+// /login. Client logins are created by our staff from the admin dashboard,
+// so there is nothing for a stranger to sign themselves up to; the template's
+// "Start Free Trial" button promised a self-service flow that does not exist.
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ReactLenis } from 'lenis/react';
@@ -119,10 +123,9 @@ export default function MarketingLayout() {
                             <Link to="/contact" className="hover:text-slate-900 transition-colors">Contact</Link>
                         </div>
 
-                        <div className="hidden md:flex items-center gap-4">
-                            <Link to="/login" className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors">Sign In</Link>
-                            <Link to="/login" className="bg-gradient-to-r from-teal-600 to-cyan-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity shadow-[0_0_15px_rgba(20,184,166,0.3)] inline-flex items-center gap-1.5">
-                                Start Free Trial <ArrowRight className="w-3.5 h-3.5" />
+                        <div className="hidden md:flex items-center">
+                            <Link to="/login" className="bg-gradient-to-r from-teal-600 to-cyan-500 text-white px-5 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity shadow-[0_0_15px_rgba(20,184,166,0.3)] inline-flex items-center gap-1.5">
+                                Sign In <ArrowRight className="w-3.5 h-3.5" />
                             </Link>
                         </div>
                         <button 
@@ -177,16 +180,9 @@ export default function MarketingLayout() {
                                     <Link
                                         to="/login"
                                         onClick={() => setIsMobileMenuOpen(false)}
-                                        className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors py-1"
+                                        className="bg-gradient-to-r from-teal-600 to-cyan-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:opacity-90 transition-opacity shadow-[0_0_15px_rgba(20,184,166,0.3)] text-center mt-1"
                                     >
                                         Sign In
-                                    </Link>
-                                    <Link
-                                        to="/login"
-                                        onClick={() => setIsMobileMenuOpen(false)}
-                                        className="bg-gradient-to-r from-teal-600 to-cyan-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:opacity-90 transition-opacity shadow-[0_0_15px_rgba(20,184,166,0.3)] text-center mt-2"
-                                    >
-                                        Start Free Trial
                                     </Link>
                                 </div>
                             </motion.div>
@@ -222,7 +218,7 @@ export default function MarketingLayout() {
                             </div>
 
                             <Link to="/login" className="bg-slate-50 border border-slate-200 text-slate-900 px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-100 transition-colors">
-                                Get Started
+                                Sign In
                             </Link>
                         </div>
 

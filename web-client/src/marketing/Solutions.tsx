@@ -393,8 +393,8 @@ export default function Solutions() {
                     </FadeUp>
                     <FadeUp delay={0.15}>
                         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-10">
-                            <Link to="/login" className="w-full sm:w-auto bg-gradient-to-r from-teal-600 to-cyan-500 text-white px-8 py-3.5 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(20,184,166,0.4)]">
-                                Start Free Trial <ArrowRight className="w-4 h-4" />
+                            <Link to="/contact" className="w-full sm:w-auto bg-gradient-to-r from-teal-600 to-cyan-500 text-white px-8 py-3.5 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(20,184,166,0.4)]">
+                                Talk to sales <ArrowRight className="w-4 h-4" />
                             </Link>
                             <Link to="/#pricing" className="w-full sm:w-auto bg-slate-50 text-slate-900 border border-slate-200 px-8 py-3.5 rounded-lg text-sm font-medium hover:bg-slate-100 transition-colors">
                                 See pricing
@@ -456,11 +456,11 @@ export default function Solutions() {
                             <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-white mb-4">See it on your own sites</h2>
                             <p className="text-slate-300 max-w-xl mx-auto mb-8">Spin up Evergreen against a real site and watch the first verified patrol land in your control room.</p>
                             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                                <Link to="/login" className="w-full sm:w-auto bg-gradient-to-r from-teal-600 to-cyan-500 text-white px-8 py-3.5 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(20,184,166,0.4)]">
-                                    Start Free Trial <ArrowRight className="w-4 h-4" />
+                                <Link to="/contact" className="w-full sm:w-auto bg-gradient-to-r from-teal-600 to-cyan-500 text-white px-8 py-3.5 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(20,184,166,0.4)]">
+                                    Book a demo <ArrowRight className="w-4 h-4" />
                                 </Link>
-                                <Link to="/contact" className="w-full sm:w-auto bg-white/10 text-white border border-white/15 px-8 py-3.5 rounded-lg text-sm font-medium hover:bg-white/15 transition-colors inline-flex items-center justify-center gap-1.5">
-                                    Book a demo <ChevronRight className="w-4 h-4" />
+                                <Link to="/login" className="w-full sm:w-auto bg-white/10 text-white border border-white/15 px-8 py-3.5 rounded-lg text-sm font-medium hover:bg-white/15 transition-colors inline-flex items-center justify-center gap-1.5">
+                                    Sign In <ChevronRight className="w-4 h-4" />
                                 </Link>
                             </div>
                         </div>

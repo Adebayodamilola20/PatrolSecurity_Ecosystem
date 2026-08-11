@@ -44,8 +44,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Public marketing site — the portal's front door. Its "Log in" and
-            "Get Started" CTAs lead to /login below. */}
+        {/* Public marketing site — the portal's front door. Its one auth CTA,
+            "Sign In", leads to /login below; everything else routes to
+            /contact, because clients are onboarded by our staff. */}
         <Route element={<MarketingLayout />}>
           <Route path="/" element={<Landing />} />
           <Route path="/solutions" element={<Solutions />} />

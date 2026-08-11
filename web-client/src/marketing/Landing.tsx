@@ -351,6 +351,16 @@ function AppFeature({ icon: Icon, title, body }: { icon: React.ElementType; titl
 
 /* -------------------------------------------------------------------- page */
 
+// We sell in naira to Nigerian guarding companies, so the page quotes naira.
+// Intl gives the ₦ and the thousands separators a local reader expects — at
+// these amounts "₦150000" reads as a typo.
+const naira = (amount: number) =>
+    new Intl.NumberFormat('en-NG', {
+        style: 'currency',
+        currency: 'NGN',
+        maximumFractionDigits: 0,
+    }).format(amount);
+
 export default function Landing() {
     const [openIndex, setOpenIndex] = useState<number | null>(null);
     const [yearly, setYearly] = useState(false);
@@ -359,16 +369,16 @@ export default function Landing() {
         {
             name: 'Standard',
             tagline: 'Patrol verification for a single site.',
-            monthly: 149,
-            cta: 'Start free trial',
+            monthly: 150000,
+            cta: 'Talk to sales',
             featured: false,
             features: ['QR patrol verification', 'Clock-in with photo & GPS', 'Incident reporting', 'Daily activity reports', 'Up to 20 officers'],
         },
         {
             name: 'Professional',
             tagline: 'The full control room for a guarding operation.',
-            monthly: 349,
-            cta: 'Start free trial',
+            monthly: 350000,
+            cta: 'Talk to sales',
             featured: true,
             features: ['Everything in Standard', 'Live guard tracking & map', 'Post orders & handovers', 'Client portal access', 'Analytics & audit trail', 'Up to 50 officers'],
         },
@@ -376,7 +386,7 @@ export default function Landing() {
             name: 'Custom',
             tagline: 'Tailored to how your company already runs.',
             monthly: null,
-            cta: 'Contact sales',
+            cta: 'Talk to sales',
             featured: false,
             features: ['Everything in Professional', 'Unlimited officers & sites', 'Dedicated success manager', 'Custom report templates', 'Priority support'],
         },
@@ -415,11 +425,13 @@ export default function Landing() {
                     <FadeDown delay={0.3}>
                         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                             <Link to="/login" className="w-full sm:w-auto bg-gradient-to-r from-teal-600 to-cyan-500 text-white px-8 py-3.5 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(20,184,166,0.4)]">
-                                Start Free Trial <ArrowRight className="w-4 h-4" />
+                                Sign In <ArrowRight className="w-4 h-4" />
                             </Link>
-                            <button className="w-full sm:w-auto bg-slate-50 text-slate-900 border border-slate-200 px-8 py-3.5 rounded-lg text-sm font-medium hover:bg-slate-100 transition-colors backdrop-blur-sm">
+                            {/* Was a bare <button> with no handler — it looked live and did
+                                nothing. A demo is a conversation, so it goes to /contact. */}
+                            <Link to="/contact" className="w-full sm:w-auto bg-slate-50 text-slate-900 border border-slate-200 px-8 py-3.5 rounded-lg text-sm font-medium hover:bg-slate-100 transition-colors backdrop-blur-sm text-center">
                                 Book a demo
-                            </button>
+                            </Link>
                         </div>
                     </FadeDown>
 
@@ -794,10 +806,10 @@ export default function Landing() {
                                 Every patrol, incident and shift in one record your supervisors trust and your clients can see.
                             </p>
                             <Link
-                                to="/login"
+                                to="/contact"
                                 className="inline-flex items-center gap-2 bg-white text-slate-900 px-8 py-3.5 rounded-xl text-sm font-semibold hover:bg-slate-100 transition-colors"
                             >
-                                Start free trial <ArrowRight className="w-4 h-4" />
+                                Talk to sales <ArrowRight className="w-4 h-4" />
                             </Link>
                         </div>
                     </FadeDown>
@@ -809,8 +821,8 @@ export default function Landing() {
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-3xl h-80 bg-teal-500/[0.07] blur-[120px] rounded-full pointer-events-none transform-gpu" />
                 <div className="relative z-10 max-w-7xl mx-auto">
                     <SectionHead
-                        title="Start your free trial"
-                        sub="Choose a plan and start a 7-day free trial. No payment method required."
+                        title="Pricing"
+                        sub="Priced in naira, billed monthly or yearly. Talk to us and we set your company up — sites, checkpoints and officer logins included."
                     />
 
                     <FadeDown>
@@ -850,14 +862,14 @@ export default function Landing() {
                                         {plan.monthly === null ? (
                                             <p className="text-4xl font-bold text-slate-900">Custom</p>
                                         ) : (
-                                            <p className="text-4xl font-bold text-slate-900">
-                                                ${yearly ? Math.round(plan.monthly * 0.85) : plan.monthly}
+                                            <p className="text-3xl md:text-4xl font-bold text-slate-900 tracking-tight">
+                                                {naira(yearly ? Math.round(plan.monthly * 0.85) : plan.monthly)}
                                                 <span className="text-base text-slate-400 font-medium">/month</span>
                                             </p>
                                         )}
                                     </div>
                                     <Link
-                                        to="/login"
+                                        to="/contact"
                                         className={`block text-center w-full px-6 py-3 rounded-lg text-sm font-semibold transition-all ${
                                             plan.featured
                                                 ? 'bg-gradient-to-r from-teal-600 to-cyan-500 text-white hover:opacity-90'
@@ -930,23 +942,23 @@ export default function Landing() {
                             Prove every patrol.
                         </h2>
                         <p className="text-lg text-slate-600 mb-10 max-w-xl mx-auto">
-                            Start a free trial and run your first verified patrol this week.
+                            Talk to us and run your first verified patrol this week.
                         </p>
                         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                             <Link
-                                to="/login"
+                                to="/contact"
                                 className="w-full sm:w-auto bg-gradient-to-r from-teal-600 to-cyan-500 text-white px-8 py-4 rounded-xl text-base font-semibold hover:opacity-90 transition-opacity flex items-center justify-center gap-2 shadow-[0_0_25px_rgba(20,184,166,0.35)]"
                             >
-                                Start free trial <ArrowRight className="w-4 h-4" />
+                                Talk to sales <ArrowRight className="w-4 h-4" />
                             </Link>
                             <Link
-                                to="/contact"
+                                to="/login"
                                 className="w-full sm:w-auto bg-slate-50 text-slate-900 border border-slate-200 px-8 py-4 rounded-xl text-base font-semibold hover:bg-slate-100 transition-colors"
                             >
-                                Contact sales
+                                Sign In
                             </Link>
                         </div>
-                        <p className="text-xs text-slate-400 mt-5">Free 7-day trial — no payment method required.</p>
+                        <p className="text-xs text-slate-400 mt-5">Already a client? Sign in to your portal.</p>
                     </FadeDown>
                 </div>
             </section>
