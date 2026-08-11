@@ -518,9 +518,10 @@ Everything above is built and live. These are not.
 Guards currently need signal to scan. The app fails honestly and tells them to
 try again in range rather than pretending a scan was saved, but scans do not
 queue and sync later. That work exists on a parked branch and was deliberately
-kept out of production. **The public FAQ on the landing page currently claims
-offline scanning works — that claim needs removing or the feature needs
-shipping.**
+kept out of production. The public site used to claim otherwise in six places —
+a trust badge, a spec tile, an FAQ answer and three lines on the access-control
+section — and all six were corrected on 11 August 2026. Safe to demo now; ship
+the branch before anyone sells it again.
 
 ### The Email Sending Domain Is Not Verified
 

@@ -207,7 +207,7 @@ function AccessMock() {
                         <StatusPill tone={tone} label={tone === 'ok' ? 'Allowed' : 'Denied'} />
                     </div>
                 ))}
-                <p className="text-[10px] text-slate-400 pt-1">Every decision logged — guard, timestamp, result. Works offline.</p>
+                <p className="text-[10px] text-slate-400 pt-1">Every decision logged — guard, timestamp, result. No hardware needed.</p>
             </div>
         </MockFrame>
     );
@@ -347,8 +347,8 @@ const SOLUTIONS: Solution[] = [
         icon: DoorOpen,
         tag: 'Digital access control',
         title: 'Replace the sign-in book',
-        body: 'Guards scan QR codes to verify residents and visitors. Every decision is logged — guard, timestamp, result. Works offline, no hardware needed.',
-        points: ['Visitor and vehicle logging at the gate', 'Every entry decision is auditable', 'Works offline, syncs when back online'],
+        body: 'Guards scan QR codes to verify residents and visitors. Every decision is logged — guard, timestamp, result. No turnstiles, no card readers, no hardware to install.',
+        points: ['Visitor and vehicle logging at the gate', 'Every entry decision is auditable', 'Runs on the phone the guard already carries'],
         visual: 'access',
     },
     {

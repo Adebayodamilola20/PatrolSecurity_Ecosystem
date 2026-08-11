@@ -16,7 +16,7 @@ import {
     Home, ChevronDown, FileText, Users, MessageSquare, MapPin,
     QrCode, Clock, Building2, Stethoscope, GraduationCap, Warehouse,
     CalendarDays, Camera, AlertTriangle, X, Activity, Radio,
-    WifiOff, Map, BarChart3, Printer, ScanLine, ClipboardList,
+    Map, BarChart3, Printer, ScanLine, ClipboardList,
     UserCheck, Siren, Fingerprint, FileCheck2, ShieldCheck, Navigation,
     TrendingUp, Eye
 } from 'lucide-react';
@@ -42,10 +42,13 @@ const FadeDown = ({ children, delay = 0, className = "" }: { children: React.Rea
 
 /* ------------------------------------------------------------------ content */
 
+// Offline patrol sync is parked on a branch and is NOT in the shipped app, so
+// it cannot be sold here. Panic delivery is real, verified on production, and
+// is the thing a prospect actually cares about at 2am.
 const TRUST = [
     { icon: Lock, title: 'Encrypted & audited', sub: 'Every action leaves a trail' },
     { icon: Navigation, title: 'GPS-verified', sub: 'Scans checked against the geofence' },
-    { icon: WifiOff, title: 'Works offline', sub: 'Syncs when the guard is back online' },
+    { icon: Siren, title: 'Panic alerts that land', sub: 'SMS and email the moment it is pressed' },
     { icon: FileCheck2, title: 'Client-ready proof', sub: 'Reports your clients can open' },
 ];
 
@@ -161,8 +164,8 @@ const FAQ_DATA = [
         answer: 'Every checkpoint scan is verified against the site geofence and stored with GPS coordinates, a timestamp and the officer who made it. A guard who has not clocked in cannot scan at all — the scan is refused and never reaches a dashboard.',
     },
     {
-        question: 'Does the guard app work without signal?',
-        answer: 'Yes. Guards can clock in, scan checkpoints and file incidents offline. Everything syncs once the device is back online, and the original capture time is preserved rather than the upload time.',
+        question: 'What happens where the signal is weak?',
+        answer: 'A scan is verified on our servers, so it needs to reach them. In a dead spot the app says so plainly and asks the guard to try again in range — it never shows a guard a "saved" screen for a patrol that was not actually recorded. The shift itself survives a drop in coverage, so nobody is logged out mid-patrol by a bad patch.',
     },
     {
         question: 'What do our clients actually see?',
@@ -659,7 +662,7 @@ export default function Landing() {
                     <div className="grid grid-cols-3 gap-6 mt-20 max-w-3xl mx-auto text-center">
                         {[
                             { big: 'iOS & Android', small: 'Available now' },
-                            { big: 'Offline', small: 'Syncs when online' },
+                            { big: 'Photo-backed', small: 'Clock-ins and incidents' },
                             { big: 'Included', small: 'With every plan' },
                         ].map((s, i) => (
                             <FadeDown key={s.big} delay={i * 0.08}>
