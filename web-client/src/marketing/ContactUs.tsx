@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mail, MapPin, Phone, Zap, ChevronDown, MessageCircle, Briefcase, Code } from 'lucide-react';
+import { Mail, MapPin, Phone, Zap, ChevronDown, MessageCircle } from 'lucide-react';
 
 /**
  * FadeDown Component - OPTIMIZED
@@ -26,14 +26,17 @@ const FadeDown = ({ children, delay = 0, className = "" }: { children: React.Rea
 // phone does not have to copy them out by hand.
 const CONTACT_METHODS = [
     { icon: Mail, title: "Chat to sales", value: "hello@evergreenprotection.com", href: "mailto:hello@evergreenprotection.com", color: "text-teal-400", bg: "bg-teal-500/10", border: "border-teal-500/20" },
-    { icon: MapPin, title: "Visit us", value: "Lagos, Nigeria", href: null, color: "text-cyan-400", bg: "bg-cyan-500/10", border: "border-cyan-500/20" },
+    { icon: MapPin, title: "Visit us", value: "Victoria Island, Lagos", href: null, color: "text-cyan-400", bg: "bg-cyan-500/10", border: "border-cyan-500/20" },
     { icon: Phone, title: "Call us", value: "+234 800 000 0000", href: "tel:+2348000000000", color: "text-teal-400", bg: "bg-teal-500/10", border: "border-teal-500/20" }
 ];
 
+// These were three circles pointing at "#" — they looked like social accounts
+// and did nothing when clicked, which is worse in a demo than not having them.
+// They are quick actions now, aimed at the only two channels we actually run.
 const SOCIAL_LINKS = [
-    { icon: MessageCircle, href: "#", hoverColor: "hover:text-sky-400" },
-    { icon: Briefcase, href: "#", hoverColor: "hover:text-blue-500" },
-    { icon: Code, href: "#", hoverColor: "hover:text-slate-900" }
+    { icon: MessageCircle, label: "WhatsApp us", href: "https://wa.me/2348000000000", hoverColor: "hover:text-emerald-500" },
+    { icon: Mail, label: "Email us", href: "mailto:hello@evergreenprotection.com", hoverColor: "hover:text-teal-600" },
+    { icon: Phone, label: "Call us", href: "tel:+2348000000000", hoverColor: "hover:text-cyan-600" }
 ];
 
 const GLOBAL_HUBS = [
@@ -139,6 +142,8 @@ const ContactUs = () => {
                                     <a
                                         key={idx}
                                         href={social.href}
+                                        aria-label={social.label}
+                                        title={social.label}
                                         className={`w-12 h-12 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 transition-all duration-300 hover:bg-slate-100 hover:border-slate-300 transform-gpu hover:-translate-y-1 ${social.hoverColor}`}
                                     >
                                         <social.icon className="w-5 h-5" />

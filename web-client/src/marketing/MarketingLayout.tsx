@@ -211,10 +211,10 @@ export default function MarketingLayout() {
                             </div>
 
                             <div className="hidden md:flex items-center gap-8 text-sm text-slate-600">
-                                <a href="#" className="hover:text-slate-900 transition-colors">About</a>
-                                <a href="#" className="hover:text-slate-900 transition-colors">Features</a>
-                                <a href="#" className="hover:text-slate-900 transition-colors">Pricing</a>
-                                <a href="#" className="hover:text-slate-900 transition-colors">Contact</a>
+                                <Link to="/about" className="hover:text-slate-900 transition-colors">About</Link>
+                                <Link to="/solutions" className="hover:text-slate-900 transition-colors">Solutions</Link>
+                                <Link to="/#pricing" className="hover:text-slate-900 transition-colors">Pricing</Link>
+                                <Link to="/contact" className="hover:text-slate-900 transition-colors">Contact</Link>
                             </div>
 
                             <Link to="/login" className="bg-slate-50 border border-slate-200 text-slate-900 px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-100 transition-colors">
@@ -222,45 +222,52 @@ export default function MarketingLayout() {
                             </Link>
                         </div>
 
-                        {/* Main Link Grid (4 Columns) */}
+                        {/* Main Link Grid (4 Columns)
+
+                            Every link here used to be href="#". Sixteen of them,
+                            including a Twitter, GitHub and Discord we do not have.
+                            A footer link that does nothing when a prospect clicks
+                            it is worse than one that is missing, so these point at
+                            pages that exist and the last column carries the
+                            contact details instead of invented accounts. */}
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 z-10 relative">
                             <div>
-                                <h4 className="text-slate-900 font-semibold mb-6">Navigation</h4>
+                                <h4 className="text-slate-900 font-semibold mb-6">Product</h4>
                                 <ul className="space-y-4 text-sm">
-                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Home</a></li>
-                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Features</a></li>
-                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Pricing</a></li>
-                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">About Us</a></li>
+                                    <li><Link to="/solutions" className="text-slate-600 hover:text-slate-900 transition-colors">Solutions</Link></li>
+                                    <li><Link to="/#pricing" className="text-slate-600 hover:text-slate-900 transition-colors">Pricing</Link></li>
+                                    <li><Link to="/#faq" className="text-slate-600 hover:text-slate-900 transition-colors">FAQ</Link></li>
+                                    <li><Link to="/login" className="text-slate-600 hover:text-slate-900 transition-colors">Client portal</Link></li>
                                 </ul>
                             </div>
 
                             <div>
-                                <h4 className="text-slate-900 font-semibold mb-6">Documentation</h4>
+                                <h4 className="text-slate-900 font-semibold mb-6">Company</h4>
                                 <ul className="space-y-4 text-sm">
-                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Getting Started</a></li>
-                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">API Reference <span className="text-[10px] opacity-50">↗</span></a></li>
-                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Integrations</a></li>
-                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Guides</a></li>
+                                    <li><Link to="/" className="text-slate-600 hover:text-slate-900 transition-colors">Home</Link></li>
+                                    <li><Link to="/about" className="text-slate-600 hover:text-slate-900 transition-colors">About us</Link></li>
+                                    <li><Link to="/contact" className="text-slate-600 hover:text-slate-900 transition-colors">Contact</Link></li>
+                                    <li><Link to="/blog" className="text-slate-600 hover:text-slate-900 transition-colors">Blog</Link></li>
                                 </ul>
                             </div>
 
                             <div>
-                                <h4 className="text-slate-900 font-semibold mb-6">Legal</h4>
+                                <h4 className="text-slate-900 font-semibold mb-6">Resources</h4>
                                 <ul className="space-y-4 text-sm">
-                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Privacy Policy</a></li>
-                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Terms of Service</a></li>
-                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Cookie Policy</a></li>
-                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Security</a></li>
+                                    <li><Link to="/docs" className="text-slate-600 hover:text-slate-900 transition-colors">Documentation</Link></li>
+                                    <li><Link to="/solutions#patrol-verification" className="text-slate-600 hover:text-slate-900 transition-colors">Patrol verification</Link></li>
+                                    <li><Link to="/solutions#emergency-response" className="text-slate-600 hover:text-slate-900 transition-colors">Emergency response</Link></li>
+                                    <li><Link to="/solutions#control-room" className="text-slate-600 hover:text-slate-900 transition-colors">Control room</Link></li>
                                 </ul>
                             </div>
 
                             <div>
-                                <h4 className="text-slate-900 font-semibold mb-6">Social Connect</h4>
+                                <h4 className="text-slate-900 font-semibold mb-6">Get in touch</h4>
                                 <ul className="space-y-4 text-sm">
-                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Twitter <span className="text-[10px] opacity-50">↗</span></a></li>
-                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">GitHub <span className="text-[10px] opacity-50">↗</span></a></li>
-                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">Discord <span className="text-[10px] opacity-50">↗</span></a></li>
-                                    <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1">LinkedIn <span className="text-[10px] opacity-50">↗</span></a></li>
+                                    <li><a href="mailto:hello@evergreenprotection.com" className="text-slate-600 hover:text-slate-900 transition-colors break-words">hello@evergreenprotection.com</a></li>
+                                    <li><a href="tel:+2348000000000" className="text-slate-600 hover:text-slate-900 transition-colors">+234 800 000 0000</a></li>
+                                    <li className="text-slate-600">Victoria Island, Lagos</li>
+                                    <li className="text-slate-500">Mon–Sat, 8am–6pm WAT</li>
                                 </ul>
                             </div>
                         </div>
