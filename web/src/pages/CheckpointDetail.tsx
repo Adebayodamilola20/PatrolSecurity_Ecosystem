@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, MapPin, Search, QrCode, Clock, CheckCircle, XCircle, AlertTriangle, Timer, Download, Printer, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, MapPin, Search, QrCode, Clock, CheckCircle, XCircle, AlertTriangle, Timer, Download, Printer, ShieldCheck, CalendarDays } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import QRCodeLib from 'qrcode'
 import L from 'leaflet'
@@ -9,6 +9,11 @@ import { Skeleton } from '../components/ui/Skeleton'
 import { formatDate, formatTime } from '../utils/format'
 import { EmptyState } from '../components/ui/EmptyState'
 import { getScheduleStatus } from '../utils/patrolSchedule'
+
+interface PostedStaff {
+  id: string; name: string; phone: string; role: string
+  active: boolean; onDuty: boolean; assignedAt: string
+}
 
 interface CheckpointData {
   id: string; name: string; code: string
@@ -31,6 +36,12 @@ export default function CheckpointDetail() {
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'flagged'>('all')
+  // "Was this gate patrolled last Tuesday" is the question staff actually ask
+  // of a scan list, and verified/flagged alone could never answer it.
+  const [datePreset, setDatePreset] = useState<'all' | 'today' | '7d' | '30d' | 'custom'>('all')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [postedStaff, setPostedStaff] = useState<PostedStaff[]>([])
 
   // A sub-location is a plain QR point: no coordinates of its own. Its scans
   // verify against the parent location's geofence, so that is what we show.
@@ -46,9 +57,12 @@ export default function CheckpointDetail() {
     setLoading(true)
     setError('')
     try {
-      const [all, checkpointScans] = await Promise.all([
+      const [all, checkpointScans, staff] = await Promise.all([
         api.checkpoints.list(),
         api.scans.list({ checkpoint: id }),
+        // Supervisors and admins can read this; anyone else still gets the
+        // page, just without the posting list.
+        api.checkpointAssignments.list(id).catch(() => [] as PostedStaff[]),
       ])
       const found = all.find((item: any) => item.id === id) || null
       if (!found) {
@@ -56,6 +70,7 @@ export default function CheckpointDetail() {
       }
       setCp(found)
       setScans(checkpointScans)
+      setPostedStaff(staff)
     } catch (err) {
       setCp(null)
       setScans([])
@@ -160,10 +175,36 @@ export default function CheckpointDetail() {
       .catch(() => printWindow.close())
   }
 
+  // Presets cover the questions asked daily; the custom range is for the
+  // "what happened on the 3rd" conversations that follow an incident. Both
+  // ends are inclusive of the whole day — a range of 3rd–3rd must return the
+  // 3rd, not nothing.
+  const dateRange = (() => {
+    const startOfToday = new Date()
+    startOfToday.setHours(0, 0, 0, 0)
+    switch (datePreset) {
+      case 'today':
+        return { from: startOfToday.getTime(), to: Infinity }
+      case '7d':
+        return { from: startOfToday.getTime() - 6 * 86400000, to: Infinity }
+      case '30d':
+        return { from: startOfToday.getTime() - 29 * 86400000, to: Infinity }
+      case 'custom': {
+        const from = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : -Infinity
+        const to = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : Infinity
+        return { from, to }
+      }
+      default:
+        return { from: -Infinity, to: Infinity }
+    }
+  })()
+
   const filteredScans = scans.filter(s => {
     const matchSearch = !search || s.officerName.toLowerCase().includes(search.toLowerCase())
     const matchStatus = statusFilter === 'all' || (statusFilter === 'verified' ? s.gpsValid : !s.gpsValid)
-    return matchSearch && matchStatus
+    const scannedAt = new Date(s.scannedAt).getTime()
+    const matchDate = scannedAt >= dateRange.from && scannedAt <= dateRange.to
+    return matchSearch && matchStatus && matchDate
   })
   const verifiedCount = scans.filter(s => s.gpsValid).length
 
@@ -278,6 +319,31 @@ export default function CheckpointDetail() {
         </div>
       )}
 
+      {/* Who is supposed to be producing these scans. Without it an empty
+          list below is ambiguous: nobody patrolled, or nobody was posted. */}
+      <div className="rounded-xl border border-border bg-card p-4">
+        <h3 className="mb-3 font-semibold">Assigned guards</h3>
+        {postedStaff.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Nobody is assigned to this point yet. Assign guards from the client's location page.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {postedStaff.map((person) => (
+              <div key={person.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-muted/30 px-3 py-2">
+                <span className={`h-2 w-2 shrink-0 rounded-full ${person.onDuty ? 'bg-success' : 'bg-muted-foreground/40'}`} />
+                <span className="text-sm font-medium">{person.name}</span>
+                <span className="text-xs capitalize text-muted-foreground">{person.role}</span>
+                <span className="text-xs text-muted-foreground">{person.phone}</span>
+                <span className={`ml-auto text-xs ${person.onDuty ? 'text-success' : 'text-muted-foreground'}`}>
+                  {person.onDuty ? 'On duty now' : 'Off duty'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="overflow-hidden rounded-xl border border-border bg-card">
         <div className="border-b border-border p-4">
           <h3 className="mb-3 font-semibold">Scans</h3>
@@ -298,6 +364,43 @@ export default function CheckpointDetail() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <CalendarDays className="h-3.5 w-3.5" /> Date
+            </span>
+            <div className="flex flex-wrap gap-1 rounded-lg border border-border p-1">
+              {([
+                ['all', 'All time'],
+                ['today', 'Today'],
+                ['7d', 'Last 7 days'],
+                ['30d', 'Last 30 days'],
+                ['custom', 'Pick dates'],
+              ] as const).map(([value, label]) => (
+                <button key={value} onClick={() => setDatePreset(value)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${datePreset === value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {datePreset === 'custom' && (
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <label className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground">From</span>
+                  <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                    className="rounded-lg border border-border bg-background px-2 py-1.5 text-xs"
+                  />
+                </label>
+                <label className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground">To</span>
+                  <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                    className="rounded-lg border border-border bg-background px-2 py-1.5 text-xs"
+                  />
+                </label>
+              </div>
+            )}
           </div>
         </div>
         <div className="divide-y divide-border">

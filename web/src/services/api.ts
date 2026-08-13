@@ -317,6 +317,10 @@ export const api = {
   // posts the guard to the parent location, so their scans are accepted; a
   // guard can hold several gates at once.
   checkpointAssignments: {
+    list: (checkpointId: string) =>
+      request<Array<{ id: string; name: string; phone: string; role: string; active: boolean; onDuty: boolean; assignedAt: string }>>(
+        `/checkpoint-assignments?checkpointId=${encodeURIComponent(checkpointId)}`,
+      ),
     assign: (checkpointId: string, userId: string) =>
       request<any>('/checkpoint-assignments', { method: 'POST', body: JSON.stringify({ checkpointId, userId }) }),
     unassign: (checkpointId: string, userId: string) =>

@@ -239,6 +239,43 @@ export const remove = internalMutation({
   },
 });
 
+// Who is posted at one QR point, for the sub-location detail page. Staff
+// looking at a gate's scan history need to know who was supposed to be
+// producing those scans — otherwise an empty list means nothing.
+export const listAssignments = internalQuery({
+  args: { checkpointId: v.id("checkpoints") },
+  handler: async (ctx, args) => {
+    const postings = await ctx.db
+      .query("userCheckpointAssignments")
+      .withIndex("by_checkpointId", (q) =>
+        q.eq("checkpointId", args.checkpointId),
+      )
+      .collect();
+    const staff = await Promise.all(
+      postings.map(async (posting) => {
+        const person = await ctx.db.get(posting.userId);
+        if (!person) return null;
+        const activeShift = await ctx.db
+          .query("shifts")
+          .withIndex("by_userId_status", (q) =>
+            q.eq("userId", posting.userId).eq("status", "active"),
+          )
+          .first();
+        return {
+          id: person._id,
+          name: person.name,
+          phone: person.phone,
+          role: person.role,
+          active: person.active,
+          onDuty: !!activeShift,
+          assignedAt: new Date(posting.createdAt).toISOString(),
+        };
+      }),
+    );
+    return staff.filter((s): s is NonNullable<typeof s> => s !== null);
+  },
+});
+
 // Post a guard to one sub-location.
 //
 // Unlike site assignments this is many-to-many on purpose: a guard can hold

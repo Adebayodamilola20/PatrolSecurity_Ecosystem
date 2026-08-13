@@ -15,6 +15,7 @@ declare module 'lucide-react' {
   export const Bot: LucideIcon
   export const Building2: LucideIcon
   export const Calendar: LucideIcon
+  export const CalendarDays: LucideIcon
   export const Camera: LucideIcon
   export const ChevronDown: LucideIcon
   export const ChevronLeft: LucideIcon

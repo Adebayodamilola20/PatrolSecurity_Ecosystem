@@ -3659,6 +3659,18 @@ http.route({ path: "/site-assignments", method: "DELETE", handler: httpAction(as
 // assignment decides whether a guard's scans at this location count at all,
 // a posting records which gate is theirs. A guard may hold several gates at
 // once, so there is deliberately no one-posting-per-guard rule here.
+http.route({ path: "/checkpoint-assignments", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  const roleErr = requireRole(user, ["admin", "supervisor"]);
+  if (roleErr) return roleErr;
+  const checkpointId = await ctx.runQuery(internal.checkpoints.resolveId, {
+    id: new URL(request.url).searchParams.get("checkpointId") ?? "",
+  });
+  if (!checkpointId) return notFound("Sub-location not found");
+  return json(await ctx.runQuery(internal.checkpoints.listAssignments, { checkpointId }));
+})});
+
 http.route({ path: "/checkpoint-assignments", method: "POST", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();

@@ -939,7 +939,21 @@ export default function ClientDetail() {
                 {isOpen && (
                   <div className="border-t border-border px-5 py-4">
                     {site.locationQr && (
-                      <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-4">
+                      // The whole panel opens the point's history. The Scans
+                      // button stays for anyone looking for a labelled way in,
+                      // but nobody should have to find it to get there.
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => navigate(`/checkpoints/${site.locationQr!.id}`)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            navigate(`/checkpoints/${site.locationQr!.id}`)
+                          }
+                        }}
+                        className="mb-4 cursor-pointer rounded-lg border border-primary/30 bg-primary/5 p-4 transition-colors hover:border-primary/60 hover:bg-primary/10"
+                      >
                         <div className="flex items-start gap-3">
                           <QRCell data={`${window.location.origin}/checkpoints/${site.locationQr.id}`} />
                           <div className="min-w-0 flex-1">
@@ -975,14 +989,16 @@ export default function ClientDetail() {
                             they all pass through. Any posting made here
                             before that rule landed is still shown so it can
                             be taken off. */}
-                        {site.locationQr.postedGuards.length > 0
-                          ? renderPointPostings(site.locationQr, { wide: true, readOnly: true })
-                          : null}
+                        <div onClick={(e) => e.stopPropagation()}>
+                          {site.locationQr.postedGuards.length > 0
+                            ? renderPointPostings(site.locationQr, { wide: true, readOnly: true })
+                            : null}
+                        </div>
                         <div className="mt-3 rounded-lg border border-primary/20 bg-background/60 px-3 py-2 text-[11px] text-muted-foreground">
                           Every guard must scan this QR at the entrance before any sub-location on
                           the same shift. Assign guards on the sub-locations below.
                         </div>
-                        <div className="mt-3 flex items-center gap-2 border-t border-primary/20 pt-3">
+                        <div onClick={(e) => e.stopPropagation()} className="mt-3 flex items-center gap-2 border-t border-primary/20 pt-3">
                           <button
                             onClick={() => void downloadQr(site, site.locationQr!)}
                             className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-accent"
@@ -1079,16 +1095,23 @@ export default function ClientDetail() {
                         {site.subLocations.map((sub) => {
                           const qrData = `${window.location.origin}/checkpoints/${sub.id}`
                           return (
-                            <div key={sub.id} className={`rounded-lg border p-4 ${sub.active ? 'border-border' : 'border-muted opacity-50'}`}>
+                            <div
+                              key={sub.id}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => navigate(`/checkpoints/${sub.id}`)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault()
+                                  navigate(`/checkpoints/${sub.id}`)
+                                }
+                              }}
+                              className={`cursor-pointer rounded-lg border p-4 transition-colors ${sub.active ? 'border-border hover:border-primary/60 hover:bg-accent/30' : 'border-muted opacity-50'}`}
+                            >
                               <div className="flex items-start gap-3">
                                 <QRCell data={qrData} />
                                 <div className="min-w-0 flex-1">
-                                  <button
-                                    onClick={() => navigate(`/checkpoints/${sub.id}`)}
-                                    className="block w-full truncate text-left font-medium hover:text-primary"
-                                  >
-                                    {sub.name}
-                                  </button>
+                                  <div className="truncate font-medium">{sub.name}</div>
                                   <div className="mt-1 text-[11px] text-muted-foreground">
                                     {sub.scansToday} scan{sub.scansToday === 1 ? '' : 's'} today
                                   </div>
@@ -1111,9 +1134,14 @@ export default function ClientDetail() {
                                   )}
                                 </div>
                               </div>
-                              {renderPointPostings(sub)}
+                              {/* The card navigates; the controls inside it
+                                  must not, or picking a guard would bounce
+                                  you onto the scan history mid-assignment. */}
+                              <div onClick={(e) => e.stopPropagation()}>
+                                {renderPointPostings(sub)}
+                              </div>
 
-                              <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
+                              <div onClick={(e) => e.stopPropagation()} className="mt-3 flex items-center gap-2 border-t border-border pt-3">
                                 <button
                                   onClick={() => void downloadQr(site, sub)}
                                   className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-accent"
