@@ -114,7 +114,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final canExport = _canExport(role);
 
     return DefaultTabController(
-      length: 6,
+      length: 7,
       initialIndex: widget.initialTab ?? 0,
       child: Scaffold(
         appBar: AppBar(
@@ -122,6 +122,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
           bottom: const TabBar(
             isScrollable: true,
             tabs: [
+              // First, because it is the one a guard reaches for most and the
+              // only one that costs them nothing to file.
+              Tab(text: 'Observation'),
               Tab(text: 'Daily Activity'),
               Tab(text: 'Incident'),
               Tab(text: 'Parking'),
@@ -175,6 +178,19 @@ class _ReportsScreenState extends State<ReportsScreen> {
             Expanded(
               child: TabBarView(
                 children: [
+                  _ObservationTab(
+                    checkpoints: checkpoints,
+                    busy: _submitting,
+                    onSubmit: (message, checkpointId) {
+                      return _submit(
+                        () => ApiService.submitObservation(
+                          message: message,
+                          checkpointId: checkpointId,
+                        ),
+                        'Observation sent to the control room.',
+                      );
+                    },
+                  ),
                   _DailyActivityTab(
                     checkpoints: checkpoints,
                     busy: _submitting,
@@ -830,6 +846,82 @@ class _IncidentTabState extends State<_IncidentTab> {
                 ),
           icon: const Icon(Icons.warning_amber_rounded),
           label: Text(widget.busy ? 'Submitting...' : 'Submit Incident'),
+        ),
+      ],
+    );
+  }
+}
+
+/// One box and a Send button.
+///
+/// Every other tab here asks for a title, a severity, a category, photos. Most
+/// of what a guard needs to pass on does not warrant any of that — "rear gate
+/// light is out" — and faced with a form, the guard writes nothing and the
+/// control room never hears it. So: type it, pick the point if it matters, send.
+class _ObservationTab extends StatefulWidget {
+  final List<Checkpoint> checkpoints;
+  final bool busy;
+  final Future<void> Function(String, String?) onSubmit;
+
+  const _ObservationTab({
+    required this.checkpoints,
+    required this.busy,
+    required this.onSubmit,
+  });
+
+  @override
+  State<_ObservationTab> createState() => _ObservationTabState();
+}
+
+class _ObservationTabState extends State<_ObservationTab> {
+  final _messageCtrl = TextEditingController();
+  String? _checkpointId;
+
+  @override
+  void dispose() {
+    _messageCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const _SectionTitle(
+          title: 'Observation',
+          description:
+              'A quick note for the control room. Not an incident — just tell them.',
+        ),
+        TextField(
+          controller: _messageCtrl,
+          maxLines: 4,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+            labelText: 'What did you notice?',
+            hintText: 'e.g. The rear gate light is not working',
+          ),
+        ),
+        const SizedBox(height: 12),
+        _CheckpointField(
+          checkpoints: widget.checkpoints,
+          value: _checkpointId,
+          onChanged: (value) => setState(() => _checkpointId = value),
+        ),
+        const SizedBox(height: 16),
+        FilledButton.icon(
+          onPressed: widget.busy
+              ? null
+              : () async {
+                  final message = _messageCtrl.text.trim();
+                  if (message.isEmpty) return;
+                  await widget.onSubmit(message, _checkpointId);
+                  if (!mounted) return;
+                  _messageCtrl.clear();
+                  setState(() => _checkpointId = null);
+                },
+          icon: const Icon(Icons.send),
+          label: Text(widget.busy ? 'Sending...' : 'Send observation'),
         ),
       ],
     );

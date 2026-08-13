@@ -3750,6 +3750,68 @@ http.route({ path: "/site-assignments", method: "DELETE", handler: httpAction(as
   return json(result);
 })});
 
+// Guard observations: a message and a place, nothing else. Kept apart from
+// /incidents on purpose — see convex/observations.ts for why.
+http.route({ path: "/observations", method: "POST", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  const body = await parseJson(request);
+  const checkpointId = await maybeResolveCheckpointId(ctx, body?.checkpointId);
+  const siteId = body?.siteId
+    ? await ctx.runQuery(internal.sites.resolveId, { id: String(body.siteId) })
+    : null;
+  if (body?.siteId && !siteId) return notFound("Location not found");
+  try {
+    const result = await ctx.runMutation(internal.observations.create, {
+      officerId: _uid(user.convexId),
+      message: String(body?.message ?? ""),
+      siteId: siteId ?? undefined,
+      checkpointId,
+    });
+    await recordAudit(ctx, user, "observation.created", {
+      targetType: "observation",
+      targetId: result.id as unknown as string,
+      details: `Observation: ${result.message.slice(0, 120)}`,
+      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+    });
+    return json(result, { status: 201 });
+  } catch (err) {
+    return badRequest(err instanceof Error ? err.message : "Could not save this observation");
+  }
+})});
+
+http.route({ path: "/observations", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request, { allowClientPortal: true });
+  if (!user) return unauthorized();
+  const url = new URL(request.url);
+  return json(
+    await ctx.runQuery(internal.observations.list, {
+      viewerId: _uid(user.convexId),
+      limit: Number(url.searchParams.get("limit") ?? 100),
+      includeAcknowledged: url.searchParams.get("includeAcknowledged") === "true",
+    }),
+  );
+})});
+
+http.route({ pathPrefix: "/observations/", method: "POST", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  const roleErr = requireRole(user, ["admin", "supervisor"]);
+  if (roleErr) return roleErr;
+  const action = lastPathPart(request);
+  const id = lastPathPart(request, 1);
+  if (action !== "acknowledge" || !id) return notFound("Observation route not found");
+  try {
+    const result = await ctx.runMutation(internal.observations.acknowledge, {
+      observationId: id as Id<"observations">,
+      userId: _uid(user.convexId),
+    });
+    return json(result);
+  } catch {
+    return notFound("Observation not found");
+  }
+})});
+
 // Postings to a single sub-location (QR point). Separate from the site
 // assignments above because the two answer different questions: a site
 // assignment decides whether a guard's scans at this location count at all,

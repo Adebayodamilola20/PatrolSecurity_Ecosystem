@@ -363,6 +363,33 @@ export default defineSchema({
     .index("by_officerId_status", ["officerId", "status"])
     .index("by_clientId_status", ["clientId", "status"]),
 
+  /**
+   * Quick operational notes from a guard — "the rear gate light is out",
+   * "client asked for an extra patrol".
+   *
+   * Deliberately not an incident. An incident carries a category, a severity,
+   * a status, photos and a resolution workflow, and a guard who just wants to
+   * mention a broken light will not fill that in; the note never gets made and
+   * nobody finds out. This is a message and a place, and nothing else.
+   */
+  observations: defineTable({
+    clientId: v.optional(v.id("clients")),
+    siteId: v.optional(v.id("sites")),
+    checkpointId: v.optional(v.id("checkpoints")),
+    officerId: v.id("users"),
+    message: v.string(),
+    siteLabel: v.string(),
+    // Staff tick these off once actioned, so a list of twenty stale notes
+    // does not bury the one from ten minutes ago.
+    acknowledgedAt: v.optional(v.number()),
+    acknowledgedByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+  })
+    .index("by_clientId", ["clientId"])
+    .index("by_siteId", ["siteId"])
+    .index("by_officerId", ["officerId"])
+    .index("by_createdAt", ["createdAt"]),
+
   reportSubmissions: defineTable({
     legacyId: v.optional(v.string()),
     clientId: v.optional(v.id("clients")),

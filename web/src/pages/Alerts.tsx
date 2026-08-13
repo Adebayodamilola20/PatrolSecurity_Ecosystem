@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { AlertTriangle, AlertCircle, Info, Clock, ShieldAlert, User2, MapPin, RefreshCw, Mail, Search, ChevronDown, Camera, ExternalLink } from 'lucide-react'
+import { AlertTriangle, AlertCircle, Info, Clock, ShieldAlert, User2, MapPin, MessageSquare, RefreshCw, Mail, Search, ChevronDown, Camera, ExternalLink } from 'lucide-react'
 import { api } from '../services/api'
 import { CardSkeleton } from '../components/ui/Skeleton'
 import { useAuthStore } from '../stores/useAuthStore'
@@ -39,6 +39,11 @@ export default function Alerts() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const setOpenIncidentCount = useAlertStore((s) => s.setOpenIncidentCount)
+  // Guard observations: quick notes, not incidents. They sit above the
+  // incident list because they are the cheapest thing to action and the
+  // easiest to lose.
+  const [observations, setObservations] = useState<Awaited<ReturnType<typeof api.observations.list>>>([])
+  const [ackingObservation, setAckingObservation] = useState<string | null>(null)
 
   if (userRole === 'guard') {
     return <Navigate to="/" replace />
@@ -52,12 +57,14 @@ export default function Alerts() {
     setLoading(true)
     setError(null)
     try {
-      const [incidentRows, missedRows] = await Promise.all([
+      const [incidentRows, missedRows, observationRows] = await Promise.all([
         api.incidents.list(),
         api.missedPatrols.list({ status: 'open' }),
+        api.observations.list().catch(() => []),
       ])
       setIncidents(incidentRows)
       setMissedPatrols(missedRows)
+      setObservations(observationRows)
       setOpenIncidentCount(incidentRows.filter((i: Incident) => i.status === 'open').length)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load alerts')
@@ -130,6 +137,57 @@ export default function Alerts() {
           </button>
         </div>
       </div>
+
+      {/* Guard observations. Deliberately above the incident list: a note
+          about a dead gate light is cheap to action and easy to lose in a
+          page of incidents. Acknowledging one clears it from this view. */}
+      {observations.length > 0 && (
+        <div className="rounded-xl border border-info/25 bg-card p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <MessageSquare className="h-4 w-4 text-info" />
+            <h2 className="font-semibold">Guard observations</h2>
+            <span className="rounded-full bg-info/15 px-2 py-0.5 text-[11px] font-semibold text-info">
+              {observations.length}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {observations.map((note) => (
+              <div key={note.id} className="flex flex-wrap items-start gap-3 rounded-lg bg-muted/30 px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm">{note.message}</div>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                    {note.officerName && <span>{note.officerName}</span>}
+                    {(note.checkpointName || note.siteName) && (
+                      <span className="flex items-center gap-1">
+                        <MapPin className="h-3 w-3" /> {note.checkpointName ?? note.siteName}
+                      </span>
+                    )}
+                    {note.clientName && <span>{note.clientName}</span>}
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3.5 w-3.5" /> {formatDate(note.createdAt)}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={async () => {
+                    setAckingObservation(note.id)
+                    try {
+                      await api.observations.acknowledge(note.id)
+                      setObservations((prev) => prev.filter((n) => n.id !== note.id))
+                    } finally {
+                      setAckingObservation(null)
+                    }
+                  }}
+                  disabled={ackingObservation === note.id}
+                  className="shrink-0 rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-accent disabled:opacity-50"
+                >
+                  {ackingObservation === note.id ? 'Saving…' : 'Mark done'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col sm:flex-row flex-wrap gap-2">
         <div className="relative flex-1 min-w-[180px]">

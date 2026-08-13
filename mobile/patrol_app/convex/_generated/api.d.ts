@@ -42,6 +42,7 @@ import type * as lib_tombstones from "../lib/tombstones.js";
 import type * as missedPatrolScheduler from "../missedPatrolScheduler.js";
 import type * as missedPatrols from "../missedPatrols.js";
 import type * as notifications from "../notifications.js";
+import type * as observations from "../observations.js";
 import type * as passOnLogs from "../passOnLogs.js";
 import type * as pdfService from "../pdfService.js";
 import type * as photoMigration from "../photoMigration.js";
@@ -101,6 +102,7 @@ declare const fullApi: ApiFromModules<{
   missedPatrolScheduler: typeof missedPatrolScheduler;
   missedPatrols: typeof missedPatrols;
   notifications: typeof notifications;
+  observations: typeof observations;
   passOnLogs: typeof passOnLogs;
   pdfService: typeof pdfService;
   photoMigration: typeof photoMigration;

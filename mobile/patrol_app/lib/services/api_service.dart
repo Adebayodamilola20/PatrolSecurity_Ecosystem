@@ -560,6 +560,32 @@ class ApiService {
     return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
+  /// A quick note for the control room — a light out, a request from the
+  /// client, a vehicle making a noise. Not an incident: no severity, no
+  /// category, no photos, nothing to fill in but the sentence itself.
+  static Future<Map<String, dynamic>> submitObservation({
+    required String message,
+    String? siteId,
+    String? checkpointId,
+  }) async {
+    _ensureHttps();
+    final res = await _client
+        .post(
+          Uri.parse('$baseUrl/observations'),
+          headers: await _headers(),
+          body: jsonEncode({
+            'message': message,
+            if (siteId != null) 'siteId': siteId,
+            if (checkpointId != null) 'checkpointId': checkpointId,
+          }),
+        )
+        .timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to send observation');
+    }
+    return _decodeBody<Map<String, dynamic>>(res.body);
+  }
+
   static Future<Map<String, dynamic>> submitDailyActivityReport({
     required String summary,
     String activities = '',

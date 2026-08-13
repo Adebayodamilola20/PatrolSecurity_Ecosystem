@@ -327,6 +327,29 @@ export const api = {
   // Guard <-> sub-location posting: which gate is whose. Assigning here also
   // posts the guard to the parent location, so their scans are accepted; a
   // guard can hold several gates at once.
+  // Quick notes from guards — a light out, a request from the client. Not
+  // incidents: no category, no severity, no resolution workflow.
+  observations: {
+    list: (params?: { includeAcknowledged?: boolean; limit?: number }) =>
+      request<Array<{
+        id: string
+        message: string
+        officerName: string | null
+        siteName: string | null
+        checkpointName: string | null
+        clientName: string | null
+        acknowledgedAt: string | null
+        acknowledgedByName: string | null
+        createdAt: string
+      }>>(
+        `/observations?${new URLSearchParams({
+          ...(params?.includeAcknowledged ? { includeAcknowledged: 'true' } : {}),
+          ...(params?.limit ? { limit: String(params.limit) } : {}),
+        })}`,
+      ),
+    acknowledge: (id: string) =>
+      request<{ alreadyAcknowledged: boolean }>(`/observations/${id}/acknowledge`, { method: 'POST' }),
+  },
   checkpointAssignments: {
     list: (checkpointId: string) =>
       request<Array<{ id: string; name: string; phone: string; role: string; active: boolean; onDuty: boolean; assignedAt: string }>>(

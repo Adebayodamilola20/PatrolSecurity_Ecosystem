@@ -987,3 +987,125 @@ describe("client pass-on logs", () => {
     expect([401, 403]).toContain(res.status);
   });
 });
+
+/**
+ * Guard observations.
+ *
+ * Lightweight by design, which is exactly why the scoping has to be tight:
+ * anything this cheap to file will be filed often, and a note tagged with a
+ * site belongs only to the company that owns that site.
+ */
+describe("guard observations", () => {
+  const note = (extra: Record<string, unknown> = {}) =>
+    JSON.stringify({ message: "Rear gate light is not working", ...extra });
+
+  test("a guard can file one against their own site", async () => {
+    const res = await t.fetch("/observations", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: note({ siteId: w.alphaSite }),
+    });
+    expect(res.status).toBe(201);
+    const rows = await t.run((ctx) => ctx.db.query("observations").collect());
+    expect(rows).toHaveLength(1);
+    expect(rows[0].clientId).toBe(w.alphaClient);
+  });
+
+  test("a guard cannot file one against a site they are not posted to", async () => {
+    const res = await t.fetch("/observations", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: note({ siteId: w.bravoSite }),
+    });
+    expect(res.status).toBe(400);
+    const rows = await t.run((ctx) => ctx.db.query("observations").collect());
+    expect(rows).toHaveLength(0);
+  });
+
+  test("an empty message is refused", async () => {
+    const res = await t.fetch("/observations", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({ message: "   ", siteId: w.alphaSite }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test("staff see it, and a guard sees only their own", async () => {
+    await t.fetch("/observations", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: note({ siteId: w.alphaSite }),
+    });
+    const adminSees = await (
+      await t.fetch("/observations", { method: "GET", headers: auth(w.tokens.admin) })
+    ).json();
+    expect(adminSees).toHaveLength(1);
+    expect(adminSees[0].officerName).toBe("Ade Guard");
+
+    const otherGuard = await (
+      await t.fetch("/observations", { method: "GET", headers: auth(w.tokens.alphaRelief) })
+    ).json();
+    expect(otherGuard).toHaveLength(0);
+  });
+
+  test("a client sees its own notes but never which guard wrote them", async () => {
+    await t.fetch("/observations", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: note({ siteId: w.alphaSite }),
+    });
+    await t.fetch("/observations", {
+      method: "POST",
+      headers: auth(w.tokens.bravoGuard),
+      body: JSON.stringify({ message: "Bravo note", siteId: w.bravoSite }),
+    });
+    const portalSees = await (
+      await t.fetch("/observations", { method: "GET", headers: auth(w.tokens.alphaPortal) })
+    ).json();
+    expect(portalSees).toHaveLength(1);
+    expect(portalSees[0].message).toMatch(/Rear gate light/);
+    // The standing rule: a client is shown activity, never identities.
+    expect(portalSees[0].officerName).toBeNull();
+  });
+
+  test("acknowledging clears it from the working list", async () => {
+    await t.fetch("/observations", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: note({ siteId: w.alphaSite }),
+    });
+    const [row] = await t.run((ctx) => ctx.db.query("observations").collect());
+    const ack = await t.fetch(`/observations/${row._id}/acknowledge`, {
+      method: "POST",
+      headers: auth(w.tokens.admin),
+    });
+    expect(ack.status).toBe(200);
+    const open = await (
+      await t.fetch("/observations", { method: "GET", headers: auth(w.tokens.admin) })
+    ).json();
+    expect(open).toHaveLength(0);
+    const all = await (
+      await t.fetch("/observations?includeAcknowledged=true", {
+        method: "GET",
+        headers: auth(w.tokens.admin),
+      })
+    ).json();
+    expect(all).toHaveLength(1);
+    expect(all[0].acknowledgedByName).toBe("Ada Admin");
+  });
+
+  test("a guard cannot acknowledge one", async () => {
+    await t.fetch("/observations", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: note({ siteId: w.alphaSite }),
+    });
+    const [row] = await t.run((ctx) => ctx.db.query("observations").collect());
+    const res = await t.fetch(`/observations/${row._id}/acknowledge`, {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+    });
+    expect(res.status).toBe(403);
+  });
+});
