@@ -420,65 +420,77 @@ export const create = internalMutation({
       throw new Error("Duplicate scan within 60 seconds");
     }
 
-    let computedDistance: number | undefined;
-    let gpsValid = true;
-
-    if (args.gpsLatitude != null && args.gpsLongitude != null) {
-      if (checkpoint.latitude != null && checkpoint.longitude != null) {
-        // Legacy checkpoint with its own coordinates: enforce as before.
-        computedDistance = distanceMeters(
-          checkpoint.latitude,
-          checkpoint.longitude,
-          args.gpsLatitude,
-          args.gpsLongitude,
-        );
-        gpsValid = computedDistance <= (checkpoint.radiusMeters ?? 50);
-        if (!gpsValid) {
-          await ctx.runMutation(internal.audit.record, {
-            action: "scan.rejected",
-            actorId: args.officerId,
-            actorRole: officer?.role ?? "guard",
-            targetType: "checkpoint",
-            targetId: args.checkpointId,
-            details: `GPS out of radius: ${computedDistance}m > ${checkpoint.radiusMeters ?? 50}m`,
-            clientId,
-            siteId,
-            success: false,
-          });
-          throw new Error(
-            "GPS location is outside the allowed radius for this checkpoint",
-          );
-        }
-      } else {
-        // Sub-location (plain QR, no coordinates of its own): verify the
-        // guard's GPS against the parent site geofence. The scan is recorded
-        // either way — out-of-range only flags it as unverified so staff see
-        // the evidence instead of the scan silently never existing.
-        const site = siteId ? await ctx.db.get(siteId) : null;
-        if (site?.latitude != null && site?.longitude != null) {
-          computedDistance = distanceMeters(
-            site.latitude,
-            site.longitude,
-            args.gpsLatitude,
-            args.gpsLongitude,
-          );
-          gpsValid = computedDistance <= (site.radiusMeters ?? 150);
-          if (!gpsValid) {
-            await ctx.runMutation(internal.audit.record, {
-              action: "scan.unverified",
-              actorId: args.officerId,
-              actorRole: officer?.role ?? "guard",
-              targetType: "checkpoint",
-              targetId: args.checkpointId,
-              details: `Sub-location scan outside site geofence: ${Math.round(computedDistance)}m > ${site.radiusMeters ?? 150}m from ${site.name}`,
-              clientId,
-              siteId,
-              success: true,
-            });
+    // GPS verification, enforced here and not in the app.
+    //
+    // There were two ways past this. A sub-location scan taken outside the
+    // site geofence was recorded anyway, merely flagged unverified. Worse, a
+    // scan carrying no coordinates at all fell straight through to
+    // `gpsValid = true` — anyone able to edit the request body could mark
+    // themselves verified from anywhere on earth by omitting two fields.
+    //
+    // Now: whichever geofence applies, the guard must be inside it, and a
+    // scan with no fix is refused rather than trusted. Refusing means no scan
+    // row, so a failed scan cannot reach a report, and — since post orders
+    // are resolved from the stored scan — it cannot reveal a post order
+    // either. The guard is told what is wrong and can simply scan again.
+    const scanSite = siteId ? await ctx.db.get(siteId) : null;
+    const fence =
+      checkpoint.latitude != null && checkpoint.longitude != null
+        ? {
+            lat: checkpoint.latitude,
+            lng: checkpoint.longitude,
+            radius: checkpoint.radiusMeters ?? 50,
+            label: checkpoint.name,
           }
-        }
-        // Site without coordinates: nothing to verify against — scan-only.
+        : scanSite?.latitude != null && scanSite?.longitude != null
+          ? {
+              lat: scanSite.latitude,
+              lng: scanSite.longitude,
+              radius: scanSite.radiusMeters ?? 150,
+              label: scanSite.name,
+            }
+          : null;
+
+    let computedDistance: number | undefined;
+    let gpsValid = false;
+
+    if (fence) {
+      if (args.gpsLatitude == null || args.gpsLongitude == null) {
+        await rejectScan(
+          "Scan submitted without a GPS fix",
+          "Location is off or unavailable. Turn on location for this app and scan again — a patrol scan has to prove where it was taken.",
+        );
       }
+      computedDistance = distanceMeters(
+        fence.lat,
+        fence.lng,
+        args.gpsLatitude!,
+        args.gpsLongitude!,
+      );
+      gpsValid = computedDistance <= fence.radius;
+      if (!gpsValid) {
+        await rejectScan(
+          `GPS outside the ${fence.label} geofence: ${Math.round(computedDistance)}m > ${fence.radius}m`,
+          `You are ${Math.round(computedDistance)}m away from ${fence.label}. Move within ${fence.radius}m of it and scan again.`,
+        );
+      }
+    } else {
+      // No geofence exists to check against. Blocking here would make a
+      // whole location unscannable over an admin's missing map pin, so the
+      // scan is kept but never counted as verified, and audited so the
+      // misconfiguration is visible rather than silent.
+      await ctx.runMutation(internal.audit.record, {
+        action: "scan.unverified",
+        actorId: args.officerId,
+        actorRole: officer?.role ?? "guard",
+        targetType: "checkpoint",
+        targetId: args.checkpointId,
+        details:
+          "Scan could not be GPS-verified: neither the sub-location nor its location has map coordinates",
+        clientId,
+        siteId,
+        success: true,
+      });
     }
 
     const scanId = await ctx.db.insert("scans", {
