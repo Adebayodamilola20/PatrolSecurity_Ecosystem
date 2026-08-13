@@ -493,11 +493,23 @@ export default function ClientDetail() {
       zoom: 15,
       zoomControl: false,
     })
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    // Two basemaps. The street map is easier to read at a glance, but a pin
+    // dropped on a street map is guesswork on a compound — satellite is what
+    // lets someone place the geofence around the actual buildings and walls
+    // rather than around a road name. Esri's imagery needs no API key.
+    const streets = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
       attribution: '&copy; OpenStreetMap &copy; CARTO',
       subdomains: 'abcd',
       maxZoom: 19,
-    }).addTo(map)
+    })
+    const satellite = L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      { attribution: 'Imagery &copy; Esri', maxZoom: 19 },
+    )
+    satellite.addTo(map)
+    L.control
+      .layers({ Satellite: satellite, Map: streets }, undefined, { position: 'topright', collapsed: false })
+      .addTo(map)
     L.control.zoom({ position: 'bottomright' }).addTo(map)
 
     const marker = L.marker([initialLat, initialLng], { draggable: true, icon: markerIcon }).addTo(map)
@@ -1366,8 +1378,24 @@ export default function ClientDetail() {
                     <span className="text-[11px] text-muted-foreground">Tap map or drag the pin</span>
                   </div>
                   <div ref={mapRef} className="mt-2 h-52 overflow-hidden rounded-xl border border-border" />
+                  {/* The exact area that will count as authorized, spelled
+                      out. The three inputs below can each be edited, so the
+                      one place to read the whole answer is here. */}
+                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-muted/40 px-3 py-2 text-[11px]">
+                    <span className="text-muted-foreground">
+                      Latitude <span className="font-mono text-foreground">{locationForm.latitude || '—'}</span>
+                    </span>
+                    <span className="text-muted-foreground">
+                      Longitude <span className="font-mono text-foreground">{locationForm.longitude || '—'}</span>
+                    </span>
+                    <span className="text-muted-foreground">
+                      Geofence radius <span className="font-semibold text-foreground">{locationForm.radiusMeters || 150}m</span>
+                    </span>
+                  </div>
                   <p className="mt-2 text-[11px] text-muted-foreground">
-                    Sub-location scans are verified against this point: a guard's GPS must be inside the geofence radius for the scan to show as "Verified".
+                    Anything inside that circle counts as an authorized scanning area. A guard's GPS must
+                    be inside it or the scan is refused — switch to Satellite to place the pin on the
+                    actual buildings rather than the road.
                   </p>
                 </div>
                 <div className="grid grid-cols-3 gap-3">
