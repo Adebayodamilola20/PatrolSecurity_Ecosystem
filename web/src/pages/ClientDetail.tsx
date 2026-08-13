@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   X,
@@ -31,6 +31,8 @@ interface SubLocation {
   code: string
   hasOwnGps: boolean
   active: boolean
+  /** Who holds this particular gate. Several guards may share one point. */
+  postedGuards: AssignedGuard[]
   scansToday: number
   verifiedToday: number
   lastScanAt: string | null
@@ -41,6 +43,7 @@ interface AssignedGuard {
   id: string
   name: string
   phone: string
+  role: string
   active: boolean
   onDuty: boolean
 }
@@ -79,6 +82,13 @@ function escapeHtmlForPrint(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+}
+
+// Supervisors can hold a post too, so they belong in the dropdown — but
+// posting a supervisor to a gate is a different decision from posting a
+// guard, and the names alone don't say which is which.
+function guardLabel(person: { name: string; role: string }) {
+  return person.role === 'supervisor' ? `${person.name} (supervisor)` : person.name
 }
 
 function QRCell({ data, size = 96 }: { data: string; size?: number }) {
@@ -138,9 +148,12 @@ export default function ClientDetail() {
 
   // Guard-assignment state: the pool of assignable guards plus, per location,
   // the guard picked in the dropdown and whether a request is in flight.
-  const [guardPool, setGuardPool] = useState<Array<{ id: string; convexId?: string; name: string }>>([])
+  const [guardPool, setGuardPool] = useState<Array<{ id: string; convexId?: string; name: string; role: string }>>([])
   const [pendingGuard, setPendingGuard] = useState<Record<string, string>>({})
   const [assignBusySiteId, setAssignBusySiteId] = useState('')
+  // Same, per sub-location: which guard is picked in that gate's dropdown.
+  const [pendingSubGuard, setPendingSubGuard] = useState<Record<string, string>>({})
+  const [assignBusySubId, setAssignBusySubId] = useState('')
   // A guard already posted to another location triggers a blocking popup so
   // staff can't silently double-assign them.
   const [assignConflict, setAssignConflict] = useState('')
@@ -176,16 +189,35 @@ export default function ClientDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
-  // The guard pool for the assign dropdown (GET /users is admin-only, which
+  // The pool of people who can be posted (GET /users is admin-only, which
   // matches canManage).
-  useEffect(() => {
+  //
+  // This used to keep only `role === 'guard'`, so supervisors — who patrol,
+  // clock in and scan here like anyone else — were missing from the dropdown
+  // with no explanation. Staff newly created as supervisors simply never
+  // appeared and looked like they had not saved. Both roles are listed now,
+  // with the role shown so nobody posts a supervisor by accident.
+  const loadGuardPool = useCallback(() => {
     if (!canManage) return
     api.users.list()
       .then((users) => setGuardPool(
-        (users || []).filter((u: any) => u.role === 'guard' && u.active),
+        (users || [])
+          .filter((u: any) => (u.role === 'guard' || u.role === 'supervisor') && u.active)
+          .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name))),
       ))
       .catch(() => setGuardPool([]))
   }, [canManage])
+
+  useEffect(() => { loadGuardPool() }, [loadGuardPool])
+
+  // Guards are created on another page, often in another tab. Without this a
+  // brand-new guard stays missing from the dropdown until a hard reload —
+  // which reads as "the system didn't save my guard".
+  useEffect(() => {
+    const onFocus = () => loadGuardPool()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [loadGuardPool])
 
   const assignGuard = async (site: ClientSite) => {
     const guardId = pendingGuard[site.id]
@@ -206,6 +238,42 @@ export default function ClientDetail() {
       }
     } finally {
       setAssignBusySiteId('')
+    }
+  }
+
+  // Posting to one gate. A guard can hold several at once, so there is no
+  // "already posted" block here — only the parent-location rule can conflict.
+  const assignSubGuard = async (sub: SubLocation) => {
+    const guardId = pendingSubGuard[sub.id]
+    if (!guardId) return
+    try {
+      setAssignBusySubId(sub.id)
+      setActionError('')
+      await api.checkpointAssignments.assign(sub.id, guardId)
+      setPendingSubGuard((prev) => ({ ...prev, [sub.id]: '' }))
+      load()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not post the guard here.'
+      if (/already assigned/i.test(message)) {
+        setAssignConflict(message)
+      } else {
+        setActionError(message)
+      }
+    } finally {
+      setAssignBusySubId('')
+    }
+  }
+
+  const unassignSubGuard = async (sub: SubLocation, guard: AssignedGuard) => {
+    try {
+      setAssignBusySubId(sub.id)
+      setActionError('')
+      await api.checkpointAssignments.unassign(sub.id, guard.id)
+      load()
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Could not remove the guard.')
+    } finally {
+      setAssignBusySubId('')
     }
   }
 
@@ -786,7 +854,7 @@ export default function ClientDetail() {
                               className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs"
                             >
                               <span className={`h-2 w-2 rounded-full ${guard.onDuty ? 'bg-success' : 'bg-muted-foreground/40'}`} />
-                              <span className="font-medium">{guard.name}</span>
+                              <span className="font-medium">{guardLabel(guard)}</span>
                               <span className="text-muted-foreground">{guard.onDuty ? 'on duty' : 'off duty'}</span>
                               {canManage && (
                                 <button
@@ -815,7 +883,7 @@ export default function ClientDetail() {
                                 (a) => a.id === g.id || a.id === g.convexId,
                               ))
                               .map((g) => (
-                                <option key={g.id} value={g.convexId ?? g.id}>{g.name}</option>
+                                <option key={g.id} value={g.convexId ?? g.id}>{guardLabel(g)}</option>
                               ))}
                           </select>
                           <button
@@ -825,6 +893,13 @@ export default function ClientDetail() {
                           >
                             {assignBusySiteId === site.id ? 'Saving…' : 'Assign'}
                           </button>
+                        </div>
+                      )}
+                      {/* An empty dropdown is indistinguishable from a broken
+                          one, so say which it is. */}
+                      {canManage && guardPool.length === 0 && (
+                        <div className="mt-2 text-[11px] text-muted-foreground">
+                          No active guards or supervisors exist yet — create one under Users, then come back here.
                         </div>
                       )}
                     </div>
@@ -886,6 +961,67 @@ export default function ClientDetail() {
                                   )}
                                 </div>
                               </div>
+                              {/* Who is posted at this gate specifically. A
+                                  location with five gates used to show one
+                                  undifferentiated list of guards, so "who is
+                                  on the back gate tonight" had no answer. */}
+                              <div className="mt-3 border-t border-border pt-3">
+                                <div className="mb-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                                  Assigned here
+                                </div>
+                                {sub.postedGuards.length === 0 ? (
+                                  <div className="text-[11px] text-muted-foreground">Nobody assigned yet</div>
+                                ) : (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {sub.postedGuards.map((guard) => (
+                                      <span
+                                        key={guard.id}
+                                        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-[11px]"
+                                        title={guard.onDuty ? 'On duty now' : 'Off duty'}
+                                      >
+                                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${guard.onDuty ? 'bg-success' : 'bg-muted-foreground/40'}`} />
+                                        <span className="font-medium">{guardLabel(guard)}</span>
+                                        {canManage && (
+                                          <button
+                                            onClick={() => void unassignSubGuard(sub, guard)}
+                                            disabled={assignBusySubId === sub.id}
+                                            title={`Remove ${guard.name} from ${sub.name}`}
+                                            className="text-muted-foreground hover:text-destructive disabled:opacity-50"
+                                          >
+                                            <X className="h-3 w-3" />
+                                          </button>
+                                        )}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                                {canManage && (
+                                  <div className="mt-2 flex items-center gap-1.5">
+                                    <select
+                                      value={pendingSubGuard[sub.id] ?? ''}
+                                      onChange={(e) => setPendingSubGuard((prev) => ({ ...prev, [sub.id]: e.target.value }))}
+                                      className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-1.5 text-[11px]"
+                                    >
+                                      <option value="">Assign a guard…</option>
+                                      {guardPool
+                                        .filter((g) => !sub.postedGuards.some(
+                                          (a) => a.id === g.id || a.id === g.convexId,
+                                        ))
+                                        .map((g) => (
+                                          <option key={g.id} value={g.convexId ?? g.id}>{guardLabel(g)}</option>
+                                        ))}
+                                    </select>
+                                    <button
+                                      onClick={() => void assignSubGuard(sub)}
+                                      disabled={!pendingSubGuard[sub.id] || assignBusySubId === sub.id}
+                                      className="shrink-0 rounded-lg bg-primary px-2.5 py-1.5 text-[11px] font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      {assignBusySubId === sub.id ? 'Saving…' : 'Assign'}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+
                               <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
                                 <button
                                   onClick={() => void downloadQr(sub)}

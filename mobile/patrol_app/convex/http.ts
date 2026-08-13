@@ -3659,6 +3659,52 @@ http.route({ path: "/site-assignments", method: "DELETE", handler: httpAction(as
   return json(result);
 })});
 
+// Postings to a single sub-location (QR point). Separate from the site
+// assignments above because the two answer different questions: a site
+// assignment decides whether a guard's scans at this location count at all,
+// a posting records which gate is theirs. A guard may hold several gates at
+// once, so there is deliberately no one-posting-per-guard rule here.
+http.route({ path: "/checkpoint-assignments", method: "POST", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  const roleErr = requireRole(user, ["admin", "supervisor"]);
+  if (roleErr) return roleErr;
+  const body = await parseJson(request);
+  const checkpointId = await ctx.runQuery(internal.checkpoints.resolveId, { id: String(body?.checkpointId ?? "") });
+  if (!checkpointId) return notFound("Sub-location not found");
+  const userId = await ctx.runQuery(internal.users.resolveId, { id: String(body?.userId ?? "") });
+  if (!userId) return notFound("User not found");
+  const result = await ctx.runMutation(internal.checkpoints.assignUser, { checkpointId, userId });
+  if ("conflict" in result && result.conflict) {
+    return conflict(
+      `This guard is already assigned to "${result.otherSiteName}". Unassign them from that location first before posting them here.`,
+    );
+  }
+  await recordAudit(ctx, user, "checkpoint.guard_assigned", {
+    targetType: "checkpoint", targetId: checkpointId,
+    details: `Posted user ${userId} to sub-location ${checkpointId}`,
+  });
+  return json(result, { status: result.alreadyAssigned ? 200 : 201 });
+})});
+
+http.route({ path: "/checkpoint-assignments", method: "DELETE", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  const roleErr = requireRole(user, ["admin", "supervisor"]);
+  if (roleErr) return roleErr;
+  const body = await parseJson(request);
+  const checkpointId = await ctx.runQuery(internal.checkpoints.resolveId, { id: String(body?.checkpointId ?? "") });
+  if (!checkpointId) return notFound("Sub-location not found");
+  const userId = await ctx.runQuery(internal.users.resolveId, { id: String(body?.userId ?? "") });
+  if (!userId) return notFound("User not found");
+  const result = await ctx.runMutation(internal.checkpoints.unassignUser, { checkpointId, userId });
+  await recordAudit(ctx, user, "checkpoint.guard_unassigned", {
+    targetType: "checkpoint", targetId: checkpointId,
+    details: `Removed user ${userId} from sub-location ${checkpointId}`,
+  });
+  return json(result);
+})});
+
 // [client-structure] Portal overview: only NUMBERS for guards (AGM rule —
 // clients never see guard identities), plus site list and scan activity.
 http.route({ path: "/client/overview", method: "GET", handler: httpAction(async (ctx, request) => {

@@ -1,5 +1,6 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import { scrubOfficerName } from "./lib/anonymize";
 
 export const list = internalQuery({
@@ -153,6 +154,12 @@ export const update = internalMutation({
   },
 });
 
+// Who can hold a post. Supervisors patrol, clock in and scan alongside guards
+// in this system, so a list that only counted role === "guard" silently
+// dropped every supervisor a tester had just created — they could be assigned
+// and then simply not appear anywhere.
+const POSTABLE_ROLES = new Set(["guard", "supervisor"]);
+
 // Full drill-down for the admin "client account" page: company info, portal
 // login, and the Location -> Sub-location tree with scan activity.
 export const getDetail = internalQuery({
@@ -191,6 +198,25 @@ export const getDetail = internalQuery({
           )
           .collect();
 
+        const describeStaff = async (userId: Id<"users">) => {
+          const staff = await ctx.db.get(userId);
+          if (!staff || !POSTABLE_ROLES.has(staff.role)) return null;
+          const activeShift = await ctx.db
+            .query("shifts")
+            .withIndex("by_userId_status", (q) =>
+              q.eq("userId", userId).eq("status", "active"),
+            )
+            .first();
+          return {
+            id: staff._id,
+            name: staff.name,
+            phone: staff.phone,
+            role: staff.role,
+            active: staff.active,
+            onDuty: !!activeShift,
+          };
+        };
+
         const describeQrPoint = async (cp: (typeof checkpoints)[number]) => {
           const lastScan = await ctx.db
             .query("scans")
@@ -202,12 +228,23 @@ export const getDetail = internalQuery({
           const cpScansToday = scansToday.filter(
             (s) => s.checkpointId === cp._id,
           );
+          // Who is posted at this individual gate. The location-wide list
+          // below answers "may they scan here at all"; this answers "whose
+          // gate is this", which is what a supervisor needs at 2am.
+          const postings = await ctx.db
+            .query("userCheckpointAssignments")
+            .withIndex("by_checkpointId", (q) => q.eq("checkpointId", cp._id))
+            .collect();
+          const postedGuards = (
+            await Promise.all(postings.map((p) => describeStaff(p.userId)))
+          ).filter((g): g is NonNullable<typeof g> => g !== null);
           return {
             id: cp._id,
             name: cp.name,
             code: cp.code,
             hasOwnGps: cp.latitude != null && cp.longitude != null,
             active: cp.active,
+            postedGuards,
             scansToday: cpScansToday.length,
             verifiedToday: cpScansToday.filter((s) => s.gpsValid).length,
             lastScanAt: lastScan
@@ -233,23 +270,7 @@ export const getDetail = internalQuery({
           .collect();
         const assignedGuards = (
           await Promise.all(
-            assignments.map(async (assignment) => {
-              const guard = await ctx.db.get(assignment.userId);
-              if (!guard || guard.role !== "guard") return null;
-              const activeShift = await ctx.db
-                .query("shifts")
-                .withIndex("by_userId_status", (q) =>
-                  q.eq("userId", assignment.userId).eq("status", "active"),
-                )
-                .first();
-              return {
-                id: guard._id,
-                name: guard.name,
-                phone: guard.phone,
-                active: guard.active,
-                onDuty: !!activeShift,
-              };
-            }),
+            assignments.map((assignment) => describeStaff(assignment.userId)),
           )
         ).filter((g): g is NonNullable<typeof g> => g !== null);
 
@@ -340,7 +361,7 @@ export const portalOverview = internalQuery({
     let guardsOnDuty = 0;
     for (const guardId of guardIds) {
       const guard = await ctx.db.get(guardId as any);
-      if (!guard || (guard as any).role !== "guard" || !(guard as any).active) continue;
+      if (!guard || !POSTABLE_ROLES.has((guard as any).role) || !(guard as any).active) continue;
       totalGuards += 1;
       const activeShift = await ctx.db
         .query("shifts")
@@ -479,7 +500,7 @@ export const portalGuardStats = internalQuery({
     let clockedIn = 0;
     for (const guardId of guardIds) {
       const guard = await ctx.db.get(guardId as any);
-      if (!guard || (guard as any).role !== "guard" || !(guard as any).active) continue;
+      if (!guard || !POSTABLE_ROLES.has((guard as any).role) || !(guard as any).active) continue;
       assigned += 1;
       const activeShift = await ctx.db
         .query("shifts")

@@ -313,6 +313,15 @@ export const api = {
     unassign: (siteId: string, userId: string) =>
       request<any>('/site-assignments', { method: 'DELETE', body: JSON.stringify({ siteId, userId }) }),
   },
+  // Guard <-> sub-location posting: which gate is whose. Assigning here also
+  // posts the guard to the parent location, so their scans are accepted; a
+  // guard can hold several gates at once.
+  checkpointAssignments: {
+    assign: (checkpointId: string, userId: string) =>
+      request<any>('/checkpoint-assignments', { method: 'POST', body: JSON.stringify({ checkpointId, userId }) }),
+    unassign: (checkpointId: string, userId: string) =>
+      request<any>('/checkpoint-assignments', { method: 'DELETE', body: JSON.stringify({ checkpointId, userId }) }),
+  },
   shifts: {
     status: () => request<{ active: boolean; shift: any }>('/shifts/status'),
     clockIn: () =>

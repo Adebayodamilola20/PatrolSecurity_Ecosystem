@@ -212,6 +212,15 @@ export const remove = internalMutation({
         deletedByUserId: args.deletedByUserId,
         deletedByName: args.deletedByName,
       });
+      // Postings to this gate go with it — a posting to a QR point that no
+      // longer exists can never be actioned or removed from the UI.
+      const postings = await ctx.db
+        .query("userCheckpointAssignments")
+        .withIndex("by_checkpointId", (q) =>
+          q.eq("checkpointId", checkpoint._id),
+        )
+        .collect();
+      for (const posting of postings) await ctx.db.delete(posting._id);
       await ctx.db.delete(checkpoint._id);
     }
 

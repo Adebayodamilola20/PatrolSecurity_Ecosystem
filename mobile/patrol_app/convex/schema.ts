@@ -174,6 +174,26 @@ export default defineSchema({
     .index("by_siteId", ["siteId"])
     .index("by_userId_siteId", ["userId", "siteId"]),
 
+  // Which guard is posted at which sub-location (QR point).
+  //
+  // The site assignments above decide whether a scan is accepted at all; these
+  // decide who is answerable for each individual gate, so a location with five
+  // gates can show five different names instead of one undifferentiated list.
+  // Deliberately many-to-many: one guard can hold several gates on the same
+  // shift, and a busy gate can be double-manned.
+  userCheckpointAssignments: defineTable({
+    clientId: v.optional(v.id("clients")),
+    siteId: v.optional(v.id("sites")),
+    userId: v.id("users"),
+    checkpointId: v.id("checkpoints"),
+    createdAt: v.number(),
+  })
+    .index("by_clientId", ["clientId"])
+    .index("by_userId", ["userId"])
+    .index("by_siteId", ["siteId"])
+    .index("by_checkpointId", ["checkpointId"])
+    .index("by_userId_checkpointId", ["userId", "checkpointId"]),
+
   checkpoints: defineTable({
     legacyId: v.optional(v.string()),
     clientId: v.optional(v.id("clients")),

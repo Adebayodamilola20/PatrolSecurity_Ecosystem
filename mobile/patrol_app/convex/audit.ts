@@ -18,6 +18,8 @@ const sensitiveActions = [
   "checkpoint.created",
   "checkpoint.updated",
   "checkpoint.deleted",
+  "checkpoint.guard_assigned",
+  "checkpoint.guard_unassigned",
   "site.created",
   "site.updated",
   "site.deleted",

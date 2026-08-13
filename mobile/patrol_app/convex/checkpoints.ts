@@ -227,7 +227,100 @@ export const remove = internalMutation({
         deletedByName: args.deletedByName,
       });
     }
+    const postings = await ctx.db
+      .query("userCheckpointAssignments")
+      .withIndex("by_checkpointId", (q) =>
+        q.eq("checkpointId", args.checkpointId),
+      )
+      .collect();
+    for (const posting of postings) await ctx.db.delete(posting._id);
+
     await ctx.db.delete(args.checkpointId);
+  },
+});
+
+// Post a guard to one sub-location.
+//
+// Unlike site assignments this is many-to-many on purpose: a guard can hold
+// the front gate and the back gate on the same shift, and a busy gate can be
+// double-manned. Idempotent, so re-posting someone already there is a no-op.
+//
+// A posting is worthless if the guard's scans there would be rejected, so the
+// parent site assignment is created alongside it. That site-level rule is
+// still one guard, one location, so a guard already posted to a different
+// location comes back as a conflict rather than a half-made posting.
+export const assignUser = internalMutation({
+  args: { checkpointId: v.id("checkpoints"), userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const checkpoint = await ctx.db.get(args.checkpointId);
+    if (!checkpoint) throw new Error("Checkpoint not found");
+    const user = await ctx.db.get(args.userId);
+    if (!user) throw new Error("User not found");
+
+    const siteId = checkpoint.siteId;
+    if (siteId) {
+      const postedToSite = await ctx.db
+        .query("userSiteAssignments")
+        .withIndex("by_userId_siteId", (q) =>
+          q.eq("userId", args.userId).eq("siteId", siteId),
+        )
+        .first();
+      if (!postedToSite) {
+        const elsewhere = await ctx.db
+          .query("userSiteAssignments")
+          .withIndex("by_userId_siteId", (q) => q.eq("userId", args.userId))
+          .filter((q) => q.neq(q.field("siteId"), siteId))
+          .first();
+        if (elsewhere) {
+          const otherSite = await ctx.db.get(elsewhere.siteId);
+          return {
+            conflict: true as const,
+            otherSiteName: otherSite?.name ?? "another location",
+          };
+        }
+        const site = await ctx.db.get(siteId);
+        await ctx.db.insert("userSiteAssignments", {
+          clientId: site?.clientId,
+          userId: args.userId,
+          siteId,
+          createdAt: Date.now(),
+        });
+      }
+    }
+
+    const existing = await ctx.db
+      .query("userCheckpointAssignments")
+      .withIndex("by_userId_checkpointId", (q) =>
+        q.eq("userId", args.userId).eq("checkpointId", args.checkpointId),
+      )
+      .first();
+    if (existing) return { id: existing._id, alreadyAssigned: true };
+
+    const id = await ctx.db.insert("userCheckpointAssignments", {
+      clientId: checkpoint.clientId,
+      siteId: checkpoint.siteId,
+      userId: args.userId,
+      checkpointId: args.checkpointId,
+      createdAt: Date.now(),
+    });
+    return { id, alreadyAssigned: false };
+  },
+});
+
+// Pulling a guard off one gate leaves the location assignment alone: they may
+// still hold other gates here, and removing it would silently start rejecting
+// their scans across the whole location.
+export const unassignUser = internalMutation({
+  args: { checkpointId: v.id("checkpoints"), userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("userCheckpointAssignments")
+      .withIndex("by_userId_checkpointId", (q) =>
+        q.eq("userId", args.userId).eq("checkpointId", args.checkpointId),
+      )
+      .first();
+    if (existing) await ctx.db.delete(existing._id);
+    return { removed: !!existing };
   },
 });
 

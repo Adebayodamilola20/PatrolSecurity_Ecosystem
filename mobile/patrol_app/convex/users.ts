@@ -213,6 +213,14 @@ export const remove = internalMutation({
       .collect();
     for (const assignment of assignments) await ctx.db.delete(assignment._id);
 
+    // Gate postings too, or a deleted guard keeps holding the front gate on
+    // every location screen with no way to take them off it.
+    const postings = await ctx.db
+      .query("userCheckpointAssignments")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .collect();
+    for (const posting of postings) await ctx.db.delete(posting._id);
+
     // Live GPS telemetry rather than evidence — it is purged on a schedule
     // anyway, and leaving it puts a nameless dot on the live map.
     const positions = await ctx.db
