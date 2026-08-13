@@ -65,6 +65,17 @@ export const listAll = internalQuery({
       const lastClockOutShift = shifts
         .filter((s) => s.clockOut)
         .sort((a, b) => (b.clockOut ?? 0) - (a.clockOut ?? 0))[0]
+      // Where they are posted, on the roster itself — scanning a list of
+      // names to find who is unassigned should not need a click per person.
+      const assignments = await ctx.db
+        .query("userSiteAssignments")
+        .withIndex("by_userId", (q) => q.eq("userId", u._id))
+        .collect()
+      const assignedSiteNames = (
+        await Promise.all(
+          assignments.map(async (a) => (await ctx.db.get(a.siteId))?.name ?? null),
+        )
+      ).filter((name): name is string => !!name)
       return {
         id: u.legacyId ?? u._id,
         convexId: u._id,
@@ -75,6 +86,7 @@ export const listAll = internalQuery({
         active: u.active,
         clientId: u.clientId,
         clientName: client?.name ?? null,
+        assignedSiteNames,
         liveTracking: u.liveTracking,
         createdAt: new Date(u.createdAt).toISOString(),
         onDuty: !!activeShift,
@@ -282,6 +294,42 @@ export const getDetail = internalQuery({
       .take(20);
     const activeShift = shifts.find((s) => s.status === "active");
     const onDuty = !!activeShift;
+
+    // Where this person is posted. The profile could say whether they were
+    // clocked in but not where they were expected to be, which is the first
+    // thing anyone opening the page wants to know.
+    const siteAssignments = await ctx.db
+      .query("userSiteAssignments")
+      .withIndex("by_userId", (q) => q.eq("userId", found._id))
+      .collect();
+    const checkpointPostings = await ctx.db
+      .query("userCheckpointAssignments")
+      .withIndex("by_userId", (q) => q.eq("userId", found._id))
+      .collect();
+    const assignedLocations = (
+      await Promise.all(
+        siteAssignments.map(async (assignment) => {
+          const site = await ctx.db.get(assignment.siteId);
+          if (!site) return null;
+          const siteClient = await ctx.db.get(site.clientId);
+          return {
+            siteId: site._id,
+            siteName: site.name,
+            clientId: site.clientId,
+            clientName: siteClient?.name ?? null,
+            // The specific gates they hold at this location, in the order
+            // they were posted to them.
+            subLocations: checkpointPostings
+              .filter((posting) => posting.siteId === site._id)
+              .map(
+                (posting) =>
+                  checkpoints.find((cp) => cp._id === posting.checkpointId)?.name,
+              )
+              .filter((name): name is string => !!name),
+          };
+        }),
+      )
+    ).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
     const lastClockInShift = shifts
       .filter((s) => s.clockIn)
       .sort((a, b) => b.clockIn - a.clockIn)[0];
@@ -301,6 +349,7 @@ export const getDetail = internalQuery({
       liveTracking: found.liveTracking,
       createdAt: new Date(found.createdAt).toISOString(),
       onDuty,
+      assignedLocations,
       lastClockIn: lastClockInShift?.clockIn ? new Date(lastClockInShift.clockIn).toISOString() : null,
       lastClockOut: lastClockOutShift?.clockOut ? new Date(lastClockOutShift.clockOut).toISOString() : null,
       shifts: shifts.map((s) => ({

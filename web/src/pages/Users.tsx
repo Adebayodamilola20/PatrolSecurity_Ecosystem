@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Phone, Mail, MoreHorizontal, Plus, X, UsersIcon, Clock3, Search } from 'lucide-react'
+import { Phone, Mail, MapPin, MoreHorizontal, Plus, X, UsersIcon, Clock3, Search } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
 import { subscribeToShiftUpdates } from '../services/websocket'
@@ -259,6 +259,16 @@ export default function Users() {
                         <Clock3 className="h-3 w-3" />
                         {formatDate(o.lastClockIn)}
                       </span>
+                    )}
+                  </div>
+                  {/* Under the duty badge: on shift is only half the answer,
+                      the other half is where they are meant to be. */}
+                  <div className="mt-1.5 flex items-start gap-1 text-[11px]">
+                    <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
+                    {o.assignedSiteNames?.length ? (
+                      <span className="truncate">{o.assignedSiteNames.join(', ')}</span>
+                    ) : (
+                      <span className="text-muted-foreground">Not yet appointed</span>
                     )}
                   </div>
                 </div>

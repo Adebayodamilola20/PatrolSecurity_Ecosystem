@@ -11,6 +11,8 @@ export interface User {
   clientId?: string | null
   siteIds?: string[]
   sites?: Site[]
+  /** Locations this person is posted to, for the roster card. */
+  assignedSiteNames?: string[]
   createdAt: string
 }
 

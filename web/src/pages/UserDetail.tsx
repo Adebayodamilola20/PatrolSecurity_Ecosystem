@@ -231,6 +231,34 @@ export default function UserDetail() {
                   {user.active ? 'Account Active' : 'Account Inactive'}
                 </span>
               </div>
+
+              {/* Directly under the duty badge, because "are they on shift"
+                  and "where are they meant to be" are the same question and
+                  the page used to answer only half of it. */}
+              <div className="mt-3">
+                <div className="text-xs uppercase tracking-wider text-muted-foreground">
+                  Assigned Location
+                </div>
+                {(user.assignedLocations || []).length === 0 ? (
+                  <div className="mt-1 text-sm text-muted-foreground">Not yet appointed</div>
+                ) : (
+                  <div className="mt-1 space-y-1">
+                    {user.assignedLocations.map((place: any) => (
+                      <div key={place.siteId} className="text-sm">
+                        <span className="font-medium">{place.siteName}</span>
+                        {place.clientName && (
+                          <span className="text-muted-foreground"> · {place.clientName}</span>
+                        )}
+                        {place.subLocations?.length > 0 && (
+                          <div className="text-xs text-muted-foreground">
+                            {place.subLocations.join(', ')}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           {canManage && (
