@@ -108,6 +108,25 @@ export interface ClientPassOn {
   createdAt: string
 }
 
+/**
+ * A live emergency on one of this account's sites.
+ *
+ * `source` says which way it is travelling: "guard" is one of the officers on
+ * site in trouble, "client" is this account calling the guards in.
+ */
+export interface ClientEmergency {
+  id: string
+  category: string
+  message: string
+  reason: string
+  status: string
+  source: 'guard' | 'client'
+  siteId: string | null
+  siteName: string | null
+  checkpointName: string | null
+  triggeredAt: string
+}
+
 export interface ClientOverview {
   guardsOnDuty: number
   totalGuards: number

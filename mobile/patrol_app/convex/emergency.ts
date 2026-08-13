@@ -6,29 +6,48 @@ export const trigger = internalMutation({
   args: {
     userId: v.id("users"),
     checkpointId: v.optional(v.id("checkpoints")),
+    siteId: v.optional(v.id("sites")),
     siteLabel: v.optional(v.string()),
     category: v.optional(v.string()),
     note: v.optional(v.string()),
     location: v.optional(v.string()),
+    source: v.optional(v.union(v.literal("guard"), v.literal("client"))),
   },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
     const checkpoint = args.checkpointId
       ? await ctx.db.get(args.checkpointId)
       : null;
+    const siteId = checkpoint?.siteId ?? args.siteId;
+    const site = siteId ? await ctx.db.get(siteId) : null;
+    const source = args.source ?? "guard";
+
+    // A client account can only raise an emergency on its own property.
+    // The route resolves whatever site id it is handed; it does not own it.
+    if (source === "client") {
+      const owner = checkpoint?.clientId ?? site?.clientId;
+      if (!user?.clientId || !owner || owner !== user.clientId) {
+        throw new Error("That location does not belong to your account");
+      }
+    }
+
     const when = new Date().toISOString();
-    const where = args.location || args.siteLabel || "Unknown location";
-    const message = `Emergency alert from ${user?.name ?? "officer"} at ${where}. Immediate response required.`;
+    const where = args.location || args.siteLabel || site?.name || "Unknown location";
+    const message =
+      source === "client"
+        ? `Emergency raised by ${user?.name ?? "the client"} at ${where}. Guards on site must respond immediately.`
+        : `Emergency alert from ${user?.name ?? "officer"} at ${where}. Immediate response required.`;
     const triggeredAt = Date.now();
     const id = await ctx.db.insert("emergencyEvents", {
-      clientId: checkpoint?.clientId ?? user?.clientId,
-      siteId: checkpoint?.siteId,
+      clientId: checkpoint?.clientId ?? site?.clientId ?? user?.clientId,
+      siteId,
       userId: args.userId,
       checkpointId: args.checkpointId,
-      siteLabel: args.siteLabel ?? "",
+      siteLabel: args.siteLabel || site?.name || "",
       category: args.category,
       message,
       note: args.note ?? "",
+      source,
       triggeredAt,
       emailRecipients: [],
       phoneRecipients: [],
@@ -36,14 +55,14 @@ export const trigger = internalMutation({
       deliveryPayload: {},
     });
     await ctx.runMutation(internal.activity.record, {
-      clientId: checkpoint?.clientId ?? user?.clientId,
-      siteId: checkpoint?.siteId,
+      clientId: checkpoint?.clientId ?? site?.clientId ?? user?.clientId,
+      siteId,
       checkpointId: args.checkpointId,
       officerId: args.userId,
       activityType: "emergency",
       sourceTable: "emergencyEvents",
       sourceId: id,
-      siteName: args.siteLabel ?? "",
+      siteName: args.siteLabel || site?.name || "",
       locationLabel: where,
       activityLabel: `Emergency: ${args.category ?? "Other"}`,
       occurredAt: triggeredAt,
@@ -52,9 +71,11 @@ export const trigger = internalMutation({
       id,
       userId: args.userId,
       checkpointId: args.checkpointId ?? null,
-      siteLabel: args.siteLabel ?? "",
+      siteId: siteId ?? null,
+      siteLabel: args.siteLabel || site?.name || "",
       message,
       note: args.note ?? "",
+      source,
       triggeredAt: when,
       emailRecipients: [],
       phoneRecipients: [],
@@ -81,21 +102,96 @@ export const listActive = internalQuery({
         event.status !== "closed" &&
         (!args.clientId || event.clientId === args.clientId),
     );
-    const users = await ctx.db.query("users").collect();
-    return events.map((event) => ({
+    return await describeEvents(ctx, events);
+  },
+});
+
+/**
+ * Everything the control room needs on the card, resolved here rather than
+ * left to the dashboard to look up.
+ *
+ * At 2am nobody wants to click through to find out whose site this is or what
+ * number to ring — the guard's phone number in particular was missing, so an
+ * alert arrived with no way to call the person who raised it.
+ */
+async function describeEvents(
+  ctx: { db: any },
+  events: Array<Record<string, any>>,
+) {
+  const users = await ctx.db.query("users").collect();
+  const sites = await ctx.db.query("sites").collect();
+  const clients = await ctx.db.query("clients").collect();
+  const checkpoints = await ctx.db.query("checkpoints").collect();
+  return events.map((event) => {
+    const raiser = users.find((user: any) => user._id === event.userId);
+    return {
       id: event.legacyId ?? event._id,
       category: event.category ?? "Other",
       message: event.message,
+      // The reason the button was pressed, in the words of whoever pressed it.
       note: event.note,
+      reason: event.note || event.category || "Not stated",
       status: event.status,
+      source: event.source ?? "guard",
       siteLabel: event.siteLabel,
-      userId: event.userId,
-      officerName: users.find((user) => user._id === event.userId)?.name ?? "",
-      triggeredAt: new Date(event.triggeredAt).toISOString(),
-      clientId: event.clientId ?? null,
       siteId: event.siteId ?? null,
+      siteName: sites.find((s: any) => s._id === event.siteId)?.name ?? event.siteLabel,
+      clientId: event.clientId ?? null,
+      clientName: clients.find((c: any) => c._id === event.clientId)?.name ?? null,
       checkpointId: event.checkpointId ?? null,
-    }));
+      checkpointName:
+        checkpoints.find((c: any) => c._id === event.checkpointId)?.name ?? null,
+      userId: event.userId,
+      officerName: raiser?.name ?? "",
+      officerPhone: raiser?.phone ?? "",
+      officerRole: raiser?.role ?? null,
+      triggeredAt: new Date(event.triggeredAt).toISOString(),
+    };
+  });
+}
+
+/**
+ * What a guard is shown: live emergencies at the locations they are posted to.
+ *
+ * This is how a client-raised alarm reaches the people who can actually walk
+ * to it. A guard sees nothing from any other company's sites.
+ */
+export const listForGuard = internalQuery({
+  args: { userId: v.id("users"), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const assignments = await ctx.db
+      .query("userSiteAssignments")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .collect();
+    const siteIds = new Set(assignments.map((a) => a.siteId));
+    if (siteIds.size === 0) return [];
+
+    const events = (
+      await ctx.db
+        .query("emergencyEvents")
+        .withIndex("by_triggeredAt")
+        .order("desc")
+        .take(args.limit ?? 50)
+    ).filter(
+      (event) =>
+        event.status !== "resolved" &&
+        event.status !== "closed" &&
+        event.siteId &&
+        siteIds.has(event.siteId),
+    );
+    return await describeEvents(ctx, events);
+  },
+});
+
+/** Staff close one out once it has been dealt with. */
+export const resolve = internalMutation({
+  args: { eventId: v.id("emergencyEvents"), userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const event = await ctx.db.get(args.eventId);
+    if (!event) throw new Error("Emergency not found");
+    if (event.status === "resolved") return { alreadyResolved: true };
+    await ctx.db.patch(args.eventId, { status: "resolved" });
+    return { alreadyResolved: false };
   },
 });
 

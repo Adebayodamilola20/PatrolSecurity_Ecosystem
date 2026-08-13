@@ -32,6 +32,7 @@ const sensitiveActions = [
   "client.updated",
   "emergency.triggered",
   "emergency.created",
+  "emergency.resolved",
   "shift.clock_in",
   "shift.clock_out",
   "clock_in.created",

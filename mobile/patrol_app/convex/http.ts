@@ -1640,6 +1640,103 @@ http.route({
   }),
 });
 
+// A client raising the alarm on its own site. The alert travels the other way
+// from a guard's: out to the guards posted there, and up to the control room.
+http.route({
+  path: "/client/emergency/trigger",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request, { allowClientPortal: true });
+    if (!user) return unauthorized();
+    if (user.role !== "main_account") return forbidden("The client portal is for client accounts only.");
+    // Same rule as a guard's panic press: never shed by the global breaker,
+    // but capped per account so a stuck browser cannot flood the room.
+    const limited = await enforceLimit(ctx, "emergency", user.convexId, { skipGlobal: true });
+    if (limited) return limited;
+    const body = await parseJson(request);
+    const siteId = body?.siteId
+      ? await ctx.runQuery(internal.sites.resolveId, { id: String(body.siteId) })
+      : null;
+    if (!siteId) return badRequest("A location is required");
+    try {
+      const event = await ctx.runMutation(internal.emergency.trigger, {
+        userId: _uid(user.convexId),
+        siteId,
+        note: typeof body?.note === "string" ? body.note : "",
+        category: EMERGENCY_TYPES.includes(body?.category) ? body.category : "Other",
+        source: "client",
+      });
+      await recordAudit(ctx, user, "emergency.triggered", {
+        targetType: "emergency", targetId: event.id as unknown as string,
+        details: `Client emergency at ${event.siteLabel}: ${event.note || event.message}`,
+        ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+      });
+      return json(event, { status: 201 });
+    } catch (err) {
+      return badRequest(err instanceof Error ? err.message : "Could not raise this emergency");
+    }
+  }),
+});
+
+// The client's own live alerts — theirs only, whoever raised them.
+http.route({
+  path: "/client/emergency/active",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request, { allowClientPortal: true });
+    if (!user) return unauthorized();
+    if (user.role !== "main_account") return forbidden("The client portal is for client accounts only.");
+    const clientId = _cid(user.clientId);
+    if (!clientId) return json([]);
+    return json(await ctx.runQuery(internal.emergency.listActive, { clientId, limit: 50 }));
+  }),
+});
+
+// What a guard sees on their phone: live alerts at the locations they are
+// posted to, which is how a client-raised alarm reaches someone who can walk
+// to it.
+http.route({
+  path: "/emergency/mine",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    return json(
+      await ctx.runQuery(internal.emergency.listForGuard, {
+        userId: _uid(user.convexId),
+        limit: 50,
+      }),
+    );
+  }),
+});
+
+http.route({
+  pathPrefix: "/emergency/",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    const action = lastPathPart(request);
+    const id = lastPathPart(request, 1);
+    if (action !== "resolve" || !id) return notFound("Emergency route not found");
+    const roleErr = requireRole(user, ["admin", "supervisor"]);
+    if (roleErr) return roleErr;
+    try {
+      const result = await ctx.runMutation(internal.emergency.resolve, {
+        eventId: id as Id<"emergencyEvents">,
+        userId: _uid(user.convexId),
+      });
+      await recordAudit(ctx, user, "emergency.resolved", {
+        targetType: "emergency", targetId: id,
+        details: "Emergency marked resolved",
+      });
+      return json(result);
+    } catch {
+      return notFound("Emergency not found");
+    }
+  }),
+});
+
 http.route({
   path: "/emergency/settings",
   method: "POST",

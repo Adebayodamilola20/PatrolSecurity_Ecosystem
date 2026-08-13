@@ -560,6 +560,22 @@ class ApiService {
     return _decodeBody<Map<String, dynamic>>(res.body);
   }
 
+  /// Live emergencies at the locations this guard is posted to.
+  ///
+  /// This is how an alarm the *client* raised reaches someone who can walk to
+  /// it. Returns only this guard's own sites — the server scopes it, not us.
+  static Future<List<Map<String, dynamic>>> fetchMyEmergencies() async {
+    _ensureHttps();
+    final res = await _client
+        .get(Uri.parse('$baseUrl/emergency/mine'), headers: await _headers())
+        .timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to load emergency alerts');
+    }
+    final decoded = await _decodeBody<List<dynamic>>(res.body);
+    return decoded.cast<Map<String, dynamic>>();
+  }
+
   /// A quick note for the control room — a light out, a request from the
   /// client, a vehicle making a noise. Not an incident: no severity, no
   /// category, no photos, nothing to fill in but the sentence itself.

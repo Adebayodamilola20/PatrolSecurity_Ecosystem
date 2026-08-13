@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/checkpoint.dart';
@@ -26,6 +28,13 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _reportsExpanded = false;
   bool _passOnLogBlockerShown = false;
 
+  // Live emergencies at the sites this guard is posted to — including ones
+  // the client raised, which is the whole reason for polling: nobody presses
+  // refresh while a break-in is in progress.
+  List<Map<String, dynamic>> _emergencies = [];
+  final Set<String> _announcedEmergencies = {};
+  Timer? _emergencyTimer;
+
   @override
   void initState() {
     super.initState();
@@ -35,7 +44,103 @@ class _HomeScreenState extends State<HomeScreen> {
       context.read<ShiftProvider>().loadStatus();
       context.read<DutyProvider>().load();
       _checkPassOnLogs();
+      _pollEmergencies();
     });
+    _emergencyTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _pollEmergencies(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _emergencyTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _pollEmergencies() async {
+    try {
+      final alerts = await ApiService.fetchMyEmergencies();
+      if (!mounted) return;
+      setState(() => _emergencies = alerts);
+      // Announce each alert once. Re-showing the same dialog every 30 seconds
+      // would make it impossible to use the app during the emergency it is
+      // warning about.
+      for (final alert in alerts) {
+        final id = alert['id'] as String? ?? '';
+        if (id.isEmpty || _announcedEmergencies.contains(id)) continue;
+        _announcedEmergencies.add(id);
+        if (mounted) await _showEmergencyDialog(alert);
+      }
+    } catch (_) {
+      // Offline or a transient failure: the banner keeps whatever it had
+      // rather than blanking, and the next tick tries again.
+    }
+  }
+
+  /// Deliberately nothing like the ordinary dialogs in this app: full red,
+  /// its own words, and it does not dismiss by tapping outside.
+  Future<void> _showEmergencyDialog(Map<String, dynamic> alert) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.flagged,
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.white),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'CODE RED',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              alert['message'] as String? ?? 'Emergency alert',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Reason: ${alert['reason'] ?? 'Not stated'}',
+              style: const TextStyle(color: Colors.white),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              [
+                alert['checkpointName'] ?? alert['siteName'] ?? '',
+                if ((alert['source'] as String? ?? '') == 'client')
+                  'Raised by the client',
+              ].where((part) => (part as String).isNotEmpty).join(' · '),
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: AppTheme.flagged,
+            ),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('I am responding'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _checkPassOnLogs() async {
@@ -276,7 +381,61 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       drawer: _buildDrawer(context, user, role),
-      body: const _DashboardTab(),
+      body: Column(
+        children: [
+          // Stays on screen for as long as the alert is live, so a guard who
+          // dismissed the popup still has it in front of them.
+          if (_emergencies.isNotEmpty)
+            Material(
+              color: AppTheme.flagged,
+              child: InkWell(
+                onTap: () => _showEmergencyDialog(_emergencies.first),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.warning_amber_rounded,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _emergencies.length == 1
+                                  ? 'CODE RED — EMERGENCY ALERT'
+                                  : 'CODE RED — ${_emergencies.length} EMERGENCY ALERTS',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                            Text(
+                              _emergencies.first['reason'] as String? ?? '',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          const Expanded(child: _DashboardTab()),
+        ],
+      ),
     );
   }
 

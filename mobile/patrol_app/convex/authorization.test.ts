@@ -1109,3 +1109,137 @@ describe("guard observations", () => {
     expect(res.status).toBe(403);
   });
 });
+
+/**
+ * Emergency alerts, both directions.
+ *
+ * A guard's panic press travels up to the control room and out to the client
+ * who owns the site. A client's alarm travels out to the guards posted there
+ * and up to the control room. Neither may cross into another tenant.
+ */
+describe("emergency alerts", () => {
+  const raise = (extra: Record<string, unknown> = {}) =>
+    JSON.stringify({ note: "Break-in at the rear gate", ...extra });
+
+  test("a guard's alert reaches staff with everything needed to act", async () => {
+    await t.fetch("/emergency/trigger", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: raise({ checkpointId: w.alphaCheckpoint, siteLabel: "Alpha Ikeja Warehouse" }),
+    });
+    const active = await (
+      await t.fetch("/emergency/active", { method: "GET", headers: auth(w.tokens.admin) })
+    ).json();
+    expect(active).toHaveLength(1);
+    const sos = active[0];
+    expect(sos.source).toBe("guard");
+    expect(sos.officerName).toBe("Ade Guard");
+    // The number to ring. Its absence was the gap: an alert with no way to
+    // call the person who raised it.
+    expect(sos.officerPhone).toBe("+2348000000000");
+    expect(sos.clientName).toBe("Alpha Retail Group");
+    expect(sos.siteName).toBe("Alpha Ikeja Warehouse");
+    expect(sos.reason).toMatch(/rear gate/i);
+    expect(Date.parse(sos.triggeredAt)).toBeGreaterThan(0);
+  });
+
+  test("the owning client sees it and another client does not", async () => {
+    await t.fetch("/emergency/trigger", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: raise({ checkpointId: w.alphaCheckpoint }),
+    });
+    const alphaSees = await (
+      await t.fetch("/client/emergency/active", { method: "GET", headers: auth(w.tokens.alphaPortal) })
+    ).json();
+    expect(alphaSees).toHaveLength(1);
+
+    // Bravo's guard raises nothing; Alpha's portal must still see only its own.
+    await t.fetch("/emergency/trigger", {
+      method: "POST",
+      headers: auth(w.tokens.bravoGuard),
+      body: raise({ checkpointId: w.bravoCheckpoint }),
+    });
+    const alphaAgain = await (
+      await t.fetch("/client/emergency/active", { method: "GET", headers: auth(w.tokens.alphaPortal) })
+    ).json();
+    expect(alphaAgain).toHaveLength(1);
+    expect(alphaAgain[0].clientId).toBe(w.alphaClient);
+  });
+
+  test("a client can raise one on its own site", async () => {
+    const res = await t.fetch("/client/emergency/trigger", {
+      method: "POST",
+      headers: auth(w.tokens.alphaPortal),
+      body: raise({ siteId: w.alphaSite }),
+    });
+    expect(res.status).toBe(201);
+    const created = await res.json();
+    expect(created.source).toBe("client");
+  });
+
+  test("a client cannot raise one on another company's site", async () => {
+    const res = await t.fetch("/client/emergency/trigger", {
+      method: "POST",
+      headers: auth(w.tokens.alphaPortal),
+      body: raise({ siteId: w.bravoSite }),
+    });
+    expect(res.status).toBe(400);
+    const rows = await t.run((ctx) => ctx.db.query("emergencyEvents").collect());
+    expect(rows).toHaveLength(0);
+  });
+
+  test("a client-raised alarm reaches the guards posted there, and nobody else", async () => {
+    await t.fetch("/client/emergency/trigger", {
+      method: "POST",
+      headers: auth(w.tokens.alphaPortal),
+      body: raise({ siteId: w.alphaSite }),
+    });
+    const alphaGuardSees = await (
+      await t.fetch("/emergency/mine", { method: "GET", headers: auth(w.tokens.alphaGuard) })
+    ).json();
+    expect(alphaGuardSees).toHaveLength(1);
+    expect(alphaGuardSees[0].source).toBe("client");
+
+    const bravoGuardSees = await (
+      await t.fetch("/emergency/mine", { method: "GET", headers: auth(w.tokens.bravoGuard) })
+    ).json();
+    expect(bravoGuardSees).toHaveLength(0);
+  });
+
+  test("resolving one clears it from every live list", async () => {
+    await t.fetch("/emergency/trigger", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: raise({ checkpointId: w.alphaCheckpoint }),
+    });
+    const [row] = await t.run((ctx) => ctx.db.query("emergencyEvents").collect());
+    const res = await t.fetch(`/emergency/${row._id}/resolve`, {
+      method: "POST",
+      headers: auth(w.tokens.admin),
+    });
+    expect(res.status).toBe(200);
+    const staffSees = await (
+      await t.fetch("/emergency/active", { method: "GET", headers: auth(w.tokens.admin) })
+    ).json();
+    expect(staffSees).toHaveLength(0);
+    const clientSees = await (
+      await t.fetch("/client/emergency/active", { method: "GET", headers: auth(w.tokens.alphaPortal) })
+    ).json();
+    expect(clientSees).toHaveLength(0);
+  });
+
+  test("a guard cannot resolve an emergency", async () => {
+    await t.fetch("/emergency/trigger", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: raise({ checkpointId: w.alphaCheckpoint }),
+    });
+    const [row] = await t.run((ctx) => ctx.db.query("emergencyEvents").collect());
+    const res = await t.fetch(`/emergency/${row._id}/resolve`, {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+    });
+    expect(res.status).toBe(403);
+  });
+});

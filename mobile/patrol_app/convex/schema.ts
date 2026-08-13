@@ -473,6 +473,11 @@ export default defineSchema({
     category: v.optional(v.string()),
     message: v.string(),
     note: v.string(),
+    // Who pressed it. A guard in trouble and a client calling for help are
+    // read very differently in the control room, and they travel in opposite
+    // directions: one goes up to staff, the other goes out to the guards.
+    // Absent on rows written before clients could raise one at all.
+    source: v.optional(v.union(v.literal("guard"), v.literal("client"))),
     triggeredAt: v.number(),
     emailRecipients: v.array(v.string()),
     phoneRecipients: v.array(v.string()),

@@ -439,6 +439,26 @@ export const api = {
     settings: () => request<any[]>('/emergency/settings'),
     saveSetting: (data: { settingKey: string; settingValue: string; scopeType?: string; scopeId?: string }) =>
       request<any>('/emergency/settings', { method: 'POST', body: JSON.stringify(data) }),
+    // Live alerts, whoever raised them — a guard in trouble or a client
+    // calling for help. `source` says which.
+    active: () =>
+      request<Array<{
+        id: string
+        category: string
+        message: string
+        reason: string
+        status: string
+        source: 'guard' | 'client'
+        siteName: string | null
+        clientName: string | null
+        checkpointName: string | null
+        officerName: string
+        officerPhone: string
+        officerRole: string | null
+        triggeredAt: string
+      }>>('/emergency/active'),
+    resolve: (id: string) =>
+      request<{ alreadyResolved: boolean }>(`/emergency/${id}/resolve`, { method: 'POST' }),
   },
   activity: {
     list: (params?: Record<string, string>) =>

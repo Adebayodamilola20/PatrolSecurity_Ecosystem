@@ -242,6 +242,16 @@ export const api = {
       requiresAcknowledgement?: boolean
     }) => request<ClientPassOn>('/pass-on-logs', { method: 'POST', body: JSON.stringify(data) }),
   },
+  // Emergencies on this account's sites, in both directions: alerts a guard
+  // raised here, and alerts this client raises for the guards on site.
+  emergency: {
+    active: () => request<ClientEmergency[]>('/client/emergency/active'),
+    trigger: (data: { siteId: string; note?: string; category?: string }) =>
+      request<ClientEmergency>('/client/emergency/trigger', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+  },
   scans: {
     list: (params?: Record<string, string>) =>
       request<ClientScan[]>(`/client/scans?${new URLSearchParams(params || {})}`),
@@ -283,5 +293,6 @@ import type {
   ClientSiteDetail,
   ClientReport,
   ClientPassOn,
+  ClientEmergency,
   AnalyticsSummary,
 } from '../types'

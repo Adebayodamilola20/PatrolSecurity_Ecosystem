@@ -44,6 +44,8 @@ export default function Alerts() {
   // easiest to lose.
   const [observations, setObservations] = useState<Awaited<ReturnType<typeof api.observations.list>>>([])
   const [ackingObservation, setAckingObservation] = useState<string | null>(null)
+  const [emergencies, setEmergencies] = useState<Awaited<ReturnType<typeof api.emergency.active>>>([])
+  const [resolvingEmergency, setResolvingEmergency] = useState<string | null>(null)
 
   if (userRole === 'guard') {
     return <Navigate to="/" replace />
@@ -57,14 +59,16 @@ export default function Alerts() {
     setLoading(true)
     setError(null)
     try {
-      const [incidentRows, missedRows, observationRows] = await Promise.all([
+      const [incidentRows, missedRows, observationRows, emergencyRows] = await Promise.all([
         api.incidents.list(),
         api.missedPatrols.list({ status: 'open' }),
         api.observations.list().catch(() => []),
+        api.emergency.active().catch(() => []),
       ])
       setIncidents(incidentRows)
       setMissedPatrols(missedRows)
       setObservations(observationRows)
+      setEmergencies(emergencyRows)
       setOpenIncidentCount(incidentRows.filter((i: Incident) => i.status === 'open').length)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load alerts')
@@ -137,6 +141,77 @@ export default function Alerts() {
           </button>
         </div>
       </div>
+
+      {/* CODE RED. Deliberately unlike every other card on this page — solid
+          red, top of the page, its own vocabulary. An emergency that reads
+          like a notification gets treated like one. */}
+      {emergencies.map((sos) => (
+        <div key={sos.id} className="overflow-hidden rounded-xl border-2 border-destructive bg-destructive/10">
+          <div className="flex items-center gap-3 bg-destructive px-4 py-2 text-destructive-foreground">
+            <ShieldAlert className="h-5 w-5 shrink-0" />
+            <span className="text-lg font-black tracking-wide">🚨 CODE RED</span>
+            <span className="text-sm font-semibold uppercase tracking-wider">Emergency Alert</span>
+            <span className="ml-auto text-xs font-semibold uppercase">
+              {sos.source === 'client' ? 'Raised by client' : 'Raised by guard'}
+            </span>
+          </div>
+          <div className="space-y-3 p-4">
+            <div className="text-base font-semibold">{sos.message}</div>
+            <div className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+              <div>
+                <span className="text-muted-foreground">Raised by </span>
+                <span className="font-medium">{sos.officerName || 'Unknown'}</span>
+                {sos.officerRole && <span className="text-muted-foreground"> ({sos.officerRole})</span>}
+              </div>
+              <div>
+                <span className="text-muted-foreground">Phone </span>
+                {sos.officerPhone ? (
+                  <a href={`tel:${sos.officerPhone}`} className="font-medium text-primary hover:underline">
+                    {sos.officerPhone}
+                  </a>
+                ) : (
+                  <span className="text-muted-foreground">not on file</span>
+                )}
+              </div>
+              <div>
+                <span className="text-muted-foreground">Client </span>
+                <span className="font-medium">{sos.clientName ?? 'Unassigned'}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Location </span>
+                <span className="font-medium">{sos.checkpointName ?? sos.siteName ?? 'Unknown'}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Time </span>
+                <span className="font-medium">{formatDate(sos.triggeredAt)}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Status </span>
+                <span className="font-medium uppercase">{sos.status}</span>
+              </div>
+            </div>
+            <div className="rounded-lg bg-background/60 px-3 py-2 text-sm">
+              <span className="text-muted-foreground">Reason: </span>
+              <span className="font-medium">{sos.reason}</span>
+            </div>
+            <button
+              onClick={async () => {
+                setResolvingEmergency(sos.id)
+                try {
+                  await api.emergency.resolve(sos.id)
+                  setEmergencies((prev) => prev.filter((e) => e.id !== sos.id))
+                } finally {
+                  setResolvingEmergency(null)
+                }
+              }}
+              disabled={resolvingEmergency === sos.id}
+              className="rounded-lg bg-destructive px-4 py-2 text-sm font-semibold text-destructive-foreground hover:opacity-90 disabled:opacity-60"
+            >
+              {resolvingEmergency === sos.id ? 'Saving…' : 'Mark resolved'}
+            </button>
+          </div>
+        </div>
+      ))}
 
       {/* Guard observations. Deliberately above the incident list: a note
           about a dead gate light is cheap to action and easy to lose in a
