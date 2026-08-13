@@ -10,6 +10,8 @@ import {
   Download,
   Printer,
   ChevronDown,
+  Users,
+  UserPlus,
   ShieldCheck,
   ShieldAlert,
   AlertTriangle,
@@ -227,6 +229,9 @@ export default function ClientDetail() {
   const [pendingSubGuard, setPendingSubGuard] = useState<Record<string, string>>({})
   const [assignBusySubId, setAssignBusySubId] = useState('')
   const [assignOpenPointId, setAssignOpenPointId] = useState('')
+  // The location header answers "how many", not "who" — names are one click
+  // away for the times somebody needs to take a guard off.
+  const [showAssignedNames, setShowAssignedNames] = useState<Record<string, boolean>>({})
   // A guard already posted to another location triggers a blocking popup so
   // staff can't silently double-assign them.
   const [assignConflict, setAssignConflict] = useState('')
@@ -346,13 +351,15 @@ export default function ClientDetail() {
   // reveals the picker only when you want to change it. Leaving a dropdown and
   // an Assign button open on every card at once turned a location with three
   // gates into a wall of form controls.
-  const renderPointPostings = (point: SubLocation) => {
+  const renderPointPostings = (point: SubLocation, opts?: { wide?: boolean }) => {
     const available = guardPool.filter(
       (g) => !point.postedGuards.some((a) => a.id === g.id || a.id === g.convexId),
     )
     const open = assignOpenPointId === point.id
     return (
-      <div className="mt-3 border-t border-border pt-3">
+      // The location's own QR sits in a full-width panel, where a button
+      // stretched edge to edge reads as a banner rather than a control.
+      <div className={`mt-3 border-t border-border pt-3 ${opts?.wide ? 'max-w-sm' : ''}`}>
         {point.postedGuards.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-1.5">
             {point.postedGuards.map((guard) => (
@@ -378,40 +385,46 @@ export default function ClientDetail() {
           </div>
         )}
 
+        {/* A plain text link was too easy to miss and too small to hit. The
+            people running this every day are not reaching for a subtle
+            control — the way to add a guard has to look like a button and
+            span the card, so there is only one obvious thing to press. */}
         {canManage && (open ? (
-          <div className="flex items-center gap-1.5">
+          <div className="space-y-2">
             <select
               autoFocus
               value={pendingSubGuard[point.id] ?? ''}
               onChange={(e) => setPendingSubGuard((prev) => ({ ...prev, [point.id]: e.target.value }))}
-              className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-1.5 text-[11px]"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs"
             >
               <option value="">Choose a guard…</option>
               {available.map((g) => (
                 <option key={g.id} value={g.convexId ?? g.id}>{guardLabel(g)}</option>
               ))}
             </select>
-            <button
-              onClick={() => void assignSubGuard(point)}
-              disabled={!pendingSubGuard[point.id] || assignBusySubId === point.id}
-              className="shrink-0 rounded-lg bg-primary px-2.5 py-1.5 text-[11px] font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {assignBusySubId === point.id ? 'Saving…' : 'Save'}
-            </button>
-            <button
-              onClick={() => setAssignOpenPointId('')}
-              title="Cancel"
-              className="shrink-0 rounded-lg p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => void assignSubGuard(point)}
+                disabled={!pendingSubGuard[point.id] || assignBusySubId === point.id}
+                className="flex-1 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {assignBusySubId === point.id ? 'Saving…' : 'Save'}
+              </button>
+              <button
+                onClick={() => setAssignOpenPointId('')}
+                className="rounded-lg border border-border px-3 py-2 text-xs font-medium hover:bg-accent"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         ) : (
           <button
             onClick={() => setAssignOpenPointId(point.id)}
-            className="text-[11px] font-medium text-primary hover:underline"
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90"
           >
-            {point.postedGuards.length ? '+ Assign another' : '+ Assign a guard'}
+            <UserPlus className="h-4 w-4" />
+            Assign Guard
           </button>
         ))}
 
@@ -957,7 +970,7 @@ export default function ClientDetail() {
                             ) : null}
                           </div>
                         </div>
-                        {renderPointPostings(site.locationQr)}
+                        {renderPointPostings(site.locationQr, { wide: true })}
                         <div className="mt-3 flex items-center gap-2 border-t border-primary/20 pt-3">
                           <button
                             onClick={() => void downloadQr(site, site.locationQr!)}
@@ -989,15 +1002,23 @@ export default function ClientDetail() {
                         ended up pressing ✕ on a gate and watching this list
                         stay put. Removing someone here clears every point. */}
                     <div className="mb-4">
-                      <div className="mb-2 text-xs uppercase tracking-wider text-muted-foreground">
-                        Assigned Guards
-                      </div>
-                      {site.assignedGuards.length === 0 ? (
-                        <div className="text-xs text-muted-foreground">
-                          Nobody assigned yet — assign guards on the QR points below.
+                      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-accent/40 px-3 py-2.5">
+                        <Users className="h-5 w-5 shrink-0 text-muted-foreground" />
+                        <div className="text-sm">
+                          <span className="text-xl font-bold">{site.assignedGuards.length}</span>{' '}
+                          guard{site.assignedGuards.length === 1 ? '' : 's'} assigned to this location
                         </div>
-                      ) : (
-                        <div className="flex flex-wrap gap-1.5">
+                        {site.assignedGuards.length > 0 && (
+                          <button
+                            onClick={() => setShowAssignedNames((prev) => ({ ...prev, [site.id]: !prev[site.id] }))}
+                            className="ml-auto text-xs font-medium text-primary hover:underline"
+                          >
+                            {showAssignedNames[site.id] ? 'Hide names' : 'Show names'}
+                          </button>
+                        )}
+                      </div>
+                      {showAssignedNames[site.id] && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
                           {site.assignedGuards.map((guard) => (
                             <span
                               key={guard.id}
