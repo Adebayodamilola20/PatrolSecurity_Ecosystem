@@ -6,9 +6,15 @@ import L from 'leaflet'
 import { api } from '../services/api'
 import type { Scan } from '../types'
 import { Skeleton } from '../components/ui/Skeleton'
-import { formatDate, formatTime } from '../utils/format'
+import { formatDate, formatGap, formatTime, formatTimeAgo } from '../utils/format'
 import { EmptyState } from '../components/ui/EmptyState'
 import { getScheduleStatus } from '../utils/patrolSchedule'
+
+interface MissedPatrol {
+  id: string; dueAt: string; detectedAt: string; resolvedAt: string | null
+  lastScanAt: string | null; expectedIntervalMinutes: number
+  gracePeriodMinutes: number; status: 'open' | 'resolved'
+}
 
 interface PostedStaff {
   id: string; name: string; phone: string; role: string
@@ -42,6 +48,7 @@ export default function CheckpointDetail() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [postedStaff, setPostedStaff] = useState<PostedStaff[]>([])
+  const [missedPatrols, setMissedPatrols] = useState<MissedPatrol[]>([])
 
   // A sub-location is a plain QR point: no coordinates of its own. Its scans
   // verify against the parent location's geofence, so that is what we show.
@@ -57,12 +64,13 @@ export default function CheckpointDetail() {
     setLoading(true)
     setError('')
     try {
-      const [all, checkpointScans, staff] = await Promise.all([
+      const [all, checkpointScans, staff, missed] = await Promise.all([
         api.checkpoints.list(),
         api.scans.list({ checkpoint: id }),
         // Supervisors and admins can read this; anyone else still gets the
         // page, just without the posting list.
         api.checkpointAssignments.list(id).catch(() => [] as PostedStaff[]),
+        api.missedPatrols.list({ checkpointId: id, limit: '50' }).catch(() => [] as MissedPatrol[]),
       ])
       const found = all.find((item: any) => item.id === id) || null
       if (!found) {
@@ -71,6 +79,7 @@ export default function CheckpointDetail() {
       setCp(found)
       setScans(checkpointScans)
       setPostedStaff(staff)
+      setMissedPatrols(missed)
     } catch (err) {
       setCp(null)
       setScans([])
@@ -281,6 +290,11 @@ export default function CheckpointDetail() {
               <span className="flex items-center gap-1.5"><QrCode className="h-3.5 w-3.5 text-info" /> {scans.length} scan{scans.length === 1 ? '' : 's'}</span>
               <span className="flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5 text-success" /> {verifiedCount} verified</span>
               <span className="flex items-center gap-1.5"><Timer className="h-3.5 w-3.5 text-primary" /> every {cp.expectedIntervalMinutes} min</span>
+              {missedPatrols.length > 0 && (
+                <span className={`flex items-center gap-1.5 ${missedPatrols.some(m => m.status === 'open') ? 'font-semibold text-destructive' : 'text-warning'}`}>
+                  <AlertTriangle className="h-3.5 w-3.5" /> {missedPatrols.length} missed
+                </span>
+              )}
               {cp.scheduledTimeIn ? (
                 <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5 text-warning" /> {cp.scheduledTimeIn}{cp.scheduledTimeOut ? ` – ${cp.scheduledTimeOut}` : ''}</span>
               ) : null}
@@ -318,6 +332,57 @@ export default function CheckpointDetail() {
           </div>
         </div>
       )}
+
+      {/* Missed patrols. A scan list can only ever show what happened; the
+          rounds nobody walked are invisible in it, and those are the ones a
+          client asks about. Each row says how long the gap actually ran. */}
+      <div className="rounded-xl border border-border bg-card p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-semibold">Missed patrols</h3>
+          <span className="text-xs text-muted-foreground">
+            Expected every {cp.expectedIntervalMinutes} min
+          </span>
+        </div>
+        {missedPatrols.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No missed patrols recorded at this point.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {missedPatrols.map((miss) => {
+              // Open: still running, measured to now. Resolved: measured to
+              // the scan that closed it, which is the real length of the gap.
+              const dueAt = new Date(miss.dueAt).getTime()
+              const endedAt = miss.resolvedAt ? new Date(miss.resolvedAt).getTime() : Date.now()
+              const gap = formatGap(endedAt - dueAt)
+              return (
+                <div
+                  key={miss.id}
+                  className={`rounded-lg px-3 py-2 ${miss.status === 'open' ? 'bg-destructive/10' : 'bg-muted/30'}`}
+                >
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <AlertTriangle className={`h-3.5 w-3.5 shrink-0 ${miss.status === 'open' ? 'text-destructive' : 'text-warning'}`} />
+                    <span className={`text-sm font-semibold ${miss.status === 'open' ? 'text-destructive' : ''}`}>
+                      {miss.status === 'open' ? `Overdue by ${gap}` : `Missed by ${gap}`}
+                    </span>
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {formatDate(miss.dueAt)} {formatTime(miss.dueAt)}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">
+                    Due {formatTimeAgo(miss.dueAt)}
+                    {miss.resolvedAt
+                      ? ` · scanned ${formatTime(miss.resolvedAt)}`
+                      : ' · still not scanned'}
+                    {miss.lastScanAt ? ` · previous scan ${formatTime(miss.lastScanAt)}` : ''}
+                    {` · ${miss.gracePeriodMinutes} min grace`}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Who is supposed to be producing these scans. Without it an empty
           list below is ambiguous: nobody patrolled, or nobody was posted. */}
@@ -421,7 +486,10 @@ export default function CheckpointDetail() {
                     <span className="shrink-0 text-[11px] text-muted-foreground">{formatDate(scan.scannedAt)}</span>
                   </div>
                   <div className="mt-0.5 text-xs text-muted-foreground">{scan.notes || 'No notes'}</div>
-                  <div className="mt-2 flex items-center gap-3 text-[11px]">
+                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                    {/* The clock time alone makes the reader work out whether
+                        14:35 was twenty minutes or two days ago. */}
+                    <span className="font-medium">{formatTimeAgo(scan.scannedAt)}</span>
                     <span className="text-muted-foreground">{formatTime(scan.scannedAt)}</span>
                     <span className={scan.gpsValid ? 'text-success' : 'text-destructive'}>
                       {scan.gpsValid ? `${scan.distanceMeters}m` : 'GPS Flagged'}

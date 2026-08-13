@@ -51,6 +51,36 @@ export function formatDuration(clockIn: string | Date | null | undefined, clockO
   return `${mins}m`
 }
 
+/**
+ * A gap in words: "45m", "3h 10m", "2 days".
+ *
+ * Minutes alone stop being readable somewhere around an hour — nobody reads
+ * "a patrol missed by 190 minutes" and pictures three hours.
+ */
+export function formatGap(ms: number): string {
+  const totalMinutes = Math.max(0, Math.round(ms / 60000))
+  if (totalMinutes < 60) return `${totalMinutes}m`
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  if (hours < 24) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`
+  const days = Math.floor(hours / 24)
+  const leftoverHours = hours % 24
+  return leftoverHours > 0 ? `${days}d ${leftoverHours}h` : `${days}d`
+}
+
+/**
+ * How long ago something happened, for lists where the clock time alone
+ * ("14:35") makes a reader work out whether that was minutes or days back.
+ */
+export function formatTimeAgo(value: string | Date | null | undefined, fallback = '—'): string {
+  const d = safeDate(value)
+  if (!d) return fallback
+  const ms = Date.now() - d.getTime()
+  if (ms < 60000) return 'just now'
+  if (ms < 0) return formatTime(d)
+  return `${formatGap(ms)} ago`
+}
+
 export function formatLateStatus(scheduled: string | Date | null | undefined, actual: string | Date | null | undefined): { late: boolean; minutes: number; label: string } {
   const s = safeDate(scheduled)
   const a = safeDate(actual)

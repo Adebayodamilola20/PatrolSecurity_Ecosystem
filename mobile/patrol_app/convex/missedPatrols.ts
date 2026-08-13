@@ -14,18 +14,29 @@ export const list = internalQuery({
   args: {
     status: v.optional(v.union(v.literal("open"), v.literal("resolved"))),
     clientId: v.optional(v.id("clients")),
+    // One gate's own history, for its detail page. Queried by its own index
+    // rather than filtered out of the global list, which would truncate at
+    // the limit long before reaching this checkpoint's older misses.
+    checkpointId: v.optional(v.id("checkpoints")),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const query = args.status
-      ? ctx.db.query("missedPatrolAlerts").withIndex("by_status", (q) =>
-          q.eq("status", args.status!),
+    const query = args.checkpointId
+      ? ctx.db.query("missedPatrolAlerts").withIndex("by_checkpointId", (q) =>
+          q.eq("checkpointId", args.checkpointId!),
         )
-      : ctx.db.query("missedPatrolAlerts");
+      : args.status
+        ? ctx.db.query("missedPatrolAlerts").withIndex("by_status", (q) =>
+            q.eq("status", args.status!),
+          )
+        : ctx.db.query("missedPatrolAlerts");
     let alerts = await query.order("desc").take(args.limit ?? 100);
 
     if (args.clientId) {
       alerts = alerts.filter((alert) => alert.clientId === args.clientId);
+    }
+    if (args.checkpointId && args.status) {
+      alerts = alerts.filter((alert) => alert.status === args.status);
     }
 
     return alerts.map((alert) => ({
@@ -38,6 +49,7 @@ export const list = internalQuery({
       lastScanAt: alert.lastScanAt ? new Date(alert.lastScanAt).toISOString() : null,
       dueAt: new Date(alert.dueAt).toISOString(),
       detectedAt: new Date(alert.detectedAt).toISOString(),
+      resolvedAt: alert.resolvedAt ? new Date(alert.resolvedAt).toISOString() : null,
       expectedIntervalMinutes: alert.expectedIntervalMinutes,
       gracePeriodMinutes: alert.gracePeriodMinutes,
       status: alert.status,

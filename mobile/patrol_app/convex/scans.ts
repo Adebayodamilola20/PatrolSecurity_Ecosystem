@@ -579,6 +579,8 @@ export const create = internalMutation({
     if (openAlert) {
       await ctx.db.patch(openAlert._id, {
         status: "resolved",
+        // The scan time, not now: this is the moment the gap actually closed.
+        resolvedAt: scannedAt,
         notificationStatus: openAlert.notificationStatus || "resolved_by_scan",
       });
     }

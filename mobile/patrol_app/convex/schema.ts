@@ -296,6 +296,10 @@ export default defineSchema({
     expectedIntervalMinutes: v.number(),
     gracePeriodMinutes: v.number(),
     status: v.union(v.literal("open"), v.literal("resolved")),
+    // When the gate was finally scanned. Without it a closed alert can only
+    // say "this was missed", never "this was missed by two hours" — and the
+    // gap is the whole point of the record.
+    resolvedAt: v.optional(v.number()),
     notificationStatus: v.string(),
     deliveryPayload: v.any(),
   })

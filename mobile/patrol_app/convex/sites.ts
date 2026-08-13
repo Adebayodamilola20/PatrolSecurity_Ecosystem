@@ -198,7 +198,7 @@ export const remove = internalMutation({
         )
         .collect();
       for (const alert of openAlerts) {
-        await ctx.db.patch(alert._id, { status: "resolved" });
+        await ctx.db.patch(alert._id, { status: "resolved", resolvedAt: Date.now() });
       }
       await recordTombstone(ctx, {
         entityType: "checkpoint",

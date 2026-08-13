@@ -1866,10 +1866,16 @@ http.route({
     }
     const url = new URL(request.url);
     const status = url.searchParams.get("status");
+    const checkpointParam = url.searchParams.get("checkpointId");
+    const checkpointId = checkpointParam
+      ? await ctx.runQuery(internal.checkpoints.resolveId, { id: checkpointParam })
+      : undefined;
+    if (checkpointParam && !checkpointId) return notFound("Sub-location not found");
     return json(
       await ctx.runQuery(internal.missedPatrols.list, {
         status: status === "resolved" || status === "open" ? status : undefined,
         clientId: user.role === "admin" ? undefined : (_cid(user.clientId)),
+        checkpointId: checkpointId ?? undefined,
         limit: Number(url.searchParams.get("limit") ?? 100),
       }),
     );
