@@ -1,24 +1,8 @@
 import { NavLink } from 'react-router-dom'
-import {
-  LayoutDashboard,
-  Users,
-  ScanLine,
-  MapPin,
-  FileText,
-  BarChart3,
-  ShieldCheck,
-} from 'lucide-react'
+import { ShieldCheck } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useUnreadReports } from '../../hooks/useUnreadReports'
-
-const nav = [
-  { to: '/overview', label: 'Overview', icon: LayoutDashboard, end: true },
-  { to: '/guards', label: 'My Guards', icon: Users },
-  { to: '/scans', label: 'Patrol Activity', icon: ScanLine },
-  { to: '/locations', label: 'Locations', icon: MapPin },
-  { to: '/analytics', label: 'Analytics', icon: BarChart3 },
-  { to: '/reports', label: 'Reports', icon: FileText },
-]
+import { navItems as nav } from './navItems'
 
 export default function Sidebar() {
   const unreadReports = useUnreadReports()

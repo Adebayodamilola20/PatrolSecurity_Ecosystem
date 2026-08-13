@@ -1,5 +1,6 @@
 import { LogOut } from 'lucide-react'
 import { useClientAuthStore } from '../../stores/useClientAuthStore'
+import MobileNav from './MobileNav'
 
 export default function Header() {
   const user = useClientAuthStore((s) => s.user)
@@ -7,11 +8,14 @@ export default function Header() {
 
   return (
     <header className="flex items-center justify-between border-b border-border bg-card px-4 py-3 sm:px-6">
-      <div className="min-w-0">
-        <p className="truncate text-sm font-semibold">
-          {user?.clientName || 'Your Organization'}
-        </p>
-        <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
+      <div className="flex min-w-0 items-center gap-2">
+        <MobileNav />
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold">
+            {user?.clientName || 'Your Organization'}
+          </p>
+          <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
+        </div>
       </div>
       <button
         onClick={logout}
