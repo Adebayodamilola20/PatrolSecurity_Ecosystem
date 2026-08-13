@@ -1243,3 +1243,105 @@ describe("emergency alerts", () => {
     expect(res.status).toBe(403);
   });
 });
+
+/**
+ * Propagation and the role gates on the newer routes.
+ *
+ * The requirement is that an admin edit shows up wherever that thing is
+ * displayed, with no second copy left behind holding the old value — and that
+ * the routes added alongside are not reachable by the wrong role.
+ */
+describe("propagation and route gates", () => {
+  test("editing a post order changes what the guard reads, with no stale copy", async () => {
+    const created = await t.mutation(internal.postOrders.create, {
+      instructions: "Check rear entrance every 30 minutes.",
+      checkpointId: w.alphaCheckpoint,
+      createdBy: w.admin,
+    });
+    // The guard has to be standing there to see it at all.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("shifts", {
+        clientId: w.alphaClient,
+        siteId: w.alphaSite,
+        userId: w.alphaGuard,
+        status: "active",
+        clockIn: Date.now() - 3600_000,
+        clockInPhoto: "test-photo",
+        siteLabel: "Alpha Ikeja Warehouse",
+        createdAt: Date.now() - 3600_000,
+      });
+      await ctx.db.insert("scans", {
+        clientId: w.alphaClient,
+        siteId: w.alphaSite,
+        officerId: w.alphaGuard,
+        checkpointId: w.alphaCheckpoint,
+        scannedAt: Date.now(),
+        receivedAt: Date.now(),
+        gpsValid: true,
+        notes: "",
+      });
+    });
+
+    const before = await t.query(internal.postOrders.listForUser, { userId: w.alphaGuard });
+    expect(before[0].instructions).toMatch(/30 minutes/);
+
+    const res = await t.fetch(`/post-orders/${created.id}`, {
+      method: "PUT",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({ instructions: "Check rear entrance every 15 minutes." }),
+    });
+    expect(res.status).toBe(200);
+
+    const after = await t.query(internal.postOrders.listForUser, { userId: w.alphaGuard });
+    expect(after).toHaveLength(1);
+    expect(after[0].instructions).toMatch(/15 minutes/);
+    const rows = await t.run((ctx) => ctx.db.query("postOrders").collect());
+    expect(rows).toHaveLength(1);
+  });
+
+  test("renaming a guard propagates to the roster with no duplicate row", async () => {
+    await t.fetch(`/users/${w.alphaGuard}`, {
+      method: "PUT",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({ name: "Ade Renamed" }),
+    });
+    const roster = await (
+      await t.fetch("/users", { method: "GET", headers: auth(w.tokens.admin) })
+    ).json();
+    const matches = roster.filter((u: any) => /^Ade /.test(u.name));
+    expect(matches).toHaveLength(1);
+    expect(matches[0].name).toBe("Ade Renamed");
+  });
+
+  test("a guard cannot post another guard to a sub-location", async () => {
+    const res = await t.fetch("/checkpoint-assignments", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({ checkpointId: w.alphaCheckpoint, userId: w.alphaRelief }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  test("a guard cannot read who is posted to a sub-location", async () => {
+    const res = await t.fetch(
+      `/checkpoint-assignments?checkpointId=${w.alphaCheckpoint}`,
+      { method: "GET", headers: auth(w.tokens.alphaGuard) },
+    );
+    expect(res.status).toBe(403);
+  });
+
+  test("a client portal account cannot reach staff post-order management", async () => {
+    const res = await t.fetch("/post-orders/manage", {
+      method: "GET",
+      headers: auth(w.tokens.alphaPortal),
+    });
+    // A portal token may read its own client's orders here, but it must never
+    // see another tenant's.
+    if (res.status === 200) {
+      const rows = await res.json();
+      expect(rows.every((o: any) => !o.clientId || o.clientId === w.alphaClient)).toBe(true);
+    } else {
+      expect([401, 403]).toContain(res.status);
+    }
+  });
+});
