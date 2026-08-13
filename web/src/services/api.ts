@@ -275,6 +275,17 @@ export const api = {
     get: (id: string) => request<any>(`/users/${id}`),
     create: (data: any) =>
       request<any>('/users', { method: 'POST', body: JSON.stringify(data) }),
+    // Edits the existing record in place. Sending a subset is fine; only the
+    // fields present are touched.
+    update: (id: string, data: any) =>
+      request<any>(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    // Sets a new password and revokes that account's live sessions. There is
+    // no counterpart that reads a password back out.
+    resetPassword: (userId: string, newPassword: string) =>
+      request<{ message: string; sessionsRevoked: number }>('/users/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ userId, newPassword }),
+      }),
     // Removes the profile, login and postings. Patrol history is kept — see
     // `users.remove` in convex for why, and `deletionImpact` for the numbers
     // to show before confirming.

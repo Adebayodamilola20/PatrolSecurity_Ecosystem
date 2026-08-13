@@ -7,6 +7,8 @@ const sensitiveActions = [
   "user.session_reuse_detected",
   "user.session_refresh_recovered",
   "user.password_change",
+  "user.updated",
+  "user.password_reset_by_admin",
   "user.created",
   "user.deactivated",
   "user.deleted",

@@ -390,3 +390,116 @@ export const changePassword = internalMutation({
     });
   },
 });
+
+/**
+ * Edit a person's profile in place.
+ *
+ * Patches the existing row rather than writing a new one: every scan, shift,
+ * incident and posting points at this id, so a "corrected" duplicate would
+ * silently orphan the entire history behind the old name. Only the fields
+ * actually sent are touched.
+ */
+export const updateProfile = internalMutation({
+  args: {
+    userId: v.id("users"),
+    name: v.optional(v.string()),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    role: v.optional(
+      v.union(
+        v.literal("admin"),
+        v.literal("main_account"),
+        v.literal("supervisor"),
+        v.literal("guard"),
+      ),
+    ),
+    active: v.optional(v.boolean()),
+    liveTracking: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const { userId, ...fields } = args;
+    const user = await ctx.db.get(userId);
+    if (!user) throw new Error("User not found");
+
+    const email = fields.email?.trim().toLowerCase();
+    if (email && email !== user.email.toLowerCase()) {
+      // The login looks accounts up by email, so two rows sharing one would
+      // make which account you reach a matter of insertion order.
+      const clash = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", email))
+        .first();
+      if (clash && clash._id !== userId) {
+        throw new Error("Another account already uses that email address");
+      }
+    }
+
+    // Demoting the last admin leaves nobody able to administer the system,
+    // including nobody able to promote a replacement.
+    if (fields.role && fields.role !== "admin" && user.role === "admin") {
+      const admins = await ctx.db
+        .query("users")
+        .withIndex("by_role", (q) => q.eq("role", "admin"))
+        .collect();
+      if (admins.filter((a) => a.active).length <= 1) {
+        throw new Error("This is the last active admin — promote someone else first");
+      }
+    }
+
+    const patch: Record<string, unknown> = {};
+    if (fields.name?.trim()) patch.name = fields.name.trim();
+    if (email) patch.email = email;
+    if (fields.phone != null) patch.phone = fields.phone.trim();
+    if (fields.role) patch.role = fields.role;
+    if (fields.active != null) patch.active = fields.active;
+    if (fields.liveTracking != null) patch.liveTracking = fields.liveTracking;
+    await ctx.db.patch(userId, patch);
+
+    const updated = await ctx.db.get(userId);
+    return {
+      id: updated?.legacyId ?? userId,
+      convexId: userId,
+      name: updated?.name,
+      email: updated?.email,
+      phone: updated?.phone,
+      role: updated?.role,
+      active: updated?.active,
+    };
+  },
+});
+
+/**
+ * Administrative password reset.
+ *
+ * The hash is computed in the HTTP layer and only the hash reaches here —
+ * there is deliberately no way to read an existing password back out, so a
+ * forgotten one is replaced, never revealed.
+ *
+ * Every refresh token for the account is revoked in the same breath. A reset
+ * that leaves the old sessions alive protects nobody: the usual reason for
+ * resetting is that someone else has the account.
+ */
+export const adminResetPassword = internalMutation({
+  args: {
+    userId: v.id("users"),
+    passwordHash: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    if (!user) throw new Error("User not found");
+    await ctx.db.patch(args.userId, { passwordHash: args.passwordHash });
+
+    const tokens = await ctx.db
+      .query("refreshTokens")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .collect();
+    let revoked = 0;
+    const now = Date.now();
+    for (const token of tokens) {
+      if (token.revokedAt) continue;
+      await ctx.db.patch(token._id, { revokedAt: now });
+      revoked++;
+    }
+    return { name: user.name, sessionsRevoked: revoked };
+  },
+});

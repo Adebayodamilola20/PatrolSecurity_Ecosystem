@@ -3153,6 +3153,68 @@ http.route({ path: "/users", method: "POST", handler: httpAction(async (ctx, req
   return json({ id, message: "User created" }, { status: 201 });
 })});
 
+// Edit a person in place. Admin-only, and deliberately a PATCH-shaped PUT on
+// the existing id: a new row would orphan every scan, shift and posting that
+// already points at this person.
+http.route({ pathPrefix: "/users/", method: "PUT", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  const roleErr = requireRole(user, ["admin"]);
+  if (roleErr) return roleErr;
+  const id = lastPathPart(request);
+  if (!id) return badRequest("User ID required");
+  const userId = await ctx.runQuery(internal.users.resolveId, { id });
+  if (!userId) return notFound("User not found");
+  const body = await parseJson(request);
+  const role = ["admin", "main_account", "supervisor", "guard"].includes(String(body?.role))
+    ? (String(body?.role) as "admin" | "main_account" | "supervisor" | "guard")
+    : undefined;
+  try {
+    const result = await ctx.runMutation(internal.users.updateProfile, {
+      userId,
+      name: body?.name != null ? String(body.name) : undefined,
+      email: body?.email != null ? String(body.email) : undefined,
+      phone: body?.phone != null ? String(body.phone) : undefined,
+      role,
+      active: typeof body?.active === "boolean" ? body.active : undefined,
+      liveTracking: typeof body?.liveTracking === "boolean" ? body.liveTracking : undefined,
+    });
+    await recordAudit(ctx, user, "user.updated", {
+      targetType: "user", targetId: userId as string,
+      details: `Updated profile for ${result.name}`,
+      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+    });
+    return json(result);
+  } catch (err) {
+    return badRequest(err instanceof Error ? err.message : "Could not update this profile");
+  }
+})});
+
+// Administrative password reset. There is no route that reads a password back
+// out and there will not be one — a forgotten password is replaced, never
+// revealed. A flat path keeps it clear of the /users/{id} prefix routes.
+http.route({ path: "/users/reset-password", method: "POST", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  const roleErr = requireRole(user, ["admin"]);
+  if (roleErr) return roleErr;
+  const body = await parseJson(request);
+  const userId = await ctx.runQuery(internal.users.resolveId, { id: String(body?.userId ?? "") });
+  if (!userId) return notFound("User not found");
+  const newPassword = String(body?.newPassword ?? "");
+  if (newPassword.length < 8) {
+    return badRequest("New password must be at least 8 characters");
+  }
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  const result = await ctx.runMutation(internal.users.adminResetPassword, { userId, passwordHash });
+  await recordAudit(ctx, user, "user.password_reset_by_admin", {
+    targetType: "user", targetId: userId as string,
+    details: `Reset the password for ${result.name}; ${result.sessionsRevoked} session(s) revoked`,
+    ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+  });
+  return json({ message: "Password reset", sessionsRevoked: result.sessionsRevoked });
+})});
+
 http.route({ pathPrefix: "/users/", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();

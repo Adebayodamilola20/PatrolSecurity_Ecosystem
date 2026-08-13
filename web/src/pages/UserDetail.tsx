@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Clock3, Mail, Phone, ShieldCheck, User2, AlertTriangle, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Clock3, KeyRound, Mail, Pencil, Phone, ShieldCheck, User2, AlertTriangle, Trash2, X } from 'lucide-react'
 import { api } from '../services/api'
 import { subscribeToScans, subscribeToShiftUpdates } from '../services/websocket'
 import { useCanManageUsers } from '../stores/useAuthStore'
@@ -48,6 +48,71 @@ export default function UserDetail() {
   const [impactError, setImpactError] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  const [showEdit, setShowEdit] = useState(false)
+  const [editForm, setEditForm] = useState({ name: '', email: '', phone: '', role: 'guard', active: true })
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [editError, setEditError] = useState('')
+  // Password reset is a separate action from editing on purpose: it revokes
+  // the account's live sessions, which is not something to do by accident
+  // while correcting a phone number.
+  const [showReset, setShowReset] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [resetting, setResetting] = useState(false)
+  const [resetError, setResetError] = useState('')
+  const [resetDone, setResetDone] = useState('')
+
+  const reload = () => {
+    if (!id) return
+    api.users.get(id).then(setUser).catch((err) => console.error('Failed to load user:', err))
+  }
+
+  const openEdit = () => {
+    if (!user) return
+    setEditForm({
+      name: user.name ?? '',
+      email: user.email ?? '',
+      phone: user.phone ?? '',
+      role: user.role ?? 'guard',
+      active: user.active !== false,
+    })
+    setEditError('')
+    setShowEdit(true)
+  }
+
+  const saveEdit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!id) return
+    setSavingEdit(true)
+    setEditError('')
+    try {
+      await api.users.update(id, editForm)
+      setShowEdit(false)
+      reload()
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'Could not save these changes.')
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  const submitReset = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!id) return
+    setResetting(true)
+    setResetError('')
+    setResetDone('')
+    try {
+      const result = await api.users.resetPassword(id, newPassword)
+      setResetDone(
+        `Password changed. ${result.sessionsRevoked} signed-in session${result.sessionsRevoked === 1 ? '' : 's'} ended — give them the new password.`,
+      )
+      setNewPassword('')
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : 'Could not reset the password.')
+    } finally {
+      setResetting(false)
+    }
+  }
 
   useEffect(() => {
     if (!id) return
@@ -210,6 +275,105 @@ export default function UserDetail() {
         </div>
       )}
 
+      {showEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <form onSubmit={saveEdit} className="w-full max-w-md space-y-4 rounded-xl border border-border bg-card p-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Edit profile</h2>
+              <button type="button" onClick={() => setShowEdit(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <label className="block text-xs text-muted-foreground">
+              Name
+              <input required value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground" />
+            </label>
+            <label className="block text-xs text-muted-foreground">
+              Email
+              <input required type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground" />
+            </label>
+            <label className="block text-xs text-muted-foreground">
+              Phone
+              <input value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground" />
+            </label>
+            <label className="block text-xs text-muted-foreground">
+              Role
+              <select value={editForm.role} onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground">
+                <option value="guard">Guard</option>
+                <option value="supervisor">Supervisor</option>
+                <option value="admin">Admin</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={editForm.active} onChange={(e) => setEditForm({ ...editForm, active: e.target.checked })} />
+              Account active
+            </label>
+            {/* Postings are managed where they are made — on the client's
+                location page. A second control here is exactly the pair of
+                disagreeing lists that was just removed from that page. */}
+            <div className="rounded-lg bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
+              Assignment is changed on the client's location page, where guards are put on their
+              sub-locations.
+            </div>
+            {editError && (
+              <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {editError}
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setShowEdit(false)} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent">Cancel</button>
+              <button disabled={savingEdit} type="submit" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60">
+                {savingEdit ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {showReset && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <form onSubmit={submitReset} className="w-full max-w-md space-y-4 rounded-xl border border-border bg-card p-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Reset password</h2>
+              <button type="button" onClick={() => setShowReset(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Set a new password for {user.name} and tell it to them directly. Existing passwords
+              cannot be read back — they are stored hashed, so a forgotten one is replaced, never
+              revealed.
+            </p>
+            <label className="block text-xs text-muted-foreground">
+              New password
+              <input required minLength={8} value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="At least 8 characters"
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground" />
+            </label>
+            <div className="rounded-lg bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
+              This signs them out everywhere. If they are mid-shift on the app they will have to log
+              back in with the new password.
+            </div>
+            {resetError && (
+              <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">{resetError}</div>
+            )}
+            {resetDone && (
+              <div className="rounded-lg border border-success/20 bg-success/10 px-3 py-2 text-sm text-success">{resetDone}</div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setShowReset(false)} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent">Close</button>
+              <button disabled={resetting} type="submit" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60">
+                {resetting ? 'Saving…' : 'Set password'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-4">
@@ -262,12 +426,26 @@ export default function UserDetail() {
             </div>
           </div>
           {canManage && (
-            <button
-              onClick={openDelete}
-              className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-destructive/30 px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/10"
-            >
-              <Trash2 className="h-4 w-4" /> Delete Profile
-            </button>
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <button
+                onClick={openEdit}
+                className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-accent"
+              >
+                <Pencil className="h-4 w-4" /> Edit
+              </button>
+              <button
+                onClick={() => { setShowReset(true); setResetError(''); setResetDone(''); setNewPassword('') }}
+                className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-accent"
+              >
+                <KeyRound className="h-4 w-4" /> Reset Password
+              </button>
+              <button
+                onClick={openDelete}
+                className="inline-flex items-center gap-2 rounded-lg border border-destructive/30 px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/10"
+              >
+                <Trash2 className="h-4 w-4" /> Delete Profile
+              </button>
+            </div>
           )}
         </div>
 

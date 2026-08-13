@@ -741,3 +741,113 @@ describe("F4 — a scanned code says nothing about a post the guard does not hol
     expect((await t.fetch(lookup("BRAVO-GATE-001"), { method: "GET" })).status).toBe(401);
   });
 });
+
+/**
+ * Administrative personnel management.
+ *
+ * The requirement is that an admin can correct a profile and replace a
+ * forgotten password, and that nobody else can — and that no route anywhere
+ * hands a password back out.
+ */
+describe("personnel editing and password reset", () => {
+  const editBody = JSON.stringify({ name: "Ade Guard Corrected", phone: "+2348099999999" });
+
+  test("an admin edits the existing record rather than creating a second one", async () => {
+    const before = await t.run((ctx) => ctx.db.query("users").collect());
+    const res = await t.fetch(`/users/${w.alphaGuard}`, {
+      method: "PUT",
+      headers: auth(w.tokens.admin),
+      body: editBody,
+    });
+    expect(res.status).toBe(200);
+    const after = await t.run((ctx) => ctx.db.query("users").collect());
+    expect(after).toHaveLength(before.length);
+    const updated = await t.run((ctx) => ctx.db.get(w.alphaGuard));
+    expect(updated?.name).toBe("Ade Guard Corrected");
+    expect(updated?.phone).toBe("+2348099999999");
+  });
+
+  test("a guard cannot edit anyone, including themselves", async () => {
+    const res = await t.fetch(`/users/${w.alphaGuard}`, {
+      method: "PUT",
+      headers: auth(w.tokens.alphaGuard),
+      body: editBody,
+    });
+    expect(res.status).toBe(403);
+  });
+
+  test("a client portal account cannot edit personnel", async () => {
+    const res = await t.fetch(`/users/${w.alphaGuard}`, {
+      method: "PUT",
+      headers: auth(w.tokens.alphaPortal),
+      body: editBody,
+    });
+    // 401 rather than 403: a portal token cannot authenticate against a staff
+    // route at all, which is a stronger refusal than failing the role check.
+    expect([401, 403]).toContain(res.status);
+  });
+
+  test("an email already in use is refused", async () => {
+    const res = await t.fetch(`/users/${w.alphaGuard}`, {
+      method: "PUT",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({ email: "bola.relief@example.test" }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).message ?? "").toMatch(/already uses/i);
+  });
+
+  test("an admin reset replaces the hash and revokes live sessions", async () => {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("refreshTokens", {
+        userId: w.alphaGuard,
+        tokenHash: "hash-of-a-live-session",
+        familyId: "family-1",
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 86400000,
+      });
+    });
+    const before = await t.run((ctx) => ctx.db.get(w.alphaGuard));
+    const res = await t.fetch("/users/reset-password", {
+      method: "POST",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({ userId: w.alphaGuard, newPassword: "a-fresh-password" }),
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).sessionsRevoked).toBe(1);
+    const after = await t.run((ctx) => ctx.db.get(w.alphaGuard));
+    expect(after?.passwordHash).not.toBe(before?.passwordHash);
+    const tokens = await t.run((ctx) => ctx.db.query("refreshTokens").collect());
+    expect(tokens.every((token) => token.revokedAt)).toBe(true);
+  });
+
+  test("a supervisor cannot reset someone's password", async () => {
+    const res = await t.fetch("/users/reset-password", {
+      method: "POST",
+      headers: auth(w.tokens.supervisor),
+      body: JSON.stringify({ userId: w.alphaGuard, newPassword: "a-fresh-password" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  test("a short password is refused", async () => {
+    const res = await t.fetch("/users/reset-password", {
+      method: "POST",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({ userId: w.alphaGuard, newPassword: "short" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test("no profile route ever returns a password or its hash", async () => {
+    const detail = await (
+      await t.fetch(`/users/${w.alphaGuard}`, { method: "GET", headers: auth(w.tokens.admin) })
+    ).json();
+    const list = await (
+      await t.fetch("/users", { method: "GET", headers: auth(w.tokens.admin) })
+    ).json();
+    const serialized = JSON.stringify({ detail, list });
+    expect(serialized).not.toMatch(/passwordHash/);
+    expect(serialized).not.toMatch(/not-a-real-hash/);
+  });
+});

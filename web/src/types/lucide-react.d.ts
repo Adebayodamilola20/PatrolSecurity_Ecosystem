@@ -54,6 +54,7 @@ declare module 'lucide-react' {
   export const Moon: LucideIcon
   export const MoreHorizontal: LucideIcon
   export const Navigation: LucideIcon
+  export const Pencil: LucideIcon
   export const Phone: LucideIcon
   export const Plus: LucideIcon
   export const Printer: LucideIcon
