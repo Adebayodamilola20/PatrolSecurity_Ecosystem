@@ -4,6 +4,7 @@ import QRCode from 'qrcode'
 import { api } from '../services/api'
 import { useClientData } from '../hooks/useClientData'
 import EmptyState from '../components/ui/EmptyState'
+import { CardSkeleton, LoadingNote } from '../components/ui/Skeleton'
 import { Card } from '../components/ui/Card'
 import { formatDate } from '../utils/format'
 import type { ClientScan, ClientSubLocation } from '../types'
@@ -166,7 +167,11 @@ export default function Locations() {
       ) : null}
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <div className="space-y-3">
+          <LoadingNote label="Loading your locations…" />
+          <CardSkeleton />
+          <CardSkeleton />
+        </div>
       ) : error ? (
         <EmptyState icon={MapPin} title="Couldn't load locations" description={error} />
       ) : sites.length === 0 ? (

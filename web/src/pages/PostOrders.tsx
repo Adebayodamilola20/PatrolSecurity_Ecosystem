@@ -213,6 +213,8 @@ export default function PostOrders() {
           deleting={deleting === detail.id}
           onSaved={async () => { await load() }}
           whereLabel={whereLabel(detail)}
+          sites={sites}
+          checkpoints={checkpoints}
         />
       )}
 
@@ -451,6 +453,8 @@ function PostOrderDetail({
   deleting,
   onSaved,
   whereLabel,
+  sites,
+  checkpoints,
 }: {
   order: PostOrder
   guards: User[]
@@ -459,30 +463,59 @@ function PostOrderDetail({
   deleting: boolean
   onSaved: () => Promise<void>
   whereLabel: string
+  sites: { id: string; convexId?: string; name: string }[]
+  checkpoints: Checkpoint[]
 }) {
   const initialGuards = useMemo(
     () => order.assignedGuards?.map((g) => g.id) ?? (order.assignedUserId ? [order.assignedUserId] : []),
     [order],
   )
+  const initialSupervisors = useMemo(() => order.supervisorUserIds ?? [], [order])
   const [selected, setSelected] = useState<string[]>(initialGuards)
+  const [supervisors, setSupervisors] = useState<string[]>(initialSupervisors)
   const [active, setActive] = useState(order.active)
+  // The five fields the creation form now asks for are all editable here, so
+  // a post order can be moved and rewritten in place rather than deleted and
+  // recreated — which would orphan its acknowledgement history.
+  const [instructions, setInstructions] = useState(order.instructions)
+  const [siteId, setSiteId] = useState(order.siteId ?? '')
+  const [checkpointId, setCheckpointId] = useState(order.checkpointId ?? '')
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+
+  const sitePoints = siteId ? checkpoints.filter((cp) => cp.siteId === siteId) : []
+
+  const sameSet = (a: string[], b: string[]) =>
+    a.slice().sort().join(',') === b.slice().sort().join(',')
 
   const dirty =
     active !== order.active ||
-    selected.slice().sort().join(',') !== initialGuards.slice().sort().join(',')
+    instructions !== order.instructions ||
+    siteId !== (order.siteId ?? '') ||
+    checkpointId !== (order.checkpointId ?? '') ||
+    !sameSet(selected, initialGuards) ||
+    !sameSet(supervisors, initialSupervisors)
 
   const save = async () => {
     setSaving(true)
+    setSaveError('')
     try {
       await api.postOrders.update(order.id, {
+        instructions,
+        // A pinned sub-location wins; the server re-checks that it actually
+        // belongs to the location chosen beside it.
+        checkpointId: checkpointId || '',
+        siteId: checkpointId ? '' : siteId || '',
         assignedUserIds: selected,
+        supervisorUserIds: supervisors,
         // Always on — also repairs legacy orders that were saved without it.
         requiresAcknowledgement: true,
         active,
       })
       await onSaved()
       onClose()
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Could not save these changes.')
     } finally {
       setSaving(false)
     }
@@ -509,15 +542,72 @@ function PostOrderDetail({
           <div className="text-muted-foreground">Photo proof: <span className="text-foreground">{order.requiresPhotoProof ? 'Required' : 'Optional'}</span></div>
         </div>
 
-        <div className="rounded-lg border border-border/60 bg-background/40 p-3 text-sm whitespace-pre-wrap">{order.instructions}</div>
+        {/* Move it: Client → Location → Sub-location. Changing the location
+            clears the sub-location, because the list below it belongs to
+            whichever location is selected. */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label className="text-xs text-muted-foreground">
+            Location
+            <select
+              value={siteId}
+              onChange={(e) => { setSiteId(e.target.value); setCheckpointId('') }}
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+            >
+              <option value="">Anywhere (general duty)</option>
+              {sites.map((site) => (
+                <option key={site.id} value={site.convexId ?? site.id}>{site.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs text-muted-foreground">
+            Sub-location
+            <select
+              value={checkpointId}
+              onChange={(e) => setCheckpointId(e.target.value)}
+              disabled={!siteId}
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground disabled:opacity-50"
+            >
+              <option value="">{siteId ? 'Whole location (any scan there)' : 'Pick a location first'}</option>
+              {sitePoints.map((cp) => (
+                <option key={cp.id} value={cp.id}>{cp.name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
 
-        {/* Reassign: add or remove guards on this order. */}
-        <GuardPicker guards={guards} selected={selected} onChange={setSelected} label="Assigned guards" />
+        <label className="block text-xs text-muted-foreground">
+          Instructions
+          <textarea
+            value={instructions}
+            onChange={(e) => setInstructions(e.target.value)}
+            className="mt-1 min-h-28 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+          />
+        </label>
+
+        {/* Reassign: add or remove guards and supervisors on this order. */}
+        <GuardPicker
+          guards={guards.filter((g) => g.role === 'guard')}
+          selected={selected}
+          onChange={setSelected}
+          label="Guard"
+        />
+        <GuardPicker
+          guards={guards.filter((g) => g.role === 'supervisor')}
+          selected={supervisors}
+          onChange={setSupervisors}
+          label="Supervisor"
+        />
 
         <div className="flex flex-wrap items-center gap-4 text-sm">
           <label className="flex items-center gap-2"><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Active</label>
           <span className="text-xs text-muted-foreground">Pops up on scan and must be acknowledged.</span>
         </div>
+
+        {saveError && (
+          <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {saveError}
+          </div>
+        )}
 
         {/* Who acknowledged this order, and when. */}
         <div>

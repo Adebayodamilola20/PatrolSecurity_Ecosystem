@@ -76,6 +76,44 @@ export const listAll = internalQuery({
           assignments.map(async (a) => (await ctx.db.get(a.siteId))?.name ?? null),
         )
       ).filter((name): name is string => !!name)
+
+      // Where this person actually is, for the live map.
+      //
+      // The map used to plot a guard at their most recent *scan*, which put
+      // someone who clocked in at one location on top of a different one they
+      // had scanned earlier. The live position beats the clock-in fix, and
+      // the clock-in fix beats nothing — a scan is history, not a location.
+      let livePosition: {
+        latitude: number;
+        longitude: number;
+        recordedAt: number;
+        source: "live" | "clock_in";
+      } | null = null;
+      if (activeShift) {
+        const latest = await ctx.db
+          .query("officerPositions")
+          .withIndex("by_userId_capturedAt", (q) => q.eq("userId", u._id))
+          .order("desc")
+          .first();
+        if (latest && latest.capturedAt >= activeShift.clockIn) {
+          livePosition = {
+            latitude: latest.latitude,
+            longitude: latest.longitude,
+            recordedAt: latest.capturedAt,
+            source: "live",
+          };
+        } else if (
+          activeShift.clockInLatitude != null &&
+          activeShift.clockInLongitude != null
+        ) {
+          livePosition = {
+            latitude: activeShift.clockInLatitude,
+            longitude: activeShift.clockInLongitude,
+            recordedAt: activeShift.clockIn,
+            source: "clock_in",
+          };
+        }
+      }
       return {
         id: u.legacyId ?? u._id,
         convexId: u._id,
@@ -90,6 +128,12 @@ export const listAll = internalQuery({
         liveTracking: u.liveTracking,
         createdAt: new Date(u.createdAt).toISOString(),
         onDuty: !!activeShift,
+        liveLatitude: livePosition?.latitude ?? null,
+        liveLongitude: livePosition?.longitude ?? null,
+        livePositionAt: livePosition
+          ? new Date(livePosition.recordedAt).toISOString()
+          : null,
+        livePositionSource: livePosition?.source ?? null,
         lastClockIn: lastClockInShift?.clockIn ? new Date(lastClockInShift.clockIn).toISOString() : null,
         lastClockOut: lastClockOutShift?.clockOut ? new Date(lastClockOutShift.clockOut).toISOString() : null,
       }
@@ -270,8 +314,13 @@ export const resolveId = internalQuery({
       .withIndex("by_legacyId", (q) => q.eq("legacyId", args.id))
       .unique();
     if (byLegacyId) return byLegacyId._id;
-    const all = await ctx.db.query("users").collect();
-    return all.find(u => u._id === args.id)?._id ?? null;
+    // Not a legacy id, so it should be a Convex one. This used to read
+    // the whole table and scan it for a matching _id — on scans, the
+    // largest table here, that is the entire patrol history loaded to
+    // answer "does this id exist". normalizeId answers it directly.
+    const normalized = ctx.db.normalizeId("users", args.id);
+    if (!normalized) return null;
+    return (await ctx.db.get(normalized)) ? normalized : null;
   },
 });
 

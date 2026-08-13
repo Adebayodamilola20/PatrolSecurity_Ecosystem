@@ -227,6 +227,21 @@ export const clockIn = internalMutation({
     if (existing) {
       throw new Error("Already clocked in — end current shift first");
     }
+
+    // No fix, no shift.
+    //
+    // A shift is the root of everything downstream: scans are only accepted
+    // while one is open, and the live map plots where the guard clocked in.
+    // Accepting a clock-in with no coordinates produced a shift that looked
+    // real and a map pin that was guesswork — the guard appeared at whichever
+    // site they were assigned to rather than where they were standing.
+    // Refuse it and say what to do, rather than record a fiction.
+    if (args.latitude == null || args.longitude == null) {
+      throw new Error(
+        "Location is off. Turn on location for this app, allow it while using the app, then clock in again.",
+      );
+    }
+
     const now = Date.now();
     const user = await ctx.db.get(args.userId);
     const assignment = await ctx.db

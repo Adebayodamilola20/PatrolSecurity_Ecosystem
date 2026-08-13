@@ -68,7 +68,6 @@ export const checkNow = internalMutation({
       (checkpoint) => checkpoint.active && (!args.clientId || checkpoint.clientId === args.clientId),
     );
     const sites = await ctx.db.query("sites").collect();
-    const scans = await ctx.db.query("scans").collect();
 
     const created = [];
     const overdue = [];
@@ -86,9 +85,17 @@ export const checkNow = internalMutation({
         DEFAULT_GRACE_PERIOD_MINUTES,
       );
 
-      const latestScan = scans
-        .filter((scan) => scan.checkpointId === checkpoint._id)
-        .sort((a, b) => b.scannedAt - a.scannedAt)[0];
+      // The newest scan at this point, straight off its own index. This used
+      // to load every scan ever recorded and sort them in memory — on a cron
+      // that runs every five minutes forever, against the table that grows
+      // fastest. One indexed read per checkpoint replaces it.
+      const latestScan = await ctx.db
+        .query("scans")
+        .withIndex("by_checkpointId_scannedAt", (q) =>
+          q.eq("checkpointId", checkpoint._id),
+        )
+        .order("desc")
+        .first();
       const lastScanAt = latestScan?.scannedAt;
       const dueAt = (lastScanAt ?? checkpoint.createdAt) +
         (intervalMinutes + gracePeriodMinutes) * 60 * 1000;

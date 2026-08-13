@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../utils/constants.dart';
+import 'location_service.dart';
 
 dynamic _decodeJsonOnWorker(String source) => jsonDecode(source);
 
@@ -674,6 +675,24 @@ class ApiService {
     String location = '',
   }) async {
     _ensureHttps();
+    // Where the guard is standing, when the phone can say. A panic press is
+    // never delayed or blocked for the want of a fix — the request goes
+    // either way and the server records its absence honestly.
+    double? lat;
+    double? lng;
+    double? accuracy;
+    try {
+      final fix = await LocationService.getCurrentLocation().timeout(
+        const Duration(seconds: 4),
+      );
+      if (fix.isSuccess) {
+        lat = fix.latitude;
+        lng = fix.longitude;
+        accuracy = fix.accuracyMeters;
+      }
+    } catch (_) {
+      // No fix in time. Send the alert regardless.
+    }
     final res = await _client
         .post(
           Uri.parse('$baseUrl/emergency/trigger'),
@@ -684,6 +703,9 @@ class ApiService {
             'category': category,
             'note': note,
             'location': location,
+            if (lat != null) 'gpsLatitude': lat,
+            if (lng != null) 'gpsLongitude': lng,
+            if (accuracy != null) 'gpsAccuracyMeters': accuracy,
           }),
         )
         .timeout(_timeout);

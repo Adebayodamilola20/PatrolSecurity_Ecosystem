@@ -7,6 +7,7 @@ import '../providers/duty_provider.dart';
 import '../providers/shift_provider.dart';
 import '../utils/theme.dart';
 import '../widgets/network_error_state.dart';
+import '../widgets/loading_state.dart';
 
 class DutiesScreen extends StatefulWidget {
   const DutiesScreen({super.key});
@@ -219,7 +220,9 @@ class _DutiesScreenState extends State<DutiesScreen> {
     final duty = context.watch<DutyProvider>();
 
     if (duty.loading && duty.orders.isEmpty) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: LoadingState(label: 'Loading your duties and post orders…'),
+      );
     }
 
     if (duty.error != null && duty.orders.isEmpty) {

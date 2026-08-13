@@ -3,6 +3,7 @@ import { MessageSquare, Loader2, X, Send } from 'lucide-react'
 import { api } from '../services/api'
 import { useClientData } from '../hooks/useClientData'
 import EmptyState from '../components/ui/EmptyState'
+import { CardSkeleton, LoadingNote } from '../components/ui/Skeleton'
 import { formatDate } from '../utils/format'
 import type { ClientPassOn, ClientSiteDetail } from '../types'
 
@@ -19,13 +20,11 @@ export default function PassOns() {
 
   const [showForm, setShowForm] = useState(false)
   const [sites, setSites] = useState<ClientSiteDetail[]>([])
-  const [guards, setGuards] = useState<Array<{ id: string; name: string; siteNames: string[] }>>([])
   const [form, setForm] = useState({
     title: '',
     instruction: '',
     siteId: '',
     checkpointId: '',
-    recipientUserIds: [] as string[],
   })
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
@@ -34,30 +33,12 @@ export default function PassOns() {
   useEffect(() => {
     if (!showForm) return
     void api.sites.list().then((res) => setSites(res.sites)).catch(() => setSites([]))
-    void api.guards.addressable().then(setGuards).catch(() => setGuards([]))
   }, [showForm])
 
   const subLocations = useMemo(() => {
     const site = sites.find((s) => s.id === form.siteId)
     return site?.subLocations ?? []
   }, [sites, form.siteId])
-
-  // Only the guards actually posted at the chosen location. Picking a name
-  // that isn't posted there is refused by the server anyway; there is no
-  // reason to offer it.
-  const availableGuards = useMemo(() => {
-    const site = sites.find((s) => s.id === form.siteId)
-    if (!site) return guards
-    return guards.filter((g) => g.siteNames.includes(site.name))
-  }, [guards, sites, form.siteId])
-
-  const toggleGuard = (id: string) =>
-    setForm((f) => ({
-      ...f,
-      recipientUserIds: f.recipientUserIds.includes(id)
-        ? f.recipientUserIds.filter((g) => g !== id)
-        : [...f.recipientUserIds, id],
-    }))
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -69,11 +50,10 @@ export default function PassOns() {
         instruction: form.instruction,
         siteId: form.siteId || undefined,
         checkpointId: form.checkpointId || undefined,
-        recipientUserIds: form.recipientUserIds.length ? form.recipientUserIds : undefined,
         requiresAcknowledgement: true,
       })
       setShowForm(false)
-      setForm({ title: '', instruction: '', siteId: '', checkpointId: '', recipientUserIds: [] })
+      setForm({ title: '', instruction: '', siteId: '', checkpointId: '' })
       void reload()
     } catch (err) {
       setSendError(err instanceof Error ? err.message : 'Could not send this pass-on.')
@@ -141,7 +121,7 @@ export default function PassOns() {
                 Location
                 <select
                   value={form.siteId}
-                  onChange={(e) => setForm({ ...form, siteId: e.target.value, checkpointId: '', recipientUserIds: [] })}
+                  onChange={(e) => setForm({ ...form, siteId: e.target.value, checkpointId: '' })}
                   className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
                 >
                   <option value="">All my locations</option>
@@ -166,37 +146,6 @@ export default function PassOns() {
               </label>
             </div>
 
-            <div>
-              <div className="text-xs text-muted-foreground">
-                Guards <span className="text-muted-foreground/70">(none selected = every guard at that location)</span>
-              </div>
-              {availableGuards.length === 0 ? (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  No guards are posted to that location yet.
-                </p>
-              ) : (
-                <div className="mt-1 flex flex-wrap gap-1.5">
-                  {availableGuards.map((guard) => {
-                    const picked = form.recipientUserIds.includes(guard.id)
-                    return (
-                      <button
-                        key={guard.id}
-                        type="button"
-                        onClick={() => toggleGuard(guard.id)}
-                        className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${
-                          picked
-                            ? 'bg-primary font-medium text-primary-foreground'
-                            : 'bg-accent text-foreground hover:bg-accent/70'
-                        }`}
-                      >
-                        {guard.name}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-
             {sendError && (
               <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                 {sendError}
@@ -217,8 +166,10 @@ export default function PassOns() {
       )}
 
       {loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading pass-ons…
+        <div className="space-y-3">
+          <LoadingNote label="Loading pass-ons…" />
+          <CardSkeleton />
+          <CardSkeleton />
         </div>
       ) : error ? (
         <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">

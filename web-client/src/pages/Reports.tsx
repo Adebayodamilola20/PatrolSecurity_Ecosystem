@@ -4,6 +4,7 @@ import { api } from '../services/api'
 import { useClientData } from '../hooks/useClientData'
 import { markReportsSeen } from '../hooks/useUnreadReports'
 import EmptyState from '../components/ui/EmptyState'
+import { ListSkeleton, LoadingNote } from '../components/ui/Skeleton'
 import { formatDate } from '../utils/format'
 
 // "location-verification" → "Location Verification"
@@ -104,7 +105,10 @@ export default function Reports() {
       ) : null}
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <div className="space-y-3">
+          <LoadingNote label="Loading reports…" />
+          <ListSkeleton rows={5} />
+        </div>
       ) : error ? (
         <EmptyState icon={FileText} title="Couldn't load reports" description={error} />
       ) : rows.length === 0 ? (

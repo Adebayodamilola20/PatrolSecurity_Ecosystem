@@ -478,6 +478,21 @@ export default defineSchema({
     // directions: one goes up to staff, the other goes out to the guards.
     // Absent on rows written before clients could raise one at all.
     source: v.optional(v.union(v.literal("guard"), v.literal("client"))),
+    // Where the person was when they pressed it. Absent when the phone had no
+    // fix — which is the moment you most want to know it was absent, so the
+    // field stays optional rather than being faked with a zero.
+    gpsLatitude: v.optional(v.number()),
+    gpsLongitude: v.optional(v.number()),
+    gpsAccuracyMeters: v.optional(v.number()),
+    // Lifecycle: triggered -> acknowledged -> responding -> resolved. `status`
+    // already existed as a free string, so these columns record who moved it
+    // and when without changing what `status` holds.
+    acknowledgedAt: v.optional(v.number()),
+    acknowledgedByUserId: v.optional(v.id("users")),
+    respondingAt: v.optional(v.number()),
+    respondingByUserId: v.optional(v.id("users")),
+    resolvedAt: v.optional(v.number()),
+    resolvedByUserId: v.optional(v.id("users")),
     triggeredAt: v.number(),
     emailRecipients: v.array(v.string()),
     phoneRecipients: v.array(v.string()),

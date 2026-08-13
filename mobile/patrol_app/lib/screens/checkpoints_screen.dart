@@ -4,6 +4,7 @@ import '../providers/scan_provider.dart';
 import '../utils/routes.dart';
 import '../utils/theme.dart';
 import '../widgets/network_error_state.dart';
+import '../widgets/loading_state.dart';
 
 class CheckpointsScreen extends StatelessWidget {
   const CheckpointsScreen({super.key});
@@ -15,7 +16,7 @@ class CheckpointsScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Checkpoints')),
       body: scan.checkpointsLoading && scan.checkpoints.isEmpty
-          ? const Center(child: CircularProgressIndicator())
+          ? const LoadingState(label: 'Loading your checkpoints…')
           : scan.checkpointsError != null && scan.checkpoints.isEmpty
           ? NetworkErrorState(
               message: scan.checkpointsError!,

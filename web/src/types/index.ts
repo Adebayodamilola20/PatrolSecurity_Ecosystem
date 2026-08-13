@@ -13,6 +13,14 @@ export interface User {
   sites?: Site[]
   /** Locations this person is posted to, for the roster card. */
   assignedSiteNames?: string[]
+  /**
+   * Where they actually are while on shift: the latest live fix, or the
+   * position they clocked in from. Null when off duty or when no fix exists.
+   */
+  liveLatitude?: number | null
+  liveLongitude?: number | null
+  livePositionAt?: string | null
+  livePositionSource?: 'live' | 'clock_in' | null
   createdAt: string
 }
 
@@ -177,6 +185,9 @@ export interface PostOrder {
   assignedUserName?: string | null
   assignedUserIds?: string[]
   assignedGuards?: { id: string; name: string }[]
+  /** Supervisors the order is addressed to, kept apart from the guards. */
+  supervisorUserIds?: string[]
+  supervisors?: { id: string; name: string }[]
   assignedRole?: string
   priority: string
   active: boolean

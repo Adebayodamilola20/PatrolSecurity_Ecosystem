@@ -455,10 +455,21 @@ export const api = {
         officerName: string
         officerPhone: string
         officerRole: string | null
+        gpsLatitude: number | null
+        gpsLongitude: number | null
+        acknowledgedAt: string | null
+        acknowledgedByName: string | null
+        respondingAt: string | null
+        respondingByName: string | null
+        resolvedAt: string | null
         triggeredAt: string
       }>>('/emergency/active'),
-    resolve: (id: string) =>
-      request<{ alreadyResolved: boolean }>(`/emergency/${id}/resolve`, { method: 'POST' }),
+    // Forward only: triggered → acknowledged → responding → resolved.
+    setStatus: (id: string, status: 'acknowledged' | 'responding' | 'resolved') =>
+      request<{ unchanged: boolean; status: string }>(`/emergency/${id}/status`, {
+        method: 'POST',
+        body: JSON.stringify({ status }),
+      }),
   },
   activity: {
     list: (params?: Record<string, string>) =>

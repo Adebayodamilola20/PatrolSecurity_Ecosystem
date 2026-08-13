@@ -1,6 +1,7 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import type { Doc, Id } from "./_generated/dataModel";
 
 export const listAll = internalQuery({
   args: {
@@ -48,6 +49,51 @@ export const listAll = internalQuery({
 });
 
 /**
+ * Resolve and validate the Client → Location → Sub-location chain.
+ *
+ * The form loads sub-locations for the chosen location, so in normal use the
+ * pair always agrees. The pair arrives as two ids on a request, though, and a
+ * request is not the form: a sub-location from one client attached to another
+ * client's location would produce an order that appears on the wrong site's
+ * page and reaches the wrong guards. Checked here so both create and update
+ * get it, rather than in the route where only one of them would.
+ */
+async function resolveScope(
+  ctx: { db: any },
+  checkpointId?: Id<"checkpoints"> | null,
+  siteId?: Id<"sites"> | null,
+) {
+  const checkpoint = checkpointId
+    ? ((await ctx.db.get(checkpointId)) as Doc<"checkpoints"> | null)
+    : null;
+  if (checkpointId && !checkpoint) throw new Error("Sub-location not found");
+  const site = siteId ? ((await ctx.db.get(siteId)) as Doc<"sites"> | null) : null;
+  if (siteId && !site) throw new Error("Location not found");
+
+  if (checkpoint && site && checkpoint.siteId !== site._id) {
+    throw new Error(
+      `"${checkpoint.name}" is not a sub-location of "${site.name}"`,
+    );
+  }
+  if (
+    checkpoint?.clientId &&
+    site?.clientId &&
+    checkpoint.clientId !== site.clientId
+  ) {
+    throw new Error("That sub-location belongs to a different client");
+  }
+
+  const resolvedSite = checkpoint?.siteId
+    ? ((await ctx.db.get(checkpoint.siteId)) as Doc<"sites"> | null)
+    : site;
+  return {
+    checkpoint,
+    siteId: resolvedSite?._id,
+    clientId: checkpoint?.clientId ?? resolvedSite?.clientId,
+  };
+}
+
+/**
  * Create a post order.
  *
  * The form behind this asked for a title, a short summary, a priority, an
@@ -78,13 +124,10 @@ export const create = internalMutation({
   },
   handler: async (ctx, args) => {
     const creator = await ctx.db.get(args.createdBy);
-    const checkpoint = args.checkpointId
-      ? await ctx.db.get(args.checkpointId)
-      : null;
-    if (args.checkpointId && !checkpoint) throw new Error("Sub-location not found");
-    const siteId = checkpoint?.siteId ?? args.siteId;
+    const scope = await resolveScope(ctx, args.checkpointId, args.siteId);
+    const checkpoint = scope.checkpoint;
+    const siteId = scope.siteId;
     const site = siteId ? await ctx.db.get(siteId) : null;
-    if (siteId && !site) throw new Error("Location not found");
     // Normalize the guard list: de-dupe, drop blanks. A single legacy
     // assignedUserId is folded in so both shapes stay consistent.
     const guardIds = Array.from(
@@ -116,7 +159,7 @@ export const create = internalMutation({
       // on the scan unless someone deliberately says otherwise.
       requiresAcknowledgement: args.requiresAcknowledgement !== false,
       requiresPhotoProof: args.requiresPhotoProof === true,
-      clientId: checkpoint?.clientId ?? site?.clientId ?? creator?.clientId,
+      clientId: scope.clientId ?? creator?.clientId,
       siteId,
       createdBy: args.createdBy,
       createdAt: Date.now(),
@@ -145,12 +188,15 @@ export const update = internalMutation({
     checkpointId: v.optional(v.union(v.id("checkpoints"), v.null())),
     siteId: v.optional(v.union(v.id("sites"), v.null())),
     assignedUserIds: v.optional(v.array(v.id("users"))),
+    supervisorUserIds: v.optional(v.array(v.id("users"))),
     assignedRole: v.optional(v.union(v.literal("admin"), v.literal("main_account"), v.literal("supervisor"), v.literal("guard"))),
     requiresAcknowledgement: v.optional(v.boolean()),
     requiresPhotoProof: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const { orderId, assignedUserIds, checkpointId, siteId, ...rest } = args;
+    const { orderId, assignedUserIds, supervisorUserIds, checkpointId, siteId, ...rest } = args;
+    const existing = await ctx.db.get(orderId);
+    if (!existing) throw new Error("Post order not found");
     const clean: Record<string, unknown> = Object.fromEntries(
       Object.entries(rest).filter(([, v]) => v !== undefined),
     );
@@ -160,28 +206,24 @@ export const update = internalMutation({
       clean.assignedUserIds = guardIds;
       clean.assignedUserId = guardIds[0];
     }
-    // A scope change re-derives the parent site from the chosen checkpoint.
-    if (checkpointId !== undefined) {
-      if (checkpointId === null) {
-        clean.checkpointId = undefined;
-      } else {
-        const cp = await ctx.db.get(checkpointId);
-        if (!cp) throw new Error("Sub-location not found");
-        clean.checkpointId = checkpointId;
-        clean.siteId = cp.siteId;
-        clean.clientId = cp.clientId;
-      }
+    if (supervisorUserIds !== undefined) {
+      clean.supervisorUserIds = Array.from(new Set(supervisorUserIds));
     }
-    if (siteId !== undefined && checkpointId === undefined) {
-      if (siteId === null) {
-        clean.siteId = undefined;
-      } else {
-        const site = await ctx.db.get(siteId);
-        if (!site) throw new Error("Location not found");
-        clean.siteId = siteId;
-        clean.clientId = site.clientId;
-      }
+
+    // Moving a post order goes through the same Client → Location →
+    // Sub-location check as creating one. Patching the two ids independently
+    // would let an edit land a sub-location under a location it has nothing
+    // to do with — the one shape create already refuses.
+    if (checkpointId !== undefined || siteId !== undefined) {
+      const nextCheckpoint =
+        checkpointId === undefined ? existing.checkpointId : checkpointId;
+      const nextSite = siteId === undefined ? existing.siteId : siteId;
+      const scope = await resolveScope(ctx, nextCheckpoint, nextSite);
+      clean.checkpointId = nextCheckpoint ?? undefined;
+      clean.siteId = scope.siteId;
+      clean.clientId = scope.clientId;
     }
+
     await ctx.db.patch(orderId, clean as any);
     return await ctx.db.get(orderId);
   },
@@ -271,6 +313,13 @@ export const listForAdmin = internalQuery({
         assignedUserName: userName(o.assignedUserId),
         assignedUserIds: guardIds as unknown as string[],
         assignedGuards,
+        // Supervisors travel separately so the edit form can load them back
+        // into their own picker rather than merging everyone into one list.
+        supervisorUserIds: (o.supervisorUserIds ?? []) as unknown as string[],
+        supervisors: (o.supervisorUserIds ?? []).map((id) => ({
+          id: id as unknown as string,
+          name: userName(id) ?? "Unknown",
+        })),
         assignedRole: o.assignedRole,
         priority: o.priority,
         active: o.active,
@@ -630,10 +679,17 @@ export const complete = internalMutation({
 export const resolveId = internalQuery({
   args: { id: v.string() },
   handler: async (ctx, args) => {
-    const all = await ctx.db.query("postOrders").collect();
-    return (
-      all.find((item) => item.legacyId === args.id || item._id === args.id)
-        ?._id ?? null
-    );
+    // A Convex id is resolvable directly; only a legacy id needs the index.
+    // Reading the whole table to answer "does this id exist" was the previous
+    // shape, on a path every post-order edit goes through.
+    const normalized = ctx.db.normalizeId("postOrders", args.id);
+    if (normalized) {
+      return (await ctx.db.get(normalized)) ? normalized : null;
+    }
+    const byLegacyId = await ctx.db
+      .query("postOrders")
+      .withIndex("by_legacyId", (q) => q.eq("legacyId", args.id))
+      .first();
+    return byLegacyId?._id ?? null;
   },
 });

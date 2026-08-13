@@ -4,6 +4,7 @@ import '../providers/scan_provider.dart';
 import '../utils/routes.dart';
 import '../utils/theme.dart';
 import '../widgets/network_error_state.dart';
+import '../widgets/loading_state.dart';
 import '../widgets/scan_tile.dart';
 
 class HistoryScreen extends StatelessWidget {
@@ -16,7 +17,7 @@ class HistoryScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Scan History')),
       body: scan.scansLoading && scan.scans.isEmpty
-          ? const Center(child: CircularProgressIndicator())
+          ? const LoadingState(label: 'Loading your scan history…')
           : scan.scansError != null && scan.scans.isEmpty
           ? NetworkErrorState(
               message: scan.scansError!,

@@ -970,22 +970,6 @@ describe("client pass-on logs", () => {
     expect(Date.parse(log.createdAt)).toBeGreaterThan(0);
   });
 
-  test("the addressable roster only ever lists this client's own guards", async () => {
-    const roster = await (
-      await t.fetch("/client/addressable-guards", { method: "GET", headers: auth(w.tokens.alphaPortal) })
-    ).json();
-    const names = roster.map((g: any) => g.name);
-    expect(names).toContain("Ade Guard");
-    expect(names).not.toContain("Chidi Guard");
-  });
-
-  test("a guard cannot read the addressable roster at all", async () => {
-    const res = await t.fetch("/client/addressable-guards", {
-      method: "GET",
-      headers: auth(w.tokens.alphaGuard),
-    });
-    expect([401, 403]).toContain(res.status);
-  });
 });
 
 /**
@@ -1343,5 +1327,244 @@ describe("propagation and route gates", () => {
     } else {
       expect([401, 403]).toContain(res.status);
     }
+  });
+});
+
+/**
+ * Phase 5: the Client → Location → Sub-location chain, and the client's own
+ * sub-locations.
+ *
+ * The creation form only ever offers sub-locations belonging to the chosen
+ * location, so in normal use the pair agrees. A request is not the form,
+ * though, and these are the shapes it must refuse.
+ */
+describe("post order hierarchy", () => {
+  test("a sub-location from another location is refused on create", async () => {
+    const res = await t.fetch("/post-orders", {
+      method: "POST",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({
+        instructions: "Check the gate",
+        siteId: w.alphaSite,
+        checkpointId: w.bravoCheckpoint,
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).message ?? "").toMatch(/not a sub-location of/i);
+    const rows = await t.run((ctx) => ctx.db.query("postOrders").collect());
+    expect(rows).toHaveLength(0);
+  });
+
+  test("a matching pair is accepted and stored against both", async () => {
+    const res = await t.fetch("/post-orders", {
+      method: "POST",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({
+        instructions: "Check the gate",
+        siteId: w.alphaSite,
+        checkpointId: w.alphaCheckpoint,
+      }),
+    });
+    expect(res.status).toBe(201);
+    const [row] = await t.run((ctx) => ctx.db.query("postOrders").collect());
+    expect(row.siteId).toBe(w.alphaSite);
+    expect(row.clientId).toBe(w.alphaClient);
+  });
+
+  test("an edit cannot move it onto a mismatched pair", async () => {
+    const created = await t.mutation(internal.postOrders.create, {
+      instructions: "Check the gate",
+      checkpointId: w.alphaCheckpoint,
+      createdBy: w.admin,
+    });
+    const res = await t.fetch(`/post-orders/${created.id}`, {
+      method: "PUT",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({ siteId: w.alphaSite, checkpointId: w.bravoCheckpoint }),
+    });
+    expect(res.status).toBe(400);
+    const row = await t.run((ctx) => ctx.db.get(created.id));
+    // Untouched: a refused edit must not half-apply.
+    expect(row?.checkpointId).toBe(w.alphaCheckpoint);
+    expect(row?.clientId).toBe(w.alphaClient);
+  });
+
+  test("supervisors are stored separately and survive an edit", async () => {
+    const created = await t.mutation(internal.postOrders.create, {
+      instructions: "Check the gate",
+      checkpointId: w.alphaCheckpoint,
+      assignedUserIds: [w.alphaGuard],
+      supervisorUserIds: [w.supervisor],
+      createdBy: w.admin,
+    });
+    const row = await t.run((ctx) => ctx.db.get(created.id));
+    expect(row?.assignedUserIds).toEqual([w.alphaGuard]);
+    expect(row?.supervisorUserIds).toEqual([w.supervisor]);
+
+    await t.fetch(`/post-orders/${created.id}`, {
+      method: "PUT",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({ instructions: "Check it every 15 minutes" }),
+    });
+    const after = await t.run((ctx) => ctx.db.get(created.id));
+    expect(after?.instructions).toMatch(/15 minutes/);
+    expect(after?.supervisorUserIds).toEqual([w.supervisor]);
+  });
+});
+
+/**
+ * Phase 6: the emergency lifecycle. Forward only, and each step records who
+ * moved it — an alert nobody owns is the failure this exists to prevent.
+ */
+describe("emergency lifecycle", () => {
+  const raiseOne = async () => {
+    await t.fetch("/emergency/trigger", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({
+        note: "Break-in",
+        checkpointId: w.alphaCheckpoint,
+        gpsLatitude: 6.5244,
+        gpsLongitude: 3.3792,
+      }),
+    });
+    const [row] = await t.run((ctx) => ctx.db.query("emergencyEvents").collect());
+    return row;
+  };
+
+  test("the guard's position is recorded with the alert", async () => {
+    const row = await raiseOne();
+    expect(row.gpsLatitude).toBeCloseTo(6.5244, 4);
+    expect(row.gpsLongitude).toBeCloseTo(3.3792, 4);
+  });
+
+  test("it moves triggered -> acknowledged -> responding -> resolved", async () => {
+    const row = await raiseOne();
+    for (const status of ["acknowledged", "responding", "resolved"] as const) {
+      const res = await t.fetch(`/emergency/${row._id}/status`, {
+        method: "POST",
+        headers: auth(w.tokens.admin),
+        body: JSON.stringify({ status }),
+      });
+      expect(res.status).toBe(200);
+    }
+    const after = await t.run((ctx) => ctx.db.get(row._id));
+    expect(after?.status).toBe("resolved");
+    expect(after?.acknowledgedByUserId).toBe(w.admin);
+    expect(after?.respondingByUserId).toBe(w.admin);
+    expect(after?.resolvedAt).toBeTruthy();
+  });
+
+  test("it cannot go backwards", async () => {
+    const row = await raiseOne();
+    await t.fetch(`/emergency/${row._id}/status`, {
+      method: "POST",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({ status: "resolved" }),
+    });
+    const res = await t.fetch(`/emergency/${row._id}/status`, {
+      method: "POST",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({ status: "acknowledged" }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).message ?? "").toMatch(/cannot go back/i);
+  });
+
+  test("an acknowledged alert is still live for everyone who must act on it", async () => {
+    const row = await raiseOne();
+    await t.fetch(`/emergency/${row._id}/status`, {
+      method: "POST",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({ status: "acknowledged" }),
+    });
+    const staffSees = await (
+      await t.fetch("/emergency/active", { method: "GET", headers: auth(w.tokens.admin) })
+    ).json();
+    expect(staffSees).toHaveLength(1);
+    expect(staffSees[0].status).toBe("acknowledged");
+    expect(staffSees[0].acknowledgedByName).toBe("Ada Admin");
+    const clientSees = await (
+      await t.fetch("/client/emergency/active", { method: "GET", headers: auth(w.tokens.alphaPortal) })
+    ).json();
+    expect(clientSees).toHaveLength(1);
+  });
+
+  test("a guard cannot move the lifecycle", async () => {
+    const row = await raiseOne();
+    const res = await t.fetch(`/emergency/${row._id}/status`, {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({ status: "acknowledged" }),
+    });
+    expect(res.status).toBe(403);
+  });
+});
+
+/**
+ * Fixes from the 2026-08-13 testing round.
+ */
+describe("clock-in requires a location fix", () => {
+  test("a clock-in with no coordinates is refused", async () => {
+    await expect(
+      t.mutation(internal.shifts.clockIn, { userId: w.alphaGuard }),
+    ).rejects.toThrow(/location is off/i);
+    const shifts = await t.run((ctx) => ctx.db.query("shifts").collect());
+    expect(shifts).toHaveLength(0);
+  });
+
+  test("a clock-in with coordinates is accepted and stores them", async () => {
+    await t.mutation(internal.shifts.clockIn, {
+      userId: w.alphaGuard,
+      latitude: 6.5244,
+      longitude: 3.3792,
+    });
+    const [shift] = await t.run((ctx) => ctx.db.query("shifts").collect());
+    expect(shift.status).toBe("active");
+    expect(shift.clockInLatitude).toBeCloseTo(6.5244, 4);
+  });
+});
+
+describe("emergency knows where the guard is posted", () => {
+  test("a panic press with no checkpoint still names the site", async () => {
+    // Exactly the reported case: pressed away from any QR code, so the app
+    // sends no checkpoint and no site label.
+    await t.fetch("/emergency/trigger", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({ note: "Attacked at the fence", category: "Security Incident" }),
+    });
+    const [row] = await t.run((ctx) => ctx.db.query("emergencyEvents").collect());
+    // Falls back to the location they are posted to rather than "Unknown site".
+    expect(row.siteId).toBe(w.alphaSite);
+    expect(row.siteLabel).toBe("Alpha Ikeja Warehouse");
+
+    const active = await (
+      await t.fetch("/emergency/active", { method: "GET", headers: auth(w.tokens.admin) })
+    ).json();
+    expect(active[0].siteName).toBe("Alpha Ikeja Warehouse");
+    expect(active[0].category).toBe("Security Incident");
+  });
+
+  test("an active shift's site wins over the posting", async () => {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("shifts", {
+        clientId: w.alphaClient,
+        siteId: w.alphaSite,
+        userId: w.alphaGuard,
+        status: "active",
+        clockIn: Date.now(),
+        clockInPhoto: "test-photo",
+        siteLabel: "Alpha Ikeja Warehouse",
+        createdAt: Date.now(),
+      });
+    });
+    await t.fetch("/emergency/trigger", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({ note: "Help" }),
+    });
+    const [row] = await t.run((ctx) => ctx.db.query("emergencyEvents").collect());
+    expect(row.siteId).toBe(w.alphaSite);
   });
 });

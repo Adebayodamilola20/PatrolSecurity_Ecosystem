@@ -180,8 +180,13 @@ export const resolveId = internalQuery({
       .withIndex("by_legacyId", (q) => q.eq("legacyId", args.id))
       .unique();
     if (byLegacyId) return byLegacyId._id;
-    const all = await ctx.db.query("scans").collect();
-    return all.find(s => s._id === args.id)?._id ?? null;
+    // Not a legacy id, so it should be a Convex one. This used to read
+    // the whole table and scan it for a matching _id — on scans, the
+    // largest table here, that is the entire patrol history loaded to
+    // answer "does this id exist". normalizeId answers it directly.
+    const normalized = ctx.db.normalizeId("scans", args.id);
+    if (!normalized) return null;
+    return (await ctx.db.get(normalized)) ? normalized : null;
   },
 });
 

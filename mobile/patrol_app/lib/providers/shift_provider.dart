@@ -175,9 +175,22 @@ class ShiftProvider extends ChangeNotifier {
       final location = await LocationService.getCurrentLocation(
         allowCached: false,
       );
+      // Stop here rather than sending a clock-in the server will refuse. The
+      // location service has already asked for permission and turned the
+      // system prompt on by this point, so the guard has seen the dialog —
+      // what they need now is a plain sentence about what to do next.
+      if (!location.isSuccess) {
+        _error = location.error?.isNotEmpty == true
+            ? location.error!
+            : 'Turn on location for this app, allow it while using the app, '
+                  'then clock in again.';
+        _loading = false;
+        notifyListeners();
+        return false;
+      }
       final data = await ApiService.clockIn(
-        latitude: location.isSuccess ? location.latitude : null,
-        longitude: location.isSuccess ? location.longitude : null,
+        latitude: location.latitude,
+        longitude: location.longitude,
       );
       _applyShiftPayload(data);
       await loadStatus(force: true);

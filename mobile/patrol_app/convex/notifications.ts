@@ -145,16 +145,24 @@ export const sendEmergencyAlert = internalAction({
     siteLabel: v.string(),
     location: v.string(),
     note: v.string(),
+    // What the guard chose on the phone — Medical, Fire, Intruder. It was
+    // collected on the app and then dropped before the message was built, so
+    // the control room learned an emergency had happened but not what kind.
+    category: v.optional(v.string()),
+    officerPhone: v.optional(v.string()),
     triggeredAt: v.string(),
     emailRecipients: v.array(v.string()),
     phoneRecipients: v.array(v.string()),
   },
   handler: async (_ctx, args) => {
-    const subject = `Emergency alert: ${args.officerName} at ${args.siteLabel || "Unknown site"}`;
+    const kind = args.category?.trim() || "Emergency";
+    const subject = `${kind}: ${args.officerName} at ${args.siteLabel || "Unknown site"}`;
     const textLines = [
-      "Emergency alert triggered.",
+      `${kind.toUpperCase()} alert triggered.`,
       `Officer: ${args.officerName}`,
+      ...(args.officerPhone ? [`Officer phone: ${args.officerPhone}`] : []),
       `Officer email: ${args.officerEmail || "Unknown"}`,
+      `Type: ${kind}`,
       `Site: ${args.siteLabel || "Unknown site"}`,
       `Location: ${args.location || "Unknown location"}`,
       `Triggered at: ${args.triggeredAt}`,
@@ -164,9 +172,11 @@ export const sendEmergencyAlert = internalAction({
     const text = textLines.join("\n");
     const html = `
       <div>
-        <h2>Emergency alert triggered</h2>
+        <h2>${kind} alert triggered</h2>
         <p><strong>Officer:</strong> ${args.officerName}</p>
+        ${args.officerPhone ? `<p><strong>Officer phone:</strong> ${args.officerPhone}</p>` : ""}
         <p><strong>Officer email:</strong> ${args.officerEmail || "Unknown"}</p>
+        <p><strong>Type:</strong> ${kind}</p>
         <p><strong>Site:</strong> ${args.siteLabel || "Unknown site"}</p>
         <p><strong>Location:</strong> ${args.location || "Unknown location"}</p>
         <p><strong>Triggered at:</strong> ${args.triggeredAt}</p>

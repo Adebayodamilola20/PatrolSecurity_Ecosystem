@@ -55,13 +55,45 @@ const INCIDENT_STATUSES = ["open", "investigating", "resolved"] as const;
 
 const HANDOVER_STATUSES = ["pending", "accepted", "closed"] as const;
 
+/**
+ * The emergency types the phone actually offers.
+ *
+ * This list and the app's menu had drifted apart: the server knew four types,
+ * the app offered eleven, and anything not on the server's list was silently
+ * rewritten to "Other". A guard pressing "Fire Outbreak" produced an alert
+ * that said nothing about fire, which is the one thing the control room needed
+ * to know. Kept in step with lib/screens/home_screen.dart.
+ */
 const EMERGENCY_TYPES = [
-  "Armed Attack",
+  "Armed Robbery",
+  "Theft",
+  "Fight / Disturbance",
+  "Fire Outbreak",
   "Medical Emergency",
+  "Suspicious Vehicle",
+  "Suspicious Person",
+  "Power Outage",
+  "Flood / Water Leak",
+  "Breach / Intrusion",
+  // Older builds of the app sent these; keep accepting them so an alert from
+  // a phone that has not updated is still labelled rather than blanked.
+  "Armed Attack",
   "Fire",
   "Intrusion",
   "Other",
 ] as const;
+
+/**
+ * Whatever the phone sent, kept if we recognise it and otherwise preserved as
+ * trimmed free text rather than thrown away. Silently replacing an unknown
+ * type with "Other" is how this went wrong the first time.
+ */
+function emergencyCategory(raw: unknown): string {
+  const value = typeof raw === "string" ? raw.trim() : "";
+  if (!value) return "Other";
+  if ((EMERGENCY_TYPES as readonly string[]).includes(value)) return value;
+  return value.slice(0, 60);
+}
 
 const REPORT_TYPES = [
   "Daily Activity Report",
@@ -1663,7 +1695,7 @@ http.route({
         userId: _uid(user.convexId),
         siteId,
         note: typeof body?.note === "string" ? body.note : "",
-        category: EMERGENCY_TYPES.includes(body?.category) ? body.category : "Other",
+        category: emergencyCategory(body?.category),
         source: "client",
       });
       await recordAudit(ctx, user, "emergency.triggered", {
@@ -1718,20 +1750,36 @@ http.route({
     if (!user) return unauthorized();
     const action = lastPathPart(request);
     const id = lastPathPart(request, 1);
-    if (action !== "resolve" || !id) return notFound("Emergency route not found");
+    // /resolve is kept as a shorthand for the last step so existing callers
+    // keep working; /status carries the full lifecycle.
+    const isStatusMove = action === "status" || action === "resolve";
+    if (!isStatusMove || !id) return notFound("Emergency route not found");
     const roleErr = requireRole(user, ["admin", "supervisor"]);
     if (roleErr) return roleErr;
+    let status: "acknowledged" | "responding" | "resolved" = "resolved";
+    if (action === "status") {
+      const body = await parseJson(request);
+      const wanted = String(body?.status ?? "");
+      if (!["acknowledged", "responding", "resolved"].includes(wanted)) {
+        return badRequest("status must be acknowledged, responding or resolved");
+      }
+      status = wanted as typeof status;
+    }
     try {
-      const result = await ctx.runMutation(internal.emergency.resolve, {
+      const result = await ctx.runMutation(internal.emergency.setStatus, {
         eventId: id as Id<"emergencyEvents">,
         userId: _uid(user.convexId),
+        status,
       });
       await recordAudit(ctx, user, "emergency.resolved", {
         targetType: "emergency", targetId: id,
-        details: "Emergency marked resolved",
+        details: `Emergency moved to ${status}`,
       });
       return json(result);
-    } catch {
+    } catch (err) {
+      // A backwards move is a refusal with a reason, not a missing row.
+      const message = err instanceof Error ? err.message : "";
+      if (/cannot go back/i.test(message)) return badRequest(message);
       return notFound("Emergency not found");
     }
   }),
@@ -2418,15 +2466,17 @@ http.route({
     );
     const siteLabel = typeof body?.siteLabel === "string" ? body.siteLabel : "";
     const note = typeof body?.note === "string" ? body.note : "";
-    const category = EMERGENCY_TYPES.includes(body?.category)
-      ? body.category
-      : "Other";
+    const category = emergencyCategory(body?.category);
     const location =
       typeof body?.location === "string" && body.location.trim()
         ? body.location
         : siteLabel || "Unknown location";
     const roleErr = requireRole(user, ["guard"]);
     if (roleErr) return roleErr;
+    // Where the guard was standing. Sent when the phone had a fix; a panic
+    // press is never blocked for the want of one.
+    const num = (value: unknown) =>
+      typeof value === "number" && Number.isFinite(value) ? value : undefined;
     const event = await ctx.runMutation(internal.emergency.trigger, {
       userId: _uid(user.convexId),
       checkpointId,
@@ -2434,6 +2484,9 @@ http.route({
       category,
       note,
       location,
+      gpsLatitude: num(body?.gpsLatitude),
+      gpsLongitude: num(body?.gpsLongitude),
+      gpsAccuracyMeters: num(body?.gpsAccuracyMeters),
     });
     await recordAudit(ctx, user, "emergency.created", {
       targetType: "emergency_event",
@@ -2452,9 +2505,15 @@ http.route({
           eventId: event.id,
           officerName: user.name,
           officerEmail: user.email,
-          siteLabel,
+          officerPhone: user.phone,
+          // The site the mutation worked out, not the empty string the app
+          // sent: a panic press is rarely next to a QR code, so the phone
+          // usually has no site to name and the alert said "Unknown site"
+          // about a guard who was plainly posted somewhere.
+          siteLabel: event.siteLabel || siteLabel,
           location,
           note,
+          category,
           triggeredAt: event.triggeredAt,
           emailRecipients: emergencyEmails,
           phoneRecipients: emergencyPhones,
@@ -3012,23 +3071,31 @@ http.route({ path: "/checkpoints", method: "POST", handler: httpAction(async (ct
   // (scans verify against the parent site geofence), the QR code is
   // auto-generated when not supplied, and a parent site is required.
   if (!body?.siteId) return badRequest("A parent location (siteId) is required");
-  const result = await ctx.runMutation(internal.checkpoints.create, {
-    name,
-    code: String(body?.code ?? "") || crypto.randomUUID(),
-    latitude: body?.latitude === undefined || body?.latitude === null ? undefined : Number(body.latitude),
-    longitude: body?.longitude === undefined || body?.longitude === null ? undefined : Number(body.longitude),
-    radiusMeters: body?.radiusMeters === undefined || body?.radiusMeters === null ? undefined : Number(body.radiusMeters),
-    expectedIntervalMinutes: Number(body?.expectedIntervalMinutes ?? 60),
-    scheduledTimeIn: String(body?.scheduledTimeIn ?? ""),
-    scheduledTimeOut: String(body?.scheduledTimeOut ?? ""),
-    active: body?.active !== false, siteId: body?.siteId ?? undefined,
-    // Tenant-bound users can only create points inside their own account.
-    clientId: user.clientId ? _cid(user.clientId) : (body?.clientId ?? undefined),
-  });
-  await recordAudit(ctx, user, "checkpoint.created", {
-    targetType: "checkpoint", details: `Created checkpoint: ${body?.name}`,
-  });
-  return json(result, { status: 201 });
+  const parentSiteId = await ctx.runQuery(internal.sites.resolveId, { id: String(body.siteId) });
+  if (!parentSiteId) return notFound("Location not found");
+  try {
+    const result = await ctx.runMutation(internal.checkpoints.create, {
+      name,
+      code: String(body?.code ?? "") || crypto.randomUUID(),
+      latitude: body?.latitude === undefined || body?.latitude === null ? undefined : Number(body.latitude),
+      longitude: body?.longitude === undefined || body?.longitude === null ? undefined : Number(body.longitude),
+      radiusMeters: body?.radiusMeters === undefined || body?.radiusMeters === null ? undefined : Number(body.radiusMeters),
+      expectedIntervalMinutes: Number(body?.expectedIntervalMinutes ?? 60),
+      scheduledTimeIn: String(body?.scheduledTimeIn ?? ""),
+      scheduledTimeOut: String(body?.scheduledTimeOut ?? ""),
+      active: body?.active !== false,
+      siteId: parentSiteId,
+      // Tenant-bound users can only create points inside their own account,
+      // and the mutation re-checks it rather than taking our word for it.
+      requireClientId: user.clientId ? _cid(user.clientId) : undefined,
+    });
+    await recordAudit(ctx, user, "checkpoint.created", {
+      targetType: "checkpoint", details: `Created checkpoint: ${name}`,
+    });
+    return json(result, { status: 201 });
+  } catch (err) {
+    return badRequest(err instanceof Error ? err.message : "Could not create this sub-location");
+  }
 })});
 
 http.route({ pathPrefix: "/checkpoints/", method: "PUT", handler: httpAction(async (ctx, request) => {
@@ -3587,6 +3654,7 @@ http.route({ path: "/post-orders", method: "POST", handler: httpAction(async (ct
   // form insisted on — title, summary, priority, active, proof photo — is
   // accepted if sent, so existing integrations keep working, and defaulted
   // sensibly when it is not.
+  try {
   const result = await ctx.runMutation(internal.postOrders.create, {
     title: body?.title != null ? String(body.title) : undefined,
     summary: body?.summary != null ? String(body.summary) : undefined,
@@ -3613,7 +3681,10 @@ http.route({ path: "/post-orders", method: "POST", handler: httpAction(async (ct
       details: `Created post order: ${result.title}`,
     ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
   });
-  return json(result, { status: 201 });
+    return json(result, { status: 201 });
+  } catch (err) {
+    return badRequest(err instanceof Error ? err.message : "Could not create this post order");
+  }
 })});
 
 http.route({ pathPrefix: "/post-orders/", method: "PUT", handler: httpAction(async (ctx, request) => {
@@ -3637,6 +3708,9 @@ http.route({ pathPrefix: "/post-orders/", method: "PUT", handler: httpAction(asy
   if (Array.isArray(body.assignedUserIds)) {
     fields.assignedUserIds = body.assignedUserIds.filter((x: unknown) => typeof x === "string" && x);
   }
+  if (Array.isArray(body.supervisorUserIds)) {
+    fields.supervisorUserIds = body.supervisorUserIds.filter((x: unknown) => typeof x === "string" && x);
+  }
   // Scope edits: resolve legacy IDs; an empty string clears the scope.
   if (body.checkpointId !== undefined) {
     if (!body.checkpointId) {
@@ -3656,14 +3730,21 @@ http.route({ pathPrefix: "/post-orders/", method: "PUT", handler: httpAction(asy
       fields.siteId = sId;
     }
   }
-  const result = await ctx.runMutation(internal.postOrders.update, { orderId, ...fields });
-  await recordAudit(ctx, user, "post_order.updated", {
-    targetType: "post_order",
-    targetId: orderId,
-    details: `Updated post order fields: ${Object.keys(fields).join(", ")}`,
-    ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
-  });
-  return json(result);
+  try {
+    const result = await ctx.runMutation(internal.postOrders.update, { orderId, ...fields });
+    await recordAudit(ctx, user, "post_order.updated", {
+      targetType: "post_order",
+      targetId: orderId,
+      details: `Updated post order fields: ${Object.keys(fields).join(", ")}`,
+      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+    });
+    return json(result);
+  } catch (err) {
+    // A sub-location that does not belong to the chosen location is a bad
+    // request, not a server fault — the message names both so staff can see
+    // which pair they picked.
+    return badRequest(err instanceof Error ? err.message : "Could not update this post order");
+  }
 })});
 
 http.route({ pathPrefix: "/post-orders/completions/", method: "PATCH", handler: httpAction(async (ctx, request) => {
@@ -4006,17 +4087,6 @@ http.route({ path: "/client/guard-stats", method: "GET", handler: httpAction(asy
   const clientId = _cid(user.clientId);
   if (!clientId) return json({ assigned: 0, clockedIn: 0, pending: 0 });
   return json(await ctx.runQuery(internal.clients.portalGuardStats, { clientId }));
-})});
-
-// Guards a client can address a pass-on to: names only, and only the guards
-// posted at that client's own locations.
-http.route({ path: "/client/addressable-guards", method: "GET", handler: httpAction(async (ctx, request) => {
-  const user = await requireAuth(ctx, request, { allowClientPortal: true });
-  if (!user) return unauthorized();
-  if (user.role !== "main_account") return forbidden("The client portal is for client accounts only.");
-  const clientId = _cid(user.clientId);
-  if (!clientId) return json([]);
-  return json(await ctx.runQuery(internal.clients.portalAddressableGuards, { clientId }));
 })});
 
 // [client-structure] Flat checkpoint list for the portal (compat shape).

@@ -133,14 +133,27 @@ export const create = internalMutation({
     siteId: v.optional(v.id("sites")),
     clientId: v.optional(v.id("clients")),
     isPrimary: v.optional(v.boolean()),
+    // Set for callers who belong to a tenant. The parent location must then
+    // be theirs: the route hands over whatever site id it was sent, and a
+    // client creating a sub-location under another company's location is
+    // exactly the shape this has to refuse.
+    requireClientId: v.optional(v.id("clients")),
   },
   handler: async (ctx, args) => {
-    const site = args.siteId ? await ctx.db.get(args.siteId) : null;
-    if (args.siteId && !site) throw new Error("Site not found");
+    const { requireClientId, ...fields } = args;
+    const site = fields.siteId ? await ctx.db.get(fields.siteId) : null;
+    if (fields.siteId && !site) throw new Error("Site not found");
+    if (requireClientId) {
+      if (!site) throw new Error("A parent location is required");
+      if (site.clientId !== requireClientId) {
+        throw new Error("That location does not belong to your account");
+      }
+    }
     const createdAt = Date.now();
     const value = {
-      ...args,
-      clientId: args.clientId ?? site?.clientId,
+      ...fields,
+      // Never trust a caller-supplied clientId over the parent location's own.
+      clientId: site?.clientId ?? fields.clientId,
       createdAt,
     };
     const id = await ctx.db.insert("checkpoints", value);
@@ -489,9 +502,11 @@ export const resolveId = internalQuery({
       return byLegacyId._id;
     }
 
-    const checkpoints = await ctx.db.query("checkpoints").collect();
-    return (
-      checkpoints.find((checkpoint) => checkpoint._id === args.id)?._id ?? null
-    );
+    // On the scan hot path: every scan the app submits comes through here.
+    // Reading every checkpoint in the system to confirm one id exists made
+    // this cost grow with the number of QR points deployed.
+    const normalized = ctx.db.normalizeId("checkpoints", args.id);
+    if (!normalized) return null;
+    return (await ctx.db.get(normalized)) ? normalized : null;
   },
 });

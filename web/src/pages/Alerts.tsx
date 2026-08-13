@@ -151,6 +151,14 @@ export default function Alerts() {
             <ShieldAlert className="h-5 w-5 shrink-0" />
             <span className="text-lg font-black tracking-wide">🚨 CODE RED</span>
             <span className="text-sm font-semibold uppercase tracking-wider">Emergency Alert</span>
+            {/* The kind of emergency the guard picked on the phone. It was
+                collected and then never shown, so the room saw "emergency"
+                without knowing whether to send an ambulance. */}
+            {sos.category && sos.category !== 'Other' && (
+              <span className="rounded bg-destructive-foreground/20 px-2 py-0.5 text-xs font-bold uppercase tracking-wide">
+                {sos.category}
+              </span>
+            )}
             <span className="ml-auto text-xs font-semibold uppercase">
               {sos.source === 'client' ? 'Raised by client' : 'Raised by guard'}
             </span>
@@ -188,27 +196,71 @@ export default function Alerts() {
               <div>
                 <span className="text-muted-foreground">Status </span>
                 <span className="font-medium uppercase">{sos.status}</span>
+                {sos.acknowledgedByName && (
+                  <span className="text-muted-foreground"> · seen by {sos.acknowledgedByName}</span>
+                )}
+                {sos.respondingByName && (
+                  <span className="text-muted-foreground"> · {sos.respondingByName} responding</span>
+                )}
               </div>
+              {sos.gpsLatitude != null && sos.gpsLongitude != null && (
+                <div>
+                  <span className="text-muted-foreground">Position </span>
+                  <a
+                    href={`https://www.google.com/maps?q=${sos.gpsLatitude},${sos.gpsLongitude}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-mono text-primary hover:underline"
+                  >
+                    {sos.gpsLatitude.toFixed(5)}, {sos.gpsLongitude.toFixed(5)}
+                  </a>
+                </div>
+              )}
             </div>
             <div className="rounded-lg bg-background/60 px-3 py-2 text-sm">
               <span className="text-muted-foreground">Reason: </span>
               <span className="font-medium">{sos.reason}</span>
             </div>
-            <button
-              onClick={async () => {
-                setResolvingEmergency(sos.id)
-                try {
-                  await api.emergency.resolve(sos.id)
-                  setEmergencies((prev) => prev.filter((e) => e.id !== sos.id))
-                } finally {
-                  setResolvingEmergency(null)
-                }
-              }}
-              disabled={resolvingEmergency === sos.id}
-              className="rounded-lg bg-destructive px-4 py-2 text-sm font-semibold text-destructive-foreground hover:opacity-90 disabled:opacity-60"
-            >
-              {resolvingEmergency === sos.id ? 'Saving…' : 'Mark resolved'}
-            </button>
+            {/* Forward only. An alert nobody has claimed looks different from
+                one somebody is already driving to, and the control room needs
+                to be able to tell them apart at a glance. */}
+            <div className="flex flex-wrap gap-2">
+              {(['acknowledged', 'responding', 'resolved'] as const)
+                .filter((step) => {
+                  const order = ['triggered', 'acknowledged', 'responding', 'resolved']
+                  return order.indexOf(step) > order.indexOf(sos.status)
+                })
+                .map((step) => (
+                  <button
+                    key={step}
+                    onClick={async () => {
+                      setResolvingEmergency(sos.id)
+                      try {
+                        await api.emergency.setStatus(sos.id, step)
+                        if (step === 'resolved') {
+                          setEmergencies((prev) => prev.filter((e) => e.id !== sos.id))
+                        } else {
+                          await loadAlerts()
+                        }
+                      } finally {
+                        setResolvingEmergency(null)
+                      }
+                    }}
+                    disabled={resolvingEmergency === sos.id}
+                    className={`rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60 ${
+                      step === 'resolved'
+                        ? 'bg-destructive text-destructive-foreground hover:opacity-90'
+                        : 'border border-destructive/40 text-destructive hover:bg-destructive/10'
+                    }`}
+                  >
+                    {step === 'acknowledged'
+                      ? 'Acknowledge'
+                      : step === 'responding'
+                        ? 'Responding'
+                        : 'Mark resolved'}
+                  </button>
+                ))}
+            </div>
           </div>
         </div>
       ))}

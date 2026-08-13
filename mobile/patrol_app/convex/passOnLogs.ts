@@ -366,10 +366,17 @@ export const listAcknowledgements = internalQuery({
 export const resolveId = internalQuery({
   args: { id: v.string() },
   handler: async (ctx, args) => {
-    const all = await ctx.db.query("passOnLogs").collect();
-    return (
-      all.find((item) => item.legacyId === args.id || item._id === args.id)
-        ?._id ?? null
-    );
+    // Same shape as the other resolvers: a Convex id resolves directly, and
+    // only a legacy id needs a lookup. Reading every pass-on to answer "does
+    // this id exist" grew with the table.
+    const normalized = ctx.db.normalizeId("passOnLogs", args.id);
+    if (normalized) {
+      return (await ctx.db.get(normalized)) ? normalized : null;
+    }
+    const byLegacyId = await ctx.db
+      .query("passOnLogs")
+      .withIndex("by_legacyId", (q) => q.eq("legacyId", args.id))
+      .first();
+    return byLegacyId?._id ?? null;
   },
 });

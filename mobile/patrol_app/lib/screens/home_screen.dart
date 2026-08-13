@@ -45,6 +45,11 @@ class _HomeScreenState extends State<HomeScreen> {
       context.read<DutyProvider>().load();
       _checkPassOnLogs();
       _pollEmergencies();
+      // Ask for location the moment the guard lands in the app, not at the
+      // first clock-in. Clock-in is refused without a fix, and discovering
+      // that while standing at a gate at the start of a shift is the worst
+      // possible moment to be sent into Android settings.
+      unawaited(LocationService.getCurrentLocation());
     });
     _emergencyTimer = Timer.periodic(
       const Duration(seconds: 30),

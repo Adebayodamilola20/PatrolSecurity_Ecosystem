@@ -3,6 +3,7 @@ import { ScanLine } from 'lucide-react'
 import { api } from '../services/api'
 import { useClientData } from '../hooks/useClientData'
 import EmptyState from '../components/ui/EmptyState'
+import { ListSkeleton, LoadingNote } from '../components/ui/Skeleton'
 import { formatDate } from '../utils/format'
 
 export default function Scans() {
@@ -48,7 +49,10 @@ export default function Scans() {
       </div>
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <div className="space-y-3">
+          <LoadingNote label="Loading patrol activity…" />
+          <ListSkeleton rows={6} />
+        </div>
       ) : error ? (
         <EmptyState icon={ScanLine} title="Couldn't load scans" description={error} />
       ) : !data || data.length === 0 ? (

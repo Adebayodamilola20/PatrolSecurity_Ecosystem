@@ -381,14 +381,27 @@ export function PatrolMap() {
           const lastScan = latestByOfficer.get(user.id)
           const siteName = user.sites?.[0]?.name ?? null
           const existing = liveOfficersRef.current.get(user.id)
+
+          // Where they are, in order of how much it is worth trusting: the
+          // live fix, then where they clocked in, then their last scan.
+          //
+          // The last scan used to come first, which put a guard who clocked
+          // in at one location on top of a different location they happened
+          // to have scanned earlier in the day. A scan is a record of where
+          // somebody was, not a statement of where they are.
+          const lat = user.liveLatitude ?? lastScan?.gpsLatitude ?? null
+          const lng = user.liveLongitude ?? lastScan?.gpsLongitude ?? null
+          const seenAt =
+            user.livePositionAt ?? lastScan?.scannedAt ?? user.lastClockIn ?? null
+
           if (!existing) {
             liveOfficersRef.current.set(user.id, {
               id: user.id,
               name: user.name,
               onDuty: true,
-              lat: lastScan?.gpsLatitude ?? null,
-              lng: lastScan?.gpsLongitude ?? null,
-              lastSeenAt: lastScan?.scannedAt ?? user.lastClockIn ?? null,
+              lat,
+              lng,
+              lastSeenAt: seenAt,
               checkpointName: lastScan?.checkpointName ?? null,
               siteName,
             })
@@ -397,10 +410,12 @@ export function PatrolMap() {
             existing.name = user.name
             existing.siteName = siteName
             if (lastScan?.checkpointName) existing.checkpointName = lastScan.checkpointName
-            if (!existing.lat && lastScan?.gpsLatitude) {
-              existing.lat = lastScan.gpsLatitude
-              existing.lng = lastScan.gpsLongitude
-              existing.lastSeenAt = lastScan.scannedAt ?? existing.lastSeenAt
+            // Always take the newer position rather than only filling a blank,
+            // or the marker freezes at wherever it first appeared.
+            if (lat != null && lng != null) {
+              existing.lat = lat
+              existing.lng = lng
+              existing.lastSeenAt = seenAt ?? existing.lastSeenAt
             }
           }
         })
@@ -423,26 +438,13 @@ export function PatrolMap() {
         if (marker) officerBounds.extend(marker.getPosition())
       })
 
-      scans
-        .filter((scan) => activeOfficerIds.has(scan.officerId))
-        .slice(0, 30)
-        .forEach((scan) => {
-          if (scan.gpsLatitude == null || scan.gpsLongitude == null) return
-          const marker = new maps.Marker({
-            map,
-            position: { lat: scan.gpsLatitude, lng: scan.gpsLongitude },
-            title: `${scan.officerName} at ${scan.checkpointName}`,
-            icon: {
-              path: maps.SymbolPath.CIRCLE,
-              scale: 5,
-              fillColor: scan.gpsValid ? '#f59e0b' : '#ef4444',
-              fillOpacity: 0.9,
-              strokeColor: '#ffffff',
-              strokeWeight: 1.5,
-            },
-          })
-          scanMarkersRef.current.push(marker)
-        })
+      // Recent scans are deliberately NOT plotted any more.
+      //
+      // Up to thirty of them were drawn as small circles, so one guard on
+      // duty produced their own marker plus a scattering of dots from every
+      // point they had scanned that shift — four pins for one person, none of
+      // which was where they actually were. One guard, one marker. Their
+      // scan history belongs on the scan pages, where it can be read.
 
       // Auto-centre once. Prefer the guards; fall back to checkpoints only when
       // nobody is on duty. Clamp the zoom so a lone marker doesn't zoom to the

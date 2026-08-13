@@ -12,13 +12,41 @@ export const trigger = internalMutation({
     note: v.optional(v.string()),
     location: v.optional(v.string()),
     source: v.optional(v.union(v.literal("guard"), v.literal("client"))),
+    gpsLatitude: v.optional(v.number()),
+    gpsLongitude: v.optional(v.number()),
+    gpsAccuracyMeters: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
     const checkpoint = args.checkpointId
       ? await ctx.db.get(args.checkpointId)
       : null;
-    const siteId = checkpoint?.siteId ?? args.siteId;
+
+    // Where they are, worked out here rather than taken from the app.
+    //
+    // A panic press usually happens nowhere near a QR code, so there is no
+    // checkpoint to derive a site from and the app sends an empty siteLabel.
+    // That reached the control room as "Site: Unknown site" for a guard who
+    // was plainly posted somewhere — useless in the one message that has to
+    // be right. Fall back to the shift they are on, then to the location they
+    // are posted to.
+    let siteId = checkpoint?.siteId ?? args.siteId;
+    if (!siteId) {
+      const activeShift = await ctx.db
+        .query("shifts")
+        .withIndex("by_userId_status", (q) =>
+          q.eq("userId", args.userId).eq("status", "active"),
+        )
+        .first();
+      siteId = activeShift?.siteId;
+    }
+    if (!siteId) {
+      const posting = await ctx.db
+        .query("userSiteAssignments")
+        .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+        .first();
+      siteId = posting?.siteId;
+    }
     const site = siteId ? await ctx.db.get(siteId) : null;
     const source = args.source ?? "guard";
 
@@ -48,6 +76,9 @@ export const trigger = internalMutation({
       message,
       note: args.note ?? "",
       source,
+      gpsLatitude: args.gpsLatitude,
+      gpsLongitude: args.gpsLongitude,
+      gpsAccuracyMeters: args.gpsAccuracyMeters,
       triggeredAt,
       emailRecipients: [],
       phoneRecipients: [],
@@ -145,6 +176,24 @@ async function describeEvents(
       officerName: raiser?.name ?? "",
       officerPhone: raiser?.phone ?? "",
       officerRole: raiser?.role ?? null,
+      gpsLatitude: event.gpsLatitude ?? null,
+      gpsLongitude: event.gpsLongitude ?? null,
+      gpsAccuracyMeters: event.gpsAccuracyMeters ?? null,
+      // Who has it, and how far along. An alert nobody owns is the failure
+      // this is here to make visible.
+      acknowledgedAt: event.acknowledgedAt
+        ? new Date(event.acknowledgedAt).toISOString()
+        : null,
+      acknowledgedByName: event.acknowledgedByUserId
+        ? (users.find((u: any) => u._id === event.acknowledgedByUserId)?.name ?? "")
+        : null,
+      respondingAt: event.respondingAt
+        ? new Date(event.respondingAt).toISOString()
+        : null,
+      respondingByName: event.respondingByUserId
+        ? (users.find((u: any) => u._id === event.respondingByUserId)?.name ?? "")
+        : null,
+      resolvedAt: event.resolvedAt ? new Date(event.resolvedAt).toISOString() : null,
       triggeredAt: new Date(event.triggeredAt).toISOString(),
     };
   });
@@ -183,15 +232,66 @@ export const listForGuard = internalQuery({
   },
 });
 
-/** Staff close one out once it has been dealt with. */
-export const resolve = internalMutation({
-  args: { eventId: v.id("emergencyEvents"), userId: v.id("users") },
+/**
+ * Move an emergency along its lifecycle: triggered → acknowledged →
+ * responding → resolved.
+ *
+ * Forward only. Marking something resolved and then "acknowledged" again
+ * would leave the control room unable to tell whether anyone is still on
+ * their way, so a backwards move is refused rather than silently applied.
+ * Each step records who moved it and when — an alert nobody owns is the
+ * failure mode this is here to prevent.
+ */
+const LIFECYCLE = ["triggered", "acknowledged", "responding", "resolved"] as const;
+
+export const setStatus = internalMutation({
+  args: {
+    eventId: v.id("emergencyEvents"),
+    userId: v.id("users"),
+    status: v.union(
+      v.literal("acknowledged"),
+      v.literal("responding"),
+      v.literal("resolved"),
+    ),
+  },
   handler: async (ctx, args) => {
     const event = await ctx.db.get(args.eventId);
     if (!event) throw new Error("Emergency not found");
-    if (event.status === "resolved") return { alreadyResolved: true };
-    await ctx.db.patch(args.eventId, { status: "resolved" });
-    return { alreadyResolved: false };
+
+    const currentIndex = LIFECYCLE.indexOf(event.status as (typeof LIFECYCLE)[number]);
+    const nextIndex = LIFECYCLE.indexOf(args.status);
+    // An unrecognised existing status (older rows) is treated as the start.
+    const from = currentIndex === -1 ? 0 : currentIndex;
+    if (nextIndex === from) return { unchanged: true, status: event.status };
+    if (nextIndex < from) {
+      throw new Error(
+        `This emergency is already ${event.status}; it cannot go back to ${args.status}`,
+      );
+    }
+
+    const now = Date.now();
+    const patch: Record<string, unknown> = { status: args.status };
+    if (args.status === "acknowledged") {
+      patch.acknowledgedAt = now;
+      patch.acknowledgedByUserId = args.userId;
+    } else if (args.status === "responding") {
+      patch.respondingAt = now;
+      patch.respondingByUserId = args.userId;
+      // Skipping straight to responding still means somebody saw it.
+      if (!event.acknowledgedAt) {
+        patch.acknowledgedAt = now;
+        patch.acknowledgedByUserId = args.userId;
+      }
+    } else {
+      patch.resolvedAt = now;
+      patch.resolvedByUserId = args.userId;
+      if (!event.acknowledgedAt) {
+        patch.acknowledgedAt = now;
+        patch.acknowledgedByUserId = args.userId;
+      }
+    }
+    await ctx.db.patch(args.eventId, patch);
+    return { unchanged: false, status: args.status };
   },
 });
 
