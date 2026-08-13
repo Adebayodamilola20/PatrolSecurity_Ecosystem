@@ -58,3 +58,6 @@ convex.json.local
 mobile/patrol_app/ios/build/
 mobile/patrol_app/build/
 **/DerivedData/
+
+# Internal security assessment — this repo is public; findings stay local.
+docs/security-assessment-*.md
