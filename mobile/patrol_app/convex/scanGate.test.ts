@@ -143,6 +143,56 @@ describe("GPS verification is enforced on the server", () => {
   });
 });
 
+describe("a post order is only revealed by a verified scan", () => {
+  let t: ReturnType<typeof convexTest>;
+  let w: World;
+
+  beforeEach(async () => {
+    t = convexTest(schema, modules);
+    w = await seed(t);
+    await t.mutation(internal.postOrders.create, {
+      instructions: "Check the rear entrance every 30 minutes.",
+      checkpointId: w.frontGate,
+      createdBy: w.guardId,
+    });
+  });
+
+  const visibleToGuard = async () =>
+    await t.query(internal.postOrders.listForUser, { userId: w.guardId });
+
+  const scanAt = (checkpointId: Id<"checkpoints">, lat: number, lng: number) =>
+    t.mutation(internal.scans.create, {
+      officerId: w.guardId,
+      checkpointId,
+      gpsLatitude: lat,
+      gpsLongitude: lng,
+    });
+
+  test("nothing is visible before the guard has scanned the point", async () => {
+    expect(await visibleToGuard()).toHaveLength(0);
+  });
+
+  test("a refused scan reveals nothing", async () => {
+    // Entrance first, so the only thing failing below is the geofence.
+    await scanAt(w.locationQr, SITE_LAT, SITE_LNG);
+    await expect(scanAt(w.frontGate, FAR_LAT, FAR_LNG)).rejects.toThrow();
+    expect(await visibleToGuard()).toHaveLength(0);
+  });
+
+  test("a verified scan of that point reveals it", async () => {
+    await scanAt(w.locationQr, SITE_LAT, SITE_LNG);
+    await scanAt(w.frontGate, SITE_LAT, SITE_LNG);
+    const orders = await visibleToGuard();
+    expect(orders).toHaveLength(1);
+    expect(orders[0].instructions).toContain("rear entrance");
+  });
+
+  test("scanning a different point does not reveal it", async () => {
+    await scanAt(w.locationQr, SITE_LAT, SITE_LNG);
+    expect(await visibleToGuard()).toHaveLength(0);
+  });
+});
+
 describe("a patrol has to start at the location QR", () => {
   let t: ReturnType<typeof convexTest>;
   let w: World;

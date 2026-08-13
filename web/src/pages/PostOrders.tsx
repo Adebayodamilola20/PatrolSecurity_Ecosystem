@@ -21,21 +21,19 @@ export default function PostOrders() {
   const [reviewing, setReviewing] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [detail, setDetail] = useState<PostOrder | null>(null)
-  const [form, setForm] = useState({
-    title: '',
-    summary: '',
+  // Five fields, and four of them are pickers. Title, summary, priority,
+  // active and proof-photo were all asked for before anyone could write the
+  // one thing a guard actually reads at the gate; the server defaults them
+  // now. Acknowledgement stays on because being shown an order and having to
+  // confirm you read it is the whole point of showing it.
+  const emptyForm = {
     instructions: '',
     siteId: '',
     checkpointId: '',
     assignedUserIds: [] as string[],
-    assignedRole: 'guard',
-    priority: 'normal',
-    active: true,
-    // Acknowledgement is not optional: an order a guard is shown is an order
-    // they have to confirm they read, so it always pops up on scan.
-    requiresAcknowledgement: true,
-    requiresPhotoProof: true,
-  })
+    supervisorUserIds: [] as string[],
+  }
+  const [form, setForm] = useState(emptyForm)
 
   const load = async () => {
     setLoading(true)
@@ -79,27 +77,16 @@ export default function PostOrders() {
     setSaving(true)
     try {
       await api.postOrders.create({
-        ...form,
+        instructions: form.instructions,
         // A pinned sub-location wins; otherwise the whole location; otherwise
         // this is a general duty that isn't tied to any scan.
         checkpointId: form.checkpointId || null,
         siteId: form.checkpointId ? null : form.siteId || null,
         assignedUserIds: form.assignedUserIds,
+        supervisorUserIds: form.supervisorUserIds,
       })
       setShowForm(false)
-      setForm({
-        title: '',
-        summary: '',
-        instructions: '',
-        siteId: '',
-        checkpointId: '',
-        assignedUserIds: [],
-        assignedRole: 'guard',
-        priority: 'normal',
-        active: true,
-        requiresAcknowledgement: true,
-        requiresPhotoProof: true,
-      })
+      setForm(emptyForm)
       await load()
     } finally {
       setSaving(false)
@@ -160,44 +147,47 @@ export default function PostOrders() {
               <h2 className="text-lg font-semibold">Create Post Order</h2>
               <button type="button" onClick={() => setShowForm(false)} className="text-muted-foreground hover:text-foreground">Close</button>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Title" className="rounded-lg border border-border bg-background px-3 py-2 text-sm" />
-              <input value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} placeholder="Short summary" className="rounded-lg border border-border bg-background px-3 py-2 text-sm" />
-              <select value={form.siteId} onChange={(e) => setForm({ ...form, siteId: e.target.value, checkpointId: '' })} className="rounded-lg border border-border bg-background px-3 py-2 text-sm">
-                <option value="">Anywhere (general duty)</option>
-                {sites.map((site) => <option key={site.id} value={site.convexId ?? site.id}>{site.name}</option>)}
-              </select>
-              <select value={form.checkpointId} onChange={(e) => setForm({ ...form, checkpointId: e.target.value })} disabled={!form.siteId} className="rounded-lg border border-border bg-background px-3 py-2 text-sm disabled:opacity-50">
-                <option value="">{form.siteId ? 'Whole location (any scan there)' : 'Pick a location first'}</option>
-                {sitePoints.map((cp) => <option key={cp.id} value={cp.id}>{cp.name}</option>)}
-              </select>
-              <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className="rounded-lg border border-border bg-background px-3 py-2 text-sm">
-                <option value="low">Low</option>
-                <option value="normal">Normal</option>
-                <option value="high">High</option>
-                <option value="critical">Critical</option>
-              </select>
-              <select value={form.assignedRole} onChange={(e) => setForm({ ...form, assignedRole: e.target.value })} className="rounded-lg border border-border bg-background px-3 py-2 text-sm">
-                <option value="guard">Guard</option>
-                <option value="supervisor">Supervisor</option>
-              </select>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <label className="text-xs text-muted-foreground">
+                Location
+                <select required value={form.siteId} onChange={(e) => setForm({ ...form, siteId: e.target.value, checkpointId: '' })} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground">
+                  <option value="">Choose a location…</option>
+                  {sites.map((site) => <option key={site.id} value={site.convexId ?? site.id}>{site.name}</option>)}
+                </select>
+              </label>
+              <label className="text-xs text-muted-foreground">
+                Sub-location
+                <select value={form.checkpointId} onChange={(e) => setForm({ ...form, checkpointId: e.target.value })} disabled={!form.siteId} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground disabled:opacity-50">
+                  <option value="">{form.siteId ? 'Whole location (any scan there)' : 'Pick a location first'}</option>
+                  {sitePoints.map((cp) => <option key={cp.id} value={cp.id}>{cp.name}</option>)}
+                </select>
+              </label>
             </div>
 
-            {/* Multiple guards can be posted to one order. None selected = every
-                guard the location/sub-location reaches. */}
+            <label className="block text-xs text-muted-foreground">
+              Instructions
+              <textarea required value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} placeholder="e.g. Check rear entrance every 30 minutes." className="mt-1 min-h-32 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground" />
+            </label>
+
+            {/* Guards and supervisors are picked separately: one list walks the
+                post, the other oversees it, and the record keeps the two apart.
+                None selected = everyone the location reaches. */}
             <GuardPicker
-              guards={users}
+              label="Guard"
+              guards={users.filter((u) => u.role === 'guard')}
               selected={form.assignedUserIds}
               onChange={(ids) => setForm((f) => ({ ...f, assignedUserIds: ids }))}
             />
+            <GuardPicker
+              label="Supervisor"
+              guards={users.filter((u) => u.role === 'supervisor')}
+              selected={form.supervisorUserIds}
+              onChange={(ids) => setForm((f) => ({ ...f, supervisorUserIds: ids }))}
+            />
 
-            <textarea required value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} placeholder="Detailed instructions" className="min-h-32 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
-            <div className="flex flex-wrap gap-4 text-sm">
-              <label className="flex items-center gap-2"><input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} /> Active</label>
-              <label className="flex items-center gap-2"><input type="checkbox" checked={form.requiresPhotoProof} onChange={(e) => setForm({ ...form, requiresPhotoProof: e.target.checked })} /> Requires proof photo</label>
-            </div>
             <div className="text-xs text-muted-foreground">
-              Every post order pops up on scan and must be acknowledged by the guard.
+              The guard sees this only after a GPS-verified scan of the point above, and has to
+              acknowledge it before continuing.
             </div>
             {!form.checkpointId && !form.siteId && (
               <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">

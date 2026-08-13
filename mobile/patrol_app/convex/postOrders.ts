@@ -47,10 +47,20 @@ export const listAll = internalQuery({
   },
 });
 
+/**
+ * Create a post order.
+ *
+ * The form behind this asked for a title, a short summary, a priority, an
+ * active flag and a proof-photo flag before anyone could write the one thing
+ * that matters — the instruction the guard reads at the gate. Those fields
+ * are now optional: the columns stay so existing orders keep rendering, but
+ * nothing has to supply them. A missing title falls back to the point the
+ * order belongs to, which is what staff called them anyway ("Front Gate").
+ */
 export const create = internalMutation({
   args: {
-    title: v.string(),
-    summary: v.string(),
+    title: v.optional(v.string()),
+    summary: v.optional(v.string()),
     instructions: v.string(),
     // Scope: a sub-location (checkpointId), a whole location (siteId), or
     // neither (general duty). A checkpoint implies its parent site.
@@ -58,11 +68,12 @@ export const create = internalMutation({
     siteId: v.optional(v.id("sites")),
     assignedUserId: v.optional(v.id("users")),
     assignedUserIds: v.optional(v.array(v.id("users"))),
-    assignedRole: v.union(v.literal("admin"), v.literal("main_account"), v.literal("supervisor"), v.literal("guard")),
-    priority: v.string(),
-    active: v.boolean(),
-    requiresAcknowledgement: v.boolean(),
-    requiresPhotoProof: v.boolean(),
+    supervisorUserIds: v.optional(v.array(v.id("users"))),
+    assignedRole: v.optional(v.union(v.literal("admin"), v.literal("main_account"), v.literal("supervisor"), v.literal("guard"))),
+    priority: v.optional(v.string()),
+    active: v.optional(v.boolean()),
+    requiresAcknowledgement: v.optional(v.boolean()),
+    requiresPhotoProof: v.optional(v.boolean()),
     createdBy: v.id("users"),
   },
   handler: async (ctx, args) => {
@@ -82,15 +93,44 @@ export const create = internalMutation({
         ...(args.assignedUserId ? [args.assignedUserId] : []),
       ]),
     );
+    const supervisorIds = Array.from(new Set(args.supervisorUserIds ?? []));
+    const title =
+      args.title?.trim() ||
+      checkpoint?.name ||
+      site?.name ||
+      "Post order";
     const id = await ctx.db.insert("postOrders", {
-      ...args,
+      title,
+      summary: args.summary ?? "",
+      instructions: args.instructions,
+      checkpointId: args.checkpointId,
       assignedUserId: guardIds[0],
       assignedUserIds: guardIds,
+      supervisorUserIds: supervisorIds,
+      assignedRole: args.assignedRole ?? "guard",
+      priority: args.priority ?? "normal",
+      // An order nobody asked to deactivate is on duty. The old form made
+      // this a checkbox staff had to remember to tick.
+      active: args.active !== false,
+      // The whole point is that the guard reads it at the gate, so it pops up
+      // on the scan unless someone deliberately says otherwise.
+      requiresAcknowledgement: args.requiresAcknowledgement !== false,
+      requiresPhotoProof: args.requiresPhotoProof === true,
       clientId: checkpoint?.clientId ?? site?.clientId ?? creator?.clientId,
       siteId,
+      createdBy: args.createdBy,
       createdAt: Date.now(),
     });
-    return { id, ...args, assignedUserIds: guardIds, siteId, createdAt: new Date().toISOString() };
+    return {
+      id,
+      title,
+      instructions: args.instructions,
+      checkpointId: args.checkpointId,
+      assignedUserIds: guardIds,
+      supervisorUserIds: supervisorIds,
+      siteId,
+      createdAt: new Date().toISOString(),
+    };
   },
 });
 
@@ -352,28 +392,54 @@ export const listForUser = internalQuery({
 
     const sites = await ctx.db.query("sites").collect();
 
+    // A sub-location's post order is the instruction for standing at that
+    // point, so it is revealed by arriving there and nowhere else: the guard
+    // must have a GPS-verified scan of that exact QR on the shift they are
+    // currently working. A failed scan writes no row, so it reveals nothing.
+    // Clocking out ends the shift and closes the orders with it.
+    const activeShift = await ctx.db
+      .query("shifts")
+      .withIndex("by_userId_status", (q) =>
+        q.eq("userId", args.userId).eq("status", "active"),
+      )
+      .first();
+    const unlockedCheckpointIds = new Set<string>();
+    if (activeShift) {
+      const shiftScans = await ctx.db
+        .query("scans")
+        .withIndex("by_officerId_scannedAt", (q) =>
+          q.eq("officerId", args.userId).gte("scannedAt", activeShift.clockIn),
+        )
+        .collect();
+      for (const scan of shiftScans) {
+        if (scan.gpsValid) unlockedCheckpointIds.add(scan.checkpointId);
+      }
+    }
+
     return orders
       .filter((order) => {
         if (user.role === "admin") return true;
         if (user.role === "main_account") {
           return order.clientId === user.clientId;
         }
-        // Explicit guard assignment (multi or legacy single). An order with a
-        // guard list only reaches those guards; an empty list is open duty.
-        const guardIds =
-          order.assignedUserIds && order.assignedUserIds.length
-            ? order.assignedUserIds
-            : order.assignedUserId
-              ? [order.assignedUserId]
-              : [];
-        if (guardIds.length && !guardIds.includes(args.userId)) {
+        // Explicit assignment (guards, supervisors, or the legacy single
+        // field). An order with a named list only reaches those people; an
+        // empty list is open duty.
+        const namedIds = [
+          ...(order.assignedUserIds ?? []),
+          ...(order.supervisorUserIds ?? []),
+          ...(order.assignedUserId ? [order.assignedUserId] : []),
+        ];
+        if (namedIds.length && !namedIds.includes(args.userId)) {
           return false;
         }
         // Scoped orders only reach guards posted there: a sub-location order
         // needs its checkpoint's site assigned, a location order needs the
         // site itself. Unscoped orders are general duties for everyone.
         if (order.checkpointId) {
-          return visibleCheckpointIds.has(order.checkpointId);
+          if (!visibleCheckpointIds.has(order.checkpointId)) return false;
+          // ...and only once the guard has actually verified they are there.
+          return unlockedCheckpointIds.has(order.checkpointId);
         }
         if (order.siteId) return siteIds.has(order.siteId);
         return true;

@@ -3404,8 +3404,13 @@ http.route({ path: "/post-orders", method: "POST", handler: httpAction(async (ct
     ? await ctx.runQuery(internal.sites.resolveId, { id: String(body.siteId) })
     : null;
   if (body?.siteId && !siteId) return notFound("Location not found");
+  // Only the instruction and its scope are required now. Everything the old
+  // form insisted on — title, summary, priority, active, proof photo — is
+  // accepted if sent, so existing integrations keep working, and defaulted
+  // sensibly when it is not.
   const result = await ctx.runMutation(internal.postOrders.create, {
-    title: String(body?.title ?? ""), summary: String(body?.summary ?? ""),
+    title: body?.title != null ? String(body.title) : undefined,
+    summary: body?.summary != null ? String(body.summary) : undefined,
     instructions: String(body?.instructions ?? ""),
     checkpointId: checkpointId ?? undefined,
     siteId: siteId ?? undefined,
@@ -3413,17 +3418,20 @@ http.route({ path: "/post-orders", method: "POST", handler: httpAction(async (ct
     assignedUserIds: Array.isArray(body?.assignedUserIds)
       ? body.assignedUserIds.filter((x: unknown) => typeof x === "string" && x)
       : undefined,
+    supervisorUserIds: Array.isArray(body?.supervisorUserIds)
+      ? body.supervisorUserIds.filter((x: unknown) => typeof x === "string" && x)
+      : undefined,
     assignedRole: (["admin","main_account","supervisor","guard"].includes(String(body?.assignedRole)) ? String(body?.assignedRole) : "guard") as any,
-    priority: String(body?.priority ?? "normal"),
-    active: body?.active !== false,
-    requiresAcknowledgement: body?.requiresAcknowledgement === true,
-    requiresPhotoProof: body?.requiresPhotoProof === true,
+    priority: body?.priority != null ? String(body.priority) : undefined,
+    active: body?.active,
+    requiresAcknowledgement: body?.requiresAcknowledgement,
+    requiresPhotoProof: body?.requiresPhotoProof,
     createdBy: _uid(user.convexId),
   });
   await recordAudit(ctx, user, "post_order.created", {
     targetType: "post_order",
       targetId: result.id as unknown as string,
-      details: `Created post order: ${body?.title}`,
+      details: `Created post order: ${result.title}`,
     ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
   });
   return json(result, { status: 201 });

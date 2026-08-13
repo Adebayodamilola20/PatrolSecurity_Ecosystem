@@ -511,6 +511,10 @@ export default defineSchema({
     // Multi-guard assignment: an order can be posted to several guards at once.
     // Empty/absent = every guard the scope reaches (general duty).
     assignedUserIds: v.optional(v.array(v.id("users"))),
+    // Supervisors the order is addressed to. Kept apart from the guard list
+    // because the creation form asks for them separately and the distinction
+    // is worth keeping on the record — who walks it, and who oversees it.
+    supervisorUserIds: v.optional(v.array(v.id("users"))),
     assignedRole: userRole,
     priority: v.string(),
     active: v.boolean(),
