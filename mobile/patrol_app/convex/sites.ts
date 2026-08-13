@@ -276,20 +276,10 @@ export const assignUser = internalMutation({
     if (!site) throw new Error("Site not found");
     const user = await ctx.db.get(args.userId);
     if (!user) throw new Error("User not found");
-    // One guard, one location: block assigning a guard who is already posted
-    // to a different location. Staff must unassign them there first.
-    const otherAssignment = await ctx.db
-      .query("userSiteAssignments")
-      .withIndex("by_userId_siteId", (q) => q.eq("userId", args.userId))
-      .filter((q) => q.neq(q.field("siteId"), args.siteId))
-      .first();
-    if (otherAssignment) {
-      const otherSite = await ctx.db.get(otherAssignment.siteId);
-      return {
-        conflict: true as const,
-        otherSiteName: otherSite?.name ?? "another location",
-      };
-    }
+    // There used to be a one-guard-one-location rule here. It is gone: guards
+    // and supervisors cover several properties, and with location membership
+    // now derived from gate postings the rule could only ever surface as a
+    // gate assignment that silently refused to save.
     const id = await ctx.db.insert("userSiteAssignments", {
       clientId: site.clientId,
       userId: args.userId,

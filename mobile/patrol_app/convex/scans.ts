@@ -365,6 +365,37 @@ export const create = internalMutation({
       );
     }
 
+    // The location's own QR is where a patrol starts. A guard signs in at the
+    // main entrance and only then walks the sub-locations, so a shift that
+    // begins at the back fence is refused: without this, a full patrol can be
+    // "completed" without anyone ever arriving at the front of the property.
+    //
+    // Scoped to the current shift — clocking in again means starting at the
+    // entrance again. Locations created without their own QR point are exempt,
+    // because there is nothing there for the guard to scan first.
+    if (siteId && !checkpoint.isPrimary) {
+      const siteCheckpoints = await ctx.db
+        .query("checkpoints")
+        .withIndex("by_siteId", (q) => q.eq("siteId", siteId))
+        .collect();
+      const primary = siteCheckpoints.find((cp) => cp.isPrimary);
+      if (primary) {
+        const scansThisShift = await ctx.db
+          .query("scans")
+          .withIndex("by_officerId_scannedAt", (q) =>
+            q.eq("officerId", args.officerId).gte("scannedAt", activeShift.clockIn),
+          )
+          .collect();
+        if (!scansThisShift.some((s) => s.checkpointId === primary._id)) {
+          const site = await ctx.db.get(siteId);
+          await rejectScan(
+            "Sub-location scanned before the location QR on this shift",
+            `Start at the main entrance: scan the ${site?.name ?? "location"} QR code first, then scan this point.`,
+          );
+        }
+      }
+    }
+
     const recentByOfficer = await ctx.db
       .query("scans")
       .withIndex("by_officerId_scannedAt", (q) =>

@@ -351,7 +351,7 @@ export default function ClientDetail() {
   // reveals the picker only when you want to change it. Leaving a dropdown and
   // an Assign button open on every card at once turned a location with three
   // gates into a wall of form controls.
-  const renderPointPostings = (point: SubLocation, opts?: { wide?: boolean }) => {
+  const renderPointPostings = (point: SubLocation, opts?: { wide?: boolean; readOnly?: boolean }) => {
     const available = guardPool.filter(
       (g) => !point.postedGuards.some((a) => a.id === g.id || a.id === g.convexId),
     )
@@ -389,7 +389,7 @@ export default function ClientDetail() {
             people running this every day are not reaching for a subtle
             control — the way to add a guard has to look like a button and
             span the card, so there is only one obvious thing to press. */}
-        {canManage && (open ? (
+        {canManage && !opts?.readOnly && (open ? (
           <div className="space-y-2">
             <select
               autoFocus
@@ -970,7 +970,18 @@ export default function ClientDetail() {
                             ) : null}
                           </div>
                         </div>
-                        {renderPointPostings(site.locationQr, { wide: true })}
+                        {/* No assigning here on purpose: guards are assigned
+                            to sub-locations only, and this QR is the gate
+                            they all pass through. Any posting made here
+                            before that rule landed is still shown so it can
+                            be taken off. */}
+                        {site.locationQr.postedGuards.length > 0
+                          ? renderPointPostings(site.locationQr, { wide: true, readOnly: true })
+                          : null}
+                        <div className="mt-3 rounded-lg border border-primary/20 bg-background/60 px-3 py-2 text-[11px] text-muted-foreground">
+                          Every guard must scan this QR at the entrance before any sub-location on
+                          the same shift. Assign guards on the sub-locations below.
+                        </div>
                         <div className="mt-3 flex items-center gap-2 border-t border-primary/20 pt-3">
                           <button
                             onClick={() => void downloadQr(site, site.locationQr!)}

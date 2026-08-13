@@ -257,6 +257,11 @@ export const assignUser = internalMutation({
     const user = await ctx.db.get(args.userId);
     if (!user) throw new Error("User not found");
 
+    // Belonging to the location is derived, never chosen: posting someone to a
+    // gate registers them at the location in the same click. The old
+    // one-guard-one-location rule is deliberately not applied here — guards
+    // and supervisors cover several properties, and refusing the posting left
+    // staff staring at a gate assignment that silently did nothing.
     const siteId = checkpoint.siteId;
     if (siteId) {
       const postedToSite = await ctx.db
@@ -266,18 +271,6 @@ export const assignUser = internalMutation({
         )
         .first();
       if (!postedToSite) {
-        const elsewhere = await ctx.db
-          .query("userSiteAssignments")
-          .withIndex("by_userId_siteId", (q) => q.eq("userId", args.userId))
-          .filter((q) => q.neq(q.field("siteId"), siteId))
-          .first();
-        if (elsewhere) {
-          const otherSite = await ctx.db.get(elsewhere.siteId);
-          return {
-            conflict: true as const,
-            otherSiteName: otherSite?.name ?? "another location",
-          };
-        }
         const site = await ctx.db.get(siteId);
         await ctx.db.insert("userSiteAssignments", {
           clientId: site?.clientId,
