@@ -307,9 +307,14 @@ export const assignUser = internalMutation({
   },
 });
 
-// Pulling a guard off one gate leaves the location assignment alone: they may
-// still hold other gates here, and removing it would silently start rejecting
-// their scans across the whole location.
+// Pulling a guard off their last gate at a location pulls them off the
+// location too.
+//
+// Keeping the location assignment behind looked like a safe half-measure and
+// was not: the guard vanished from every gate while the location still listed
+// them as posted and still accepted their scans there. Staff pressed ✕, saw
+// nothing change at the top of the page, and reasonably concluded the button
+// was broken. Hold another gate here and the location assignment stays.
 export const unassignUser = internalMutation({
   args: { checkpointId: v.id("checkpoints"), userId: v.id("users") },
   handler: async (ctx, args) => {
@@ -319,8 +324,29 @@ export const unassignUser = internalMutation({
         q.eq("userId", args.userId).eq("checkpointId", args.checkpointId),
       )
       .first();
-    if (existing) await ctx.db.delete(existing._id);
-    return { removed: !!existing };
+    if (!existing) return { removed: false, removedFromSite: false };
+    await ctx.db.delete(existing._id);
+
+    const checkpoint = await ctx.db.get(args.checkpointId);
+    const siteId = checkpoint?.siteId ?? existing.siteId;
+    if (!siteId) return { removed: true, removedFromSite: false };
+
+    const stillHere = await ctx.db
+      .query("userCheckpointAssignments")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .collect();
+    if (stillHere.some((p) => p.siteId === siteId)) {
+      return { removed: true, removedFromSite: false };
+    }
+
+    const siteAssignment = await ctx.db
+      .query("userSiteAssignments")
+      .withIndex("by_userId_siteId", (q) =>
+        q.eq("userId", args.userId).eq("siteId", siteId),
+      )
+      .first();
+    if (siteAssignment) await ctx.db.delete(siteAssignment._id);
+    return { removed: true, removedFromSite: !!siteAssignment };
   },
 });
 

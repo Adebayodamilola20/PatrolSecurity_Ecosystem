@@ -91,6 +91,77 @@ function guardLabel(person: { name: string; role: string }) {
   return person.role === 'supervisor' ? `${person.name} (supervisor)` : person.name
 }
 
+/**
+ * Renders a QR code as a labelled sheet: the point, the location under it, and
+ * the serial number in bold, all on white.
+ *
+ * A bare QR image is useless the moment it leaves the screen. Printed and
+ * stuck on a wall, nothing on it says which gate it belongs to; once one is
+ * damaged or photographed by a guard nobody can match it back to a record
+ * without the serial. White because these get photocopied and laminated, and
+ * a dark background kills the contrast a scanner needs.
+ */
+async function buildLabelledQr(opts: {
+  locationName: string
+  pointName: string
+  code: string
+  data: string
+}): Promise<string> {
+  const qrSize = 440
+  const qrDataUrl = await QRCode.toDataURL(opts.data, {
+    width: qrSize,
+    margin: 1,
+    color: { dark: '#111827', light: '#ffffff' },
+  })
+  const qrImage = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error('QR image failed to load'))
+    img.src = qrDataUrl
+  })
+
+  const width = 560
+  const padding = 40
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = 662
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Canvas is unavailable')
+
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.drawImage(qrImage, (width - qrSize) / 2, padding, qrSize, qrSize)
+
+  // Long gate names would otherwise run off both edges of the sheet.
+  const fitFont = (text: string, weight: string, family: string, startSize: number) => {
+    let size = startSize
+    ctx.font = `${weight} ${size}px ${family}`
+    while (size > 12 && ctx.measureText(text).width > width - padding * 2) {
+      size -= 1
+      ctx.font = `${weight} ${size}px ${family}`
+    }
+  }
+
+  ctx.textAlign = 'center'
+  let y = padding + qrSize + 56
+
+  ctx.fillStyle = '#111827'
+  fitFont(opts.pointName, 'bold', 'Arial, sans-serif', 34)
+  ctx.fillText(opts.pointName, width / 2, y)
+
+  y += 34
+  ctx.fillStyle = '#6b7280'
+  fitFont(opts.locationName, 'normal', 'Arial, sans-serif', 22)
+  ctx.fillText(opts.locationName, width / 2, y)
+
+  y += 52
+  ctx.fillStyle = '#111827'
+  fitFont(opts.code, 'bold', '"Courier New", monospace', 34)
+  ctx.fillText(opts.code, width / 2, y)
+
+  return canvas.toDataURL('image/png')
+}
+
 function QRCell({ data, size = 96 }: { data: string; size?: number }) {
   const ref = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
@@ -149,11 +220,13 @@ export default function ClientDetail() {
   // Guard-assignment state: the pool of assignable guards plus, per location,
   // the guard picked in the dropdown and whether a request is in flight.
   const [guardPool, setGuardPool] = useState<Array<{ id: string; convexId?: string; name: string; role: string }>>([])
-  const [pendingGuard, setPendingGuard] = useState<Record<string, string>>({})
   const [assignBusySiteId, setAssignBusySiteId] = useState('')
-  // Same, per sub-location: which guard is picked in that gate's dropdown.
+  // Per QR point: which guard is picked, and which point's picker is open.
+  // Only one opens at a time — every card showing its own dropdown at once was
+  // what made this page feel like a form rather than a list of gates.
   const [pendingSubGuard, setPendingSubGuard] = useState<Record<string, string>>({})
   const [assignBusySubId, setAssignBusySubId] = useState('')
+  const [assignOpenPointId, setAssignOpenPointId] = useState('')
   // A guard already posted to another location triggers a blocking popup so
   // staff can't silently double-assign them.
   const [assignConflict, setAssignConflict] = useState('')
@@ -219,29 +292,7 @@ export default function ClientDetail() {
     return () => window.removeEventListener('focus', onFocus)
   }, [loadGuardPool])
 
-  const assignGuard = async (site: ClientSite) => {
-    const guardId = pendingGuard[site.id]
-    if (!guardId) return
-    try {
-      setAssignBusySiteId(site.id)
-      setActionError('')
-      await api.siteAssignments.assign(site.id, guardId)
-      setPendingGuard((prev) => ({ ...prev, [site.id]: '' }))
-      load()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not assign the guard.'
-      // Already-assigned-elsewhere gets a modal; everything else the inline banner.
-      if (/already assigned/i.test(message)) {
-        setAssignConflict(message)
-      } else {
-        setActionError(message)
-      }
-    } finally {
-      setAssignBusySiteId('')
-    }
-  }
-
-  // Posting to one gate. A guard can hold several at once, so there is no
+  // Posting to one QR point. A guard can hold several at once, so there is no
   // "already posted" block here — only the parent-location rule can conflict.
   const assignSubGuard = async (sub: SubLocation) => {
     const guardId = pendingSubGuard[sub.id]
@@ -251,6 +302,7 @@ export default function ClientDetail() {
       setActionError('')
       await api.checkpointAssignments.assign(sub.id, guardId)
       setPendingSubGuard((prev) => ({ ...prev, [sub.id]: '' }))
+      setAssignOpenPointId('')
       load()
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not post the guard here.'
@@ -288,6 +340,91 @@ export default function ClientDetail() {
     } finally {
       setAssignBusySiteId('')
     }
+  }
+
+  // One compact block per QR point: who is posted there, and a link that
+  // reveals the picker only when you want to change it. Leaving a dropdown and
+  // an Assign button open on every card at once turned a location with three
+  // gates into a wall of form controls.
+  const renderPointPostings = (point: SubLocation) => {
+    const available = guardPool.filter(
+      (g) => !point.postedGuards.some((a) => a.id === g.id || a.id === g.convexId),
+    )
+    const open = assignOpenPointId === point.id
+    return (
+      <div className="mt-3 border-t border-border pt-3">
+        {point.postedGuards.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {point.postedGuards.map((guard) => (
+              <span
+                key={guard.id}
+                className="inline-flex items-center gap-1.5 rounded-md bg-accent px-2 py-1 text-[11px]"
+                title={`${guardLabel(guard)} — ${guard.onDuty ? 'on duty now' : 'off duty'}`}
+              >
+                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${guard.onDuty ? 'bg-success' : 'bg-muted-foreground/40'}`} />
+                <span>{guard.name}</span>
+                {canManage && (
+                  <button
+                    onClick={() => void unassignSubGuard(point, guard)}
+                    disabled={assignBusySubId === point.id}
+                    title={`Remove ${guard.name} from ${point.name}`}
+                    className="text-muted-foreground hover:text-destructive disabled:opacity-50"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {canManage && (open ? (
+          <div className="flex items-center gap-1.5">
+            <select
+              autoFocus
+              value={pendingSubGuard[point.id] ?? ''}
+              onChange={(e) => setPendingSubGuard((prev) => ({ ...prev, [point.id]: e.target.value }))}
+              className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-1.5 text-[11px]"
+            >
+              <option value="">Choose a guard…</option>
+              {available.map((g) => (
+                <option key={g.id} value={g.convexId ?? g.id}>{guardLabel(g)}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => void assignSubGuard(point)}
+              disabled={!pendingSubGuard[point.id] || assignBusySubId === point.id}
+              className="shrink-0 rounded-lg bg-primary px-2.5 py-1.5 text-[11px] font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {assignBusySubId === point.id ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              onClick={() => setAssignOpenPointId('')}
+              title="Cancel"
+              className="shrink-0 rounded-lg p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setAssignOpenPointId(point.id)}
+            className="text-[11px] font-medium text-primary hover:underline"
+          >
+            {point.postedGuards.length ? '+ Assign another' : '+ Assign a guard'}
+          </button>
+        ))}
+
+        {/* An empty dropdown is indistinguishable from a broken one. */}
+        {canManage && open && available.length === 0 && (
+          <div className="mt-1.5 text-[10px] text-muted-foreground">
+            {guardPool.length === 0
+              ? 'No active guards or supervisors exist yet — create one under Users.'
+              : 'Everyone available is already assigned here.'}
+          </div>
+        )}
+      </div>
+    )
   }
 
   const openDeleteSite = (site: ClientSite) => {
@@ -524,13 +661,18 @@ export default function ClientDetail() {
     }
   }
 
-  const downloadQr = async (sub: SubLocation) => {
+  const downloadQr = async (site: ClientSite, sub: SubLocation) => {
     try {
       const qrData = `${window.location.origin}/checkpoints/${sub.id}`
-      const dlUrl = await QRCode.toDataURL(qrData, { width: 300, margin: 2, color: { dark: '#111827', light: '#ffffff' } })
+      const dlUrl = await buildLabelledQr({
+        locationName: site.name,
+        pointName: sub.name,
+        code: sub.code,
+        data: qrData,
+      })
       const a = document.createElement('a')
       a.href = dlUrl
-      a.download = `${sub.code}-qrcode.png`
+      a.download = `${site.name} - ${sub.name} (${sub.code}).png`
       a.click()
     } catch {
       setActionError('Could not generate QR code image.')
@@ -556,7 +698,9 @@ export default function ClientDetail() {
             .sheet { text-align:center; padding:24px; }
             .sheet img { width:280px; height:280px; display:block; margin:0 auto 16px; }
             .site { color:#6b7280; font-size:14px; margin-top:4px; }
-            .code { font-family: monospace; font-size: 13px; margin-top: 8px; color:#6b7280; }
+            /* The serial is what staff read back when a QR is damaged or
+               queried, so it prints as large and as bold as the name. */
+            .code { font-family: monospace; font-size: 20px; font-weight: bold; margin-top: 12px; color:#111827; }
           </style>
         </head>
         <body>
@@ -813,9 +957,10 @@ export default function ClientDetail() {
                             ) : null}
                           </div>
                         </div>
+                        {renderPointPostings(site.locationQr)}
                         <div className="mt-3 flex items-center gap-2 border-t border-primary/20 pt-3">
                           <button
-                            onClick={() => void downloadQr(site.locationQr!)}
+                            onClick={() => void downloadQr(site, site.locationQr!)}
                             className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-accent"
                             title="Download Location QR Code"
                           >
@@ -837,30 +982,35 @@ export default function ClientDetail() {
                         </div>
                       </div>
                     )}
-                    {/* Assigned guards: scans at this location only count for
-                        guards posted here, and the client portal's coverage
-                        numbers are derived from these assignments. */}
+                    {/* Everyone with access to this location, read-only.
+                        Assigning happens on a QR point below — a second
+                        location-wide picker here meant two controls that
+                        disagreed with each other, which is exactly how staff
+                        ended up pressing ✕ on a gate and watching this list
+                        stay put. Removing someone here clears every point. */}
                     <div className="mb-4">
-                      <div className="mb-2 text-xs uppercase tracking-wider text-muted-foreground">Assigned Guards</div>
+                      <div className="mb-2 text-xs uppercase tracking-wider text-muted-foreground">
+                        Assigned Guards
+                      </div>
                       {site.assignedGuards.length === 0 ? (
-                        <div className="rounded-lg border border-dashed border-warning/40 bg-warning/5 px-3 py-3 text-xs text-warning">
-                          No guards posted here yet — assign at least one, or their patrol scans at this location won't be accepted.
+                        <div className="text-xs text-muted-foreground">
+                          Nobody assigned yet — assign guards on the QR points below.
                         </div>
                       ) : (
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-1.5">
                           {site.assignedGuards.map((guard) => (
                             <span
                               key={guard.id}
-                              className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs"
+                              className="inline-flex items-center gap-1.5 rounded-md bg-accent px-2 py-1 text-xs"
+                              title={`${guardLabel(guard)} — ${guard.onDuty ? 'on duty now' : 'off duty'}`}
                             >
-                              <span className={`h-2 w-2 rounded-full ${guard.onDuty ? 'bg-success' : 'bg-muted-foreground/40'}`} />
-                              <span className="font-medium">{guardLabel(guard)}</span>
-                              <span className="text-muted-foreground">{guard.onDuty ? 'on duty' : 'off duty'}</span>
+                              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${guard.onDuty ? 'bg-success' : 'bg-muted-foreground/40'}`} />
+                              <span>{guard.name}</span>
                               {canManage && (
                                 <button
                                   onClick={() => void unassignGuard(site, guard)}
                                   disabled={assignBusySiteId === site.id}
-                                  title={`Remove ${guard.name} from ${site.name}`}
+                                  title={`Remove ${guard.name} from ${site.name} and all its QR points`}
                                   className="text-muted-foreground hover:text-destructive disabled:opacity-50"
                                 >
                                   <X className="h-3 w-3" />
@@ -868,38 +1018,6 @@ export default function ClientDetail() {
                               )}
                             </span>
                           ))}
-                        </div>
-                      )}
-                      {canManage && (
-                        <div className="mt-2 flex items-center gap-2">
-                          <select
-                            value={pendingGuard[site.id] ?? ''}
-                            onChange={(e) => setPendingGuard((prev) => ({ ...prev, [site.id]: e.target.value }))}
-                            className="w-full max-w-xs rounded-lg border border-border bg-background px-3 py-2 text-xs"
-                          >
-                            <option value="">Select a guard to assign…</option>
-                            {guardPool
-                              .filter((g) => !site.assignedGuards.some(
-                                (a) => a.id === g.id || a.id === g.convexId,
-                              ))
-                              .map((g) => (
-                                <option key={g.id} value={g.convexId ?? g.id}>{guardLabel(g)}</option>
-                              ))}
-                          </select>
-                          <button
-                            onClick={() => void assignGuard(site)}
-                            disabled={!pendingGuard[site.id] || assignBusySiteId === site.id}
-                            className="rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {assignBusySiteId === site.id ? 'Saving…' : 'Assign'}
-                          </button>
-                        </div>
-                      )}
-                      {/* An empty dropdown is indistinguishable from a broken
-                          one, so say which it is. */}
-                      {canManage && guardPool.length === 0 && (
-                        <div className="mt-2 text-[11px] text-muted-foreground">
-                          No active guards or supervisors exist yet — create one under Users, then come back here.
                         </div>
                       )}
                     </div>
@@ -961,70 +1079,11 @@ export default function ClientDetail() {
                                   )}
                                 </div>
                               </div>
-                              {/* Who is posted at this gate specifically. A
-                                  location with five gates used to show one
-                                  undifferentiated list of guards, so "who is
-                                  on the back gate tonight" had no answer. */}
-                              <div className="mt-3 border-t border-border pt-3">
-                                <div className="mb-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-                                  Assigned here
-                                </div>
-                                {sub.postedGuards.length === 0 ? (
-                                  <div className="text-[11px] text-muted-foreground">Nobody assigned yet</div>
-                                ) : (
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {sub.postedGuards.map((guard) => (
-                                      <span
-                                        key={guard.id}
-                                        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-[11px]"
-                                        title={guard.onDuty ? 'On duty now' : 'Off duty'}
-                                      >
-                                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${guard.onDuty ? 'bg-success' : 'bg-muted-foreground/40'}`} />
-                                        <span className="font-medium">{guardLabel(guard)}</span>
-                                        {canManage && (
-                                          <button
-                                            onClick={() => void unassignSubGuard(sub, guard)}
-                                            disabled={assignBusySubId === sub.id}
-                                            title={`Remove ${guard.name} from ${sub.name}`}
-                                            className="text-muted-foreground hover:text-destructive disabled:opacity-50"
-                                          >
-                                            <X className="h-3 w-3" />
-                                          </button>
-                                        )}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                                {canManage && (
-                                  <div className="mt-2 flex items-center gap-1.5">
-                                    <select
-                                      value={pendingSubGuard[sub.id] ?? ''}
-                                      onChange={(e) => setPendingSubGuard((prev) => ({ ...prev, [sub.id]: e.target.value }))}
-                                      className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-1.5 text-[11px]"
-                                    >
-                                      <option value="">Assign a guard…</option>
-                                      {guardPool
-                                        .filter((g) => !sub.postedGuards.some(
-                                          (a) => a.id === g.id || a.id === g.convexId,
-                                        ))
-                                        .map((g) => (
-                                          <option key={g.id} value={g.convexId ?? g.id}>{guardLabel(g)}</option>
-                                        ))}
-                                    </select>
-                                    <button
-                                      onClick={() => void assignSubGuard(sub)}
-                                      disabled={!pendingSubGuard[sub.id] || assignBusySubId === sub.id}
-                                      className="shrink-0 rounded-lg bg-primary px-2.5 py-1.5 text-[11px] font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                      {assignBusySubId === sub.id ? 'Saving…' : 'Assign'}
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
+                              {renderPointPostings(sub)}
 
                               <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
                                 <button
-                                  onClick={() => void downloadQr(sub)}
+                                  onClick={() => void downloadQr(site, sub)}
                                   className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-accent"
                                   title="Download QR Code"
                                 >

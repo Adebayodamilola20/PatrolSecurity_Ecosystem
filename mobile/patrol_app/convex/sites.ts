@@ -300,6 +300,9 @@ export const assignUser = internalMutation({
   },
 });
 
+// Removing someone from a location removes them from every gate in it. A gate
+// posting without the location assignment behind it is a guard who looks
+// posted and whose scans are rejected on arrival.
 export const unassignUser = internalMutation({
   args: { siteId: v.id("sites"), userId: v.id("users") },
   handler: async (ctx, args) => {
@@ -310,6 +313,17 @@ export const unassignUser = internalMutation({
       )
       .first();
     if (existing) await ctx.db.delete(existing._id);
-    return { removed: !!existing };
+
+    const postings = await ctx.db
+      .query("userCheckpointAssignments")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .collect();
+    let postsRemoved = 0;
+    for (const posting of postings) {
+      if (posting.siteId !== args.siteId) continue;
+      await ctx.db.delete(posting._id);
+      postsRemoved++;
+    }
+    return { removed: !!existing, postsRemoved };
   },
 });
