@@ -220,6 +220,27 @@ export const api = {
   guards: {
     // Numbers only — clients never see guard identities (names/photos/etc).
     stats: () => request<ClientGuardStats>('/client/guard-stats'),
+    // The one exception, and a narrow one: you cannot ask someone to address
+    // a message to a list of anonymous people. Names only, no contact
+    // details, and only guards posted at this client's own locations.
+    addressable: () =>
+      request<Array<{ id: string; name: string; siteNames: string[] }>>(
+        '/client/addressable-guards',
+      ),
+  },
+  // Instructions the client writes for the guards on their own sites. The
+  // server re-checks that the location and every named recipient belong to
+  // this account before anything is written.
+  passOns: {
+    list: () => request<ClientPassOn[]>('/pass-on-logs'),
+    create: (data: {
+      title: string
+      instruction: string
+      siteId?: string
+      checkpointId?: string
+      recipientUserIds?: string[]
+      requiresAcknowledgement?: boolean
+    }) => request<ClientPassOn>('/pass-on-logs', { method: 'POST', body: JSON.stringify(data) }),
   },
   scans: {
     list: (params?: Record<string, string>) =>
@@ -261,5 +282,6 @@ import type {
   ClientCheckpoint,
   ClientSiteDetail,
   ClientReport,
+  ClientPassOn,
   AnalyticsSummary,
 } from '../types'

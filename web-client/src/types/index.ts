@@ -86,6 +86,28 @@ export interface ClientReport {
   submittedAt: number
 }
 
+/**
+ * An instruction written for the guards on this account's sites. Unlike every
+ * other type here it flows outward — the client writes it, the guards read it
+ * on their phones.
+ */
+export interface ClientPassOn {
+  id: string
+  title: string
+  instruction: string
+  priority: string
+  siteId: string | null
+  siteName: string | null
+  checkpointId: string | null
+  checkpointName: string | null
+  siteLabel: string
+  requiresAcknowledgement: boolean
+  createdByName: string
+  createdByRole: string | null
+  active: boolean
+  createdAt: string
+}
+
 export interface ClientOverview {
   guardsOnDuty: number
   totalGuards: number

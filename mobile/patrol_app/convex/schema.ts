@@ -469,6 +469,9 @@ export default defineSchema({
     priority: v.string(),
     siteLabel: v.string(),
     checkpointId: v.optional(v.id("checkpoints")),
+    // Named recipients. Empty/absent means everyone the site or sub-location
+    // reaches; a non-empty list reaches only those people.
+    recipientUserIds: v.optional(v.array(v.id("users"))),
     requiresAcknowledgement: v.boolean(),
     createdBy: v.id("users"),
     active: v.boolean(),

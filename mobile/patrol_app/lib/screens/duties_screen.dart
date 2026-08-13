@@ -350,6 +350,32 @@ class _DutiesScreenState extends State<DutiesScreen> {
                 final instruction = log['instruction'] as String? ?? '';
                 final priority = log['priority'] as String? ?? 'normal';
                 final createdByName = log['createdByName'] as String? ?? '';
+                // Where it applies, who it is from, and when. A client can
+                // now write these, so "an instruction" is not enough — the
+                // guard has to see whose instruction, for which gate, and
+                // how old it is before acting on it at 2am.
+                final createdByRole = log['createdByRole'] as String? ?? '';
+                final clientName = log['clientName'] as String? ?? '';
+                final placeName =
+                    (log['checkpointName'] as String?)?.isNotEmpty == true
+                    ? log['checkpointName'] as String
+                    : (log['siteName'] as String?)?.isNotEmpty == true
+                    ? log['siteName'] as String
+                    : (log['siteLabel'] as String? ?? '');
+                final sentAt = DateTime.tryParse(
+                  log['createdAt'] as String? ?? '',
+                )?.toLocal();
+                final sentAtLabel = sentAt == null
+                    ? ''
+                    : '${sentAt.day.toString().padLeft(2, '0')}/'
+                          '${sentAt.month.toString().padLeft(2, '0')} '
+                          '${sentAt.hour.toString().padLeft(2, '0')}:'
+                          '${sentAt.minute.toString().padLeft(2, '0')}';
+                final fromLabel = [
+                  if (createdByName.isNotEmpty) createdByName,
+                  if (createdByRole == 'main_account' && clientName.isNotEmpty)
+                    '($clientName)',
+                ].join(' ');
                 return Card(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
@@ -422,14 +448,41 @@ class _DutiesScreenState extends State<DutiesScreen> {
                           overflow: TextOverflow.ellipsis,
                           maxLines: 5,
                         ),
-                        if (createdByName.isNotEmpty) ...[
+                        if (placeName.isNotEmpty) ...[
                           const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.place_outlined,
+                                size: 14,
+                                color: AppTheme.textSecondary,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  placeName,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppTheme.textSecondary,
+                                  ),
+                                  softWrap: true,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        if (fromLabel.isNotEmpty || sentAtLabel.isNotEmpty) ...[
+                          const SizedBox(height: 4),
                           Text(
-                            'By: $createdByName',
+                            [
+                              if (fromLabel.isNotEmpty) 'From $fromLabel',
+                              if (sentAtLabel.isNotEmpty) sentAtLabel,
+                            ].join(' · '),
                             style: TextStyle(
                               fontSize: 12,
                               color: AppTheme.textSecondary,
                             ),
+                            softWrap: true,
                           ),
                         ],
                         const SizedBox(height: 12),

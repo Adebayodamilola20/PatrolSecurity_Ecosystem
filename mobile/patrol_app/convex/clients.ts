@@ -479,6 +479,48 @@ export const portalReports = internalQuery({
   },
 });
 
+/**
+ * The guards a client may address a pass-on to.
+ *
+ * Note this is a deliberate, narrow exception to the rule that the portal
+ * shows clients numbers and never identities: you cannot ask someone to pick
+ * a recipient from a list of anonymous people. It is limited to the guards
+ * posted at that client's own locations, carries no contact details, and is
+ * the only portal query that returns a guard's name.
+ */
+export const portalAddressableGuards = internalQuery({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const sites = await ctx.db
+      .query("sites")
+      .withIndex("by_clientId", (q) => q.eq("clientId", args.clientId))
+      .collect();
+
+    const seen = new Map<string, { id: string; name: string; siteNames: string[] }>();
+    for (const site of sites) {
+      const assignments = await ctx.db
+        .query("userSiteAssignments")
+        .withIndex("by_siteId", (q) => q.eq("siteId", site._id))
+        .collect();
+      for (const assignment of assignments) {
+        const person = await ctx.db.get(assignment.userId);
+        if (!person || !person.active || !POSTABLE_ROLES.has(person.role)) continue;
+        const existing = seen.get(person._id);
+        if (existing) {
+          existing.siteNames.push(site.name);
+        } else {
+          seen.set(person._id, {
+            id: person._id,
+            name: person.name,
+            siteNames: [site.name],
+          });
+        }
+      }
+    }
+    return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name));
+  },
+});
+
 export const portalGuardStats = internalQuery({
   args: { clientId: v.id("clients") },
   handler: async (ctx, args) => {

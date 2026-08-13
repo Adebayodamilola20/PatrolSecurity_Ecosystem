@@ -5,6 +5,7 @@ import {
   MapPin,
   FileText,
   BarChart3,
+  MessageSquare,
 } from 'lucide-react'
 
 /** The portal's destinations, shared by the desktop sidebar and the mobile
@@ -17,4 +18,5 @@ export const navItems = [
   { to: '/locations', label: 'Locations', icon: MapPin },
   { to: '/analytics', label: 'Analytics', icon: BarChart3 },
   { to: '/reports', label: 'Reports', icon: FileText },
+  { to: '/pass-ons', label: 'Pass-ons', icon: MessageSquare },
 ]

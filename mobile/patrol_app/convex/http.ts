@@ -2413,7 +2413,9 @@ http.route({
   path: "/pass-on-logs",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
-    const user = await requireAuth(ctx, request);
+    // Client accounts read their own pass-ons here; listForUser scopes a
+    // main_account to log.clientId === their own client and nothing else.
+    const user = await requireAuth(ctx, request, { allowClientPortal: true });
     if (!user) return unauthorized();
     return json(await ctx.runQuery(internal.passOnLogs.listForUser, { userId: _uid(user.convexId) }));
   }),
@@ -2423,7 +2425,10 @@ http.route({
   path: "/pass-on-logs",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    const user = await requireAuth(ctx, request);
+    // A client writes pass-ons for its own guards from the portal. The
+    // mutation re-checks ownership of the location and of every named
+    // recipient — this route resolves ids, it does not vouch for them.
+    const user = await requireAuth(ctx, request, { allowClientPortal: true });
     if (!user) return unauthorized();
     const roleErr = requireRole(user, ["admin", "main_account", "supervisor"]);
     if (roleErr) return roleErr;
@@ -2434,12 +2439,21 @@ http.route({
       return badRequest("title and instruction are required");
     }
     const checkpointId = await maybeResolveCheckpointId(ctx, body?.checkpointId);
-    const result = await ctx.runMutation(internal.passOnLogs.create, {
+    const siteId = body?.siteId
+      ? await ctx.runQuery(internal.sites.resolveId, { id: String(body.siteId) })
+      : null;
+    if (body?.siteId && !siteId) return notFound("Location not found");
+    try {
+      const result = await ctx.runMutation(internal.passOnLogs.create, {
       title,
       instruction,
       priority: typeof body?.priority === "string" ? body.priority : undefined,
       siteLabel: typeof body?.siteLabel === "string" ? body.siteLabel : undefined,
       checkpointId,
+      siteId: siteId ?? undefined,
+      recipientUserIds: Array.isArray(body?.recipientUserIds)
+        ? body.recipientUserIds.filter((x: unknown) => typeof x === "string" && x)
+        : undefined,
       requiresAcknowledgement:
         typeof body?.requiresAcknowledgement === "boolean"
           ? body.requiresAcknowledgement
@@ -2452,7 +2466,13 @@ http.route({
       details: `Created pass-on-log: ${title}`,
       ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
     });
-    return json(result, { status: 201 });
+      return json(result, { status: 201 });
+    } catch (err) {
+      // Ownership failures come back from the mutation as plain errors; a
+      // client sending another tenant's ids should read as a refusal, not a
+      // server fault.
+      return badRequest(err instanceof Error ? err.message : "Could not create this pass-on");
+    }
   }),
 });
 
@@ -3827,6 +3847,17 @@ http.route({ path: "/client/guard-stats", method: "GET", handler: httpAction(asy
   const clientId = _cid(user.clientId);
   if (!clientId) return json({ assigned: 0, clockedIn: 0, pending: 0 });
   return json(await ctx.runQuery(internal.clients.portalGuardStats, { clientId }));
+})});
+
+// Guards a client can address a pass-on to: names only, and only the guards
+// posted at that client's own locations.
+http.route({ path: "/client/addressable-guards", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request, { allowClientPortal: true });
+  if (!user) return unauthorized();
+  if (user.role !== "main_account") return forbidden("The client portal is for client accounts only.");
+  const clientId = _cid(user.clientId);
+  if (!clientId) return json([]);
+  return json(await ctx.runQuery(internal.clients.portalAddressableGuards, { clientId }));
 })});
 
 // [client-structure] Flat checkpoint list for the portal (compat shape).

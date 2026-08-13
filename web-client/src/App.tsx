@@ -13,6 +13,7 @@ import Guards from './pages/Guards'
 import Scans from './pages/Scans'
 import Locations from './pages/Locations'
 import Reports from './pages/Reports'
+import PassOns from './pages/PassOns'
 import { useClientAuthStore } from './stores/useClientAuthStore'
 import { useIdleLogout } from './hooks/useIdleLogout'
 
@@ -82,6 +83,9 @@ export default function App() {
           {/* Old flat checkpoints view is superseded by the grouped Locations view. */}
           <Route path="/checkpoints" element={<Navigate to="/locations" replace />} />
           <Route path="/reports" element={<Reports />} />
+          {/* The one screen that flows outward: instructions this client
+              writes for the guards posted on its own sites. */}
+          <Route path="/pass-ons" element={<PassOns />} />
           <Route
             path="/analytics"
             element={

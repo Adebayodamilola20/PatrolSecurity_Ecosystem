@@ -851,3 +851,139 @@ describe("personnel editing and password reset", () => {
     expect(serialized).not.toMatch(/not-a-real-hash/);
   });
 });
+
+/**
+ * Client-written pass-ons.
+ *
+ * The old visibility rule was `!log.checkpointId || ...` — a pass-on with no
+ * sub-location reached every guard on the platform. That was survivable while
+ * only staff could write them and stops being survivable the moment a client
+ * can, so the first test here is the leak itself.
+ */
+describe("client pass-on logs", () => {
+  const passOn = (extra: Record<string, unknown> = {}) =>
+    JSON.stringify({ title: "Extra patrol", instruction: "Walk the rear fence hourly", ...extra });
+
+  test("a client can write a pass-on for its own location", async () => {
+    const res = await t.fetch("/pass-on-logs", {
+      method: "POST",
+      headers: auth(w.tokens.alphaPortal),
+      body: passOn({ siteId: w.alphaSite }),
+    });
+    expect(res.status).toBe(201);
+    const created = await res.json();
+    expect(created.siteId).toBe(w.alphaSite);
+  });
+
+  test("a client cannot write a pass-on onto another company's location", async () => {
+    const res = await t.fetch("/pass-on-logs", {
+      method: "POST",
+      headers: auth(w.tokens.alphaPortal),
+      body: passOn({ siteId: w.bravoSite }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).message ?? "").toMatch(/does not belong/i);
+    const logs = await t.run((ctx) => ctx.db.query("passOnLogs").collect());
+    expect(logs).toHaveLength(0);
+  });
+
+  test("a client cannot address a guard who works for someone else", async () => {
+    const res = await t.fetch("/pass-on-logs", {
+      method: "POST",
+      headers: auth(w.tokens.alphaPortal),
+      body: passOn({ siteId: w.alphaSite, recipientUserIds: [w.bravoGuard] }),
+    });
+    expect(res.status).toBe(400);
+    const logs = await t.run((ctx) => ctx.db.query("passOnLogs").collect());
+    expect(logs).toHaveLength(0);
+  });
+
+  test("a client never sees another company's pass-ons", async () => {
+    await t.fetch("/pass-on-logs", {
+      method: "POST",
+      headers: auth(w.tokens.admin),
+      body: passOn({ title: "Bravo only", siteId: w.bravoSite }),
+    });
+    const mine = await (
+      await t.fetch("/pass-on-logs", { method: "GET", headers: auth(w.tokens.alphaPortal) })
+    ).json();
+    expect(mine.every((log: any) => log.title !== "Bravo only")).toBe(true);
+  });
+
+  test("a placeless pass-on stays inside the tenant that wrote it", async () => {
+    // This is the old leak: no site, no sub-location, so the previous rule
+    // handed it to every guard in the system.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("passOnLogs", {
+        clientId: w.alphaClient,
+        title: "Alpha internal",
+        instruction: "Alpha guards only",
+        priority: "normal",
+        siteLabel: "",
+        requiresAcknowledgement: false,
+        createdBy: w.admin,
+        active: true,
+        createdAt: Date.now(),
+      });
+    });
+    const bravoSees = await (
+      await t.fetch("/pass-on-logs", { method: "GET", headers: auth(w.tokens.bravoGuard) })
+    ).json();
+    expect(bravoSees.every((log: any) => log.title !== "Alpha internal")).toBe(true);
+
+    const alphaSees = await (
+      await t.fetch("/pass-on-logs", { method: "GET", headers: auth(w.tokens.alphaGuard) })
+    ).json();
+    expect(alphaSees.some((log: any) => log.title === "Alpha internal")).toBe(true);
+  });
+
+  test("a named recipient gets it and the guard beside them does not", async () => {
+    await t.fetch("/pass-on-logs", {
+      method: "POST",
+      headers: auth(w.tokens.alphaPortal),
+      body: passOn({ title: "For Ade only", siteId: w.alphaSite, recipientUserIds: [w.alphaGuard] }),
+    });
+    const ade = await (
+      await t.fetch("/pass-on-logs", { method: "GET", headers: auth(w.tokens.alphaGuard) })
+    ).json();
+    const bola = await (
+      await t.fetch("/pass-on-logs", { method: "GET", headers: auth(w.tokens.alphaRelief) })
+    ).json();
+    expect(ade.some((log: any) => log.title === "For Ade only")).toBe(true);
+    expect(bola.every((log: any) => log.title !== "For Ade only")).toBe(true);
+  });
+
+  test("the guard sees who sent it, from where, and when", async () => {
+    await t.fetch("/pass-on-logs", {
+      method: "POST",
+      headers: auth(w.tokens.alphaPortal),
+      body: passOn({ title: "Context check", siteId: w.alphaSite }),
+    });
+    const logs = await (
+      await t.fetch("/pass-on-logs", { method: "GET", headers: auth(w.tokens.alphaGuard) })
+    ).json();
+    const log = logs.find((l: any) => l.title === "Context check");
+    expect(log.createdByName).toBe("Alpha Portal");
+    expect(log.createdByRole).toBe("main_account");
+    expect(log.siteName).toBe("Alpha Ikeja Warehouse");
+    expect(log.clientName).toBe("Alpha Retail Group");
+    expect(Date.parse(log.createdAt)).toBeGreaterThan(0);
+  });
+
+  test("the addressable roster only ever lists this client's own guards", async () => {
+    const roster = await (
+      await t.fetch("/client/addressable-guards", { method: "GET", headers: auth(w.tokens.alphaPortal) })
+    ).json();
+    const names = roster.map((g: any) => g.name);
+    expect(names).toContain("Ade Guard");
+    expect(names).not.toContain("Chidi Guard");
+  });
+
+  test("a guard cannot read the addressable roster at all", async () => {
+    const res = await t.fetch("/client/addressable-guards", {
+      method: "GET",
+      headers: auth(w.tokens.alphaGuard),
+    });
+    expect([401, 403]).toContain(res.status);
+  });
+});
