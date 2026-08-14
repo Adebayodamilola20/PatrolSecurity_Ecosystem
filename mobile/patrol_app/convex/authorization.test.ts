@@ -1568,3 +1568,58 @@ describe("emergency knows where the guard is posted", () => {
     expect(row.siteId).toBe(w.alphaSite);
   });
 });
+
+describe("shifts nobody clocked out of", () => {
+  test("a 44-hour shift is closed at the last evidence, not at now", async () => {
+    const clockIn = Date.now() - 44 * 60 * 60 * 1000;
+    const lastFix = clockIn + 2 * 60 * 60 * 1000;
+    const shiftId = await t.run(async (ctx) => {
+      const id = await ctx.db.insert("shifts", {
+        clientId: w.alphaClient,
+        siteId: w.alphaSite,
+        userId: w.alphaGuard,
+        status: "active",
+        clockIn,
+        clockInPhoto: "test-photo",
+        siteLabel: "Alpha Ikeja Warehouse",
+        createdAt: clockIn,
+      });
+      await ctx.db.insert("officerPositions", {
+        userId: w.alphaGuard,
+        latitude: 6.5244,
+        longitude: 3.3792,
+        capturedAt: lastFix,
+      });
+      return id;
+    });
+
+    const result = await t.mutation(internal.shifts.autoCloseStaleShifts, {});
+    expect(result.closed).toBe(1);
+
+    const shift = await t.run((ctx) => ctx.db.get(shiftId));
+    expect(shift?.status).toBe("completed");
+    // Credited to the last fix, not to the moment the sweeper ran — nobody
+    // should be paid for the 42 hours after they went home.
+    expect(shift?.clockOut).toBe(lastFix);
+  });
+
+  test("a shift that started an hour ago is left alone", async () => {
+    const clockIn = Date.now() - 60 * 60 * 1000;
+    const shiftId = await t.run((ctx) =>
+      ctx.db.insert("shifts", {
+        clientId: w.alphaClient,
+        siteId: w.alphaSite,
+        userId: w.alphaGuard,
+        status: "active",
+        clockIn,
+        clockInPhoto: "test-photo",
+        siteLabel: "Alpha Ikeja Warehouse",
+        createdAt: clockIn,
+      }),
+    );
+    const result = await t.mutation(internal.shifts.autoCloseStaleShifts, {});
+    expect(result.closed).toBe(0);
+    const shift = await t.run((ctx) => ctx.db.get(shiftId));
+    expect(shift?.status).toBe("active");
+  });
+});

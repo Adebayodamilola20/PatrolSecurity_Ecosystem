@@ -17,6 +17,11 @@ class ShiftProvider extends ChangeNotifier {
   double? _clockOutDistanceMeters;
   Timer? _positionTimer;
   bool _positionTracking = false;
+  /// Whether the guard granted "all the time" location at clock-in. False means
+  /// their position stops updating as soon as the app is closed, which the UI
+  /// should say rather than leave them assuming they are being tracked.
+  bool _backgroundTrackingGranted = false;
+  bool get backgroundTrackingGranted => _backgroundTrackingGranted;
   bool _sendingPosition = false;
   Future<void>? _statusLoadFuture;
   DateTime? _statusLoadedAt;
@@ -188,6 +193,14 @@ class ShiftProvider extends ChangeNotifier {
         notifyListeners();
         return false;
       }
+      // Ask for "all the time" here, at the start of the shift, because this
+      // is the only moment the request makes sense to a guard: they are
+      // clocking on, and tracking runs until they clock off. Declining does
+      // not block the shift — it just means the position stops updating once
+      // the app is closed.
+      _backgroundTrackingGranted =
+          await LocationService.ensureBackgroundPermission();
+
       final data = await ApiService.clockIn(
         latitude: location.latitude,
         longitude: location.longitude,

@@ -30,6 +30,20 @@
 	<string>Camera is used to scan QR codes at checkpoints</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Your location is used to verify you are at the checkpoint</string>
+	<!-- Tracking continues while the phone is pocketed and the app closed.
+	     Without the Always permission and the location background mode iOS
+	     suspends the app on the home button and position updates stop dead:
+	     a guard's dot froze wherever they last had the app open and stayed
+	     there for days. The background indicator keeps the blue status bar
+	     visible so a guard can always tell tracking is running. -->
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Your location is shared with the control room for the whole of your shift, including while the app is closed, so supervisors can see where you are and send help to the right place. Tracking stops when you clock out.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Your location is shared with the control room for the whole of your shift, including while the app is closed. Tracking stops when you clock out.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 	<!-- Without this dictionary iOS refuses the temporary full-accuracy prompt
 	     outright, so a guard whose Precise Location is off can never be asked
 	     for it and every scan fails on a fuzzed ~1400m reading. -->

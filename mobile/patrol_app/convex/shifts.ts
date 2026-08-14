@@ -365,3 +365,61 @@ export const clockOut = internalMutation({
     };
   },
 });
+
+/**
+ * Close shifts nobody clocked out of.
+ *
+ * A guard went home without clocking out and stayed "on patrol" for 44 hours,
+ * pinned to a spot he had long left. Nobody works a 44-hour shift, and an open
+ * shift is not harmless: scans are only accepted while one is running, so a
+ * forgotten shift leaves the door open indefinitely and the live map keeps
+ * presenting a stale fix as a live one.
+ *
+ * The shift is closed at the last moment we have evidence for — the guard's
+ * final position or scan — rather than at "now", so the timesheet does not
+ * credit hours nobody worked. Marked so a supervisor can tell an auto-close
+ * from a real one.
+ */
+export const autoCloseStaleShifts = internalMutation({
+  args: { maxHours: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const maxMs = (args.maxHours ?? 16) * 60 * 60 * 1000;
+    const cutoff = Date.now() - maxMs;
+
+    const open = await ctx.db
+      .query("shifts")
+      .withIndex("by_status", (q) => q.eq("status", "active"))
+      .collect();
+
+    let closed = 0;
+    for (const shift of open) {
+      if (shift.clockIn > cutoff) continue;
+
+      const lastPosition = await ctx.db
+        .query("officerPositions")
+        .withIndex("by_userId_capturedAt", (q) => q.eq("userId", shift.userId))
+        .order("desc")
+        .first();
+      const lastScan = await ctx.db
+        .query("scans")
+        .withIndex("by_officerId_scannedAt", (q) =>
+          q.eq("officerId", shift.userId),
+        )
+        .order("desc")
+        .first();
+
+      const lastEvidence = Math.max(
+        shift.clockIn,
+        lastPosition?.capturedAt ?? 0,
+        lastScan?.scannedAt ?? 0,
+      );
+
+      await ctx.db.patch(shift._id, {
+        status: "completed",
+        clockOut: lastEvidence,
+      });
+      closed++;
+    }
+    return { closed, checked: open.length };
+  },
+});

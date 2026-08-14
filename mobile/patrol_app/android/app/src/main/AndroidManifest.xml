@@ -2,6 +2,18 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- Tracking a guard who has pocketed the phone.
+
+         Without these the OS suspends the app the moment it leaves the screen
+         and position updates simply stop: a guard's dot froze wherever they
+         last had the app open and stayed there for days. BACKGROUND_LOCATION
+         keeps the fix coming; the FOREGROUND_SERVICE pair is what Android 14+
+         requires before a service may use location, and it forces the
+         persistent "Patrol tracking active" notification — the guard can
+         always see that they are being tracked. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <application
         android:label="patrol_app"
         android:name="${applicationName}"

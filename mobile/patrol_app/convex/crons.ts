@@ -20,6 +20,17 @@ crons.interval(
   {},
 );
 
+// A guard who goes home without clocking out stays "on patrol" indefinitely:
+// their scans keep being accepted and the live map keeps presenting a fix that
+// is hours old as a current position. One went 44 hours. Hourly is often
+// enough — nothing happens in the gap that was not already happening.
+crons.interval(
+  "close shifts nobody clocked out of",
+  { hours: 1 },
+  internal.shifts.autoCloseStaleShifts,
+  {},
+);
+
 crons.daily(
   "purge expired refresh tokens",
   { hourUTC: 3, minuteUTC: 15 },

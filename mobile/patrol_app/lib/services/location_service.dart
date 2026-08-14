@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'package:geolocator/geolocator.dart';
 
 class SafeLocationResult {
@@ -69,16 +70,53 @@ class LocationService {
   static final StreamController<Position> _positions =
       StreamController<Position>.broadcast();
 
+  /// Settings that keep the fix coming once the phone is pocketed.
+  ///
+  /// A plain [LocationSettings] stream is killed by the OS the moment the app
+  /// leaves the screen, which is how a guard's dot ended up frozen at the spot
+  /// they last had the app open — for days, through a shift they never clocked
+  /// out of. Android needs a foreground service, which by law shows a
+  /// persistent notification; iOS needs background updates enabled explicitly.
+  /// Both keep the guard visibly informed that they are being tracked, which
+  /// is the right trade: covert tracking of staff is not what this is for.
+  static LocationSettings _trackingSettings() {
+    if (Platform.isAndroid) {
+      return AndroidSettings(
+        accuracy: LocationAccuracy.best,
+        distanceFilter: 0,
+        forceLocationManager: false,
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationTitle: 'Patrol tracking active',
+          notificationText:
+              'Your location is shared with the control room until you clock out.',
+          enableWakeLock: true,
+          setOngoing: true,
+        ),
+      );
+    }
+    if (Platform.isIOS) {
+      return AppleSettings(
+        accuracy: LocationAccuracy.best,
+        distanceFilter: 0,
+        allowBackgroundLocationUpdates: true,
+        // Leaves the blue status bar showing, so tracking is never silent.
+        showBackgroundLocationIndicator: true,
+        // iOS otherwise pauses updates when it decides the phone is stationary
+        // and does not reliably resume — a guard standing a post disappears.
+        pauseLocationUpdatesAutomatically: false,
+      );
+    }
+    return const LocationSettings(
+      accuracy: LocationAccuracy.best,
+      distanceFilter: 0,
+    );
+  }
+
   static void _openStream() {
     if (_warmSubscription != null) return;
     _warmSubscription =
         Geolocator.getPositionStream(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.best,
-            // Every update, however small the movement: a stationary guard
-            // still needs the fix to tighten while they stand at the QR code.
-            distanceFilter: 0,
-          ),
+          locationSettings: _trackingSettings(),
         ).listen(
           (position) {
             if (!_positions.isClosed) _positions.add(position);
@@ -101,6 +139,31 @@ class LocationService {
   static void startWarmTracking() {
     _warmTrackingRequested = true;
     _openStream();
+  }
+
+  /// Asks for the "Allow all the time" permission, which is what actually keeps
+  /// the fix coming once the phone is locked and in a pocket.
+  ///
+  /// Android will not grant it in the same prompt as while-using-the-app: it
+  /// has to be a second, separate request, and from Android 11 the system
+  /// sends the guard to Settings rather than showing a dialog. Returns whether
+  /// background tracking is available so the caller can say so plainly instead
+  /// of promising tracking it is not going to get.
+  static Future<bool> ensureBackgroundPermission() async {
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.always) return true;
+    if (permission == LocationPermission.whileInUse) {
+      // Prompting again is what escalates while-in-use to always. If the guard
+      // declines, the shift still runs — it just stops updating once the app
+      // is closed, and the map now shows that position as stale rather than
+      // pretending it is current.
+      permission = await Geolocator.requestPermission();
+      return permission == LocationPermission.always;
+    }
+    return false;
   }
 
   /// Releases the receiver once the guard is off duty, so an idle phone is not

@@ -11,7 +11,7 @@ import {
 } from '../services/websocket'
 import type { Checkpoint, Scan, User } from '../types'
 
-type OfficerStatus = 'responding' | 'patrol' | 'onduty'
+type OfficerStatus = 'responding' | 'patrol' | 'onduty' | 'stale'
 
 interface LiveOfficer {
   id: string
@@ -65,6 +65,14 @@ const STATUS_META: Record<
     marker: '#16a34a',
     badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
     dot: 'bg-emerald-500',
+  },
+  // Clocked in, but the app has not reported in long enough that the pin is
+  // history rather than a location. Grey so it never reads as live.
+  stale: {
+    label: 'Position stale',
+    marker: '#9ca3af',
+    badge: 'bg-gray-100 text-gray-700 dark:bg-gray-500/15 dark:text-gray-300',
+    dot: 'bg-gray-400',
   },
 }
 
@@ -140,8 +148,30 @@ function timeAgo(iso?: string | null) {
   return `Last update: ${Math.floor(hrs / 24)}d ago`
 }
 
+/**
+ * How old a fix may be before the map stops calling it a position.
+ *
+ * The phone reports every 30s and the server keeps a heartbeat every 5 minutes
+ * even for a guard standing still, so anything past 30 minutes means the app
+ * has stopped reporting — closed, killed, or out of signal. A guard was shown
+ * as "On patrol" at a spot he had left 44 hours earlier, which is worse than
+ * showing nothing: it is a confident wrong answer.
+ */
+const STALE_POSITION_MS = 30 * 60 * 1000
+
+function isStale(officer: LiveOfficer): boolean {
+  if (officer.lat == null || officer.lng == null) return false
+  if (!officer.lastSeenAt) return true
+  const seen = Date.parse(officer.lastSeenAt)
+  if (Number.isNaN(seen)) return true
+  return Date.now() - seen > STALE_POSITION_MS
+}
+
 function statusFor(officer: LiveOfficer, responding: Set<string>): OfficerStatus {
   if (responding.has(officer.id)) return 'responding'
+  // An old fix is not a location. Say the position is stale rather than paint
+  // the guard as actively patrolling somewhere they left days ago.
+  if (isStale(officer)) return 'stale'
   // A guard we have a live position/scan for is "on patrol"; on-duty with no
   // fix yet is just "on duty".
   if (officer.lat != null && officer.lng != null) return 'patrol'
@@ -222,7 +252,9 @@ export function PatrolMap() {
         locatable: officer.lat != null && officer.lng != null,
       })
     })
-    const rank: Record<OfficerStatus, number> = { responding: 0, patrol: 1, onduty: 2 }
+    // Stale sits last: it is the least actionable state and the one that
+    // should not be competing for attention with a guard who is actually out.
+    const rank: Record<OfficerStatus, number> = { responding: 0, patrol: 1, onduty: 2, stale: 3 }
     rows.sort((a, b) => rank[a.status] - rank[b.status] || a.name.localeCompare(b.name))
     setOfficers(rows)
   }, [])
