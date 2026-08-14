@@ -169,20 +169,18 @@ export default function PostOrders() {
               <textarea required value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} placeholder="e.g. Check rear entrance every 30 minutes." className="mt-1 min-h-32 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground" />
             </label>
 
-            {/* Guards and supervisors are picked separately: one list walks the
-                post, the other oversees it, and the record keeps the two apart.
-                None selected = everyone the location reaches. */}
+            {/* One list for everyone who can hold a post, tagged by role.
+                Two separate pickers made staff choose which box a name lived
+                in before they could find it — and the answer was never
+                obvious from the name. The record still keeps guards and
+                supervisors apart; the split happens on save, from the role
+                each person already has. None selected = everyone the
+                location reaches. */}
             <GuardPicker
-              label="Guard"
-              guards={users.filter((u) => u.role === 'guard')}
-              selected={form.assignedUserIds}
-              onChange={(ids) => setForm((f) => ({ ...f, assignedUserIds: ids }))}
-            />
-            <GuardPicker
-              label="Supervisor"
-              guards={users.filter((u) => u.role === 'supervisor')}
-              selected={form.supervisorUserIds}
-              onChange={(ids) => setForm((f) => ({ ...f, supervisorUserIds: ids }))}
+              label="Assign to"
+              guards={users}
+              selected={[...form.assignedUserIds, ...form.supervisorUserIds]}
+              onChange={(ids) => setForm((f) => ({ ...f, ...splitByRole(ids, users) }))}
             />
 
             <div className="text-xs text-muted-foreground">
@@ -321,6 +319,22 @@ export default function PostOrders() {
 }
 
 /**
+ * Split one mixed selection back into the two lists the record keeps.
+ *
+ * The form shows a single dropdown because that is how staff think about it —
+ * "who is on this post" — but a guard and a supervisor are different things on
+ * the order, so the role each person already has decides which list they land
+ * in. Nobody has to classify anyone by hand.
+ */
+function splitByRole(ids: string[], roster: User[]) {
+  const roleOf = new Map(roster.map((u) => [u.id, u.role]))
+  return {
+    assignedUserIds: ids.filter((id) => roleOf.get(id) !== 'supervisor'),
+    supervisorUserIds: ids.filter((id) => roleOf.get(id) === 'supervisor'),
+  }
+}
+
+/**
  * Multi-select guard dropdown with a search box — the roster can get long
  * enough that a flat checkbox list stops being usable.
  */
@@ -371,7 +385,7 @@ function GuardPicker({
       <div className="mb-2 text-sm font-medium">
         {label}{' '}
         <span className="font-normal text-muted-foreground">
-          (leave empty for every guard at this location)
+          (guards and supervisors — leave empty for everyone at this location)
         </span>
       </div>
 
@@ -380,10 +394,14 @@ function GuardPicker({
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-2 text-left text-sm hover:border-primary/50"
       >
-        <span className={chosen.length ? 'text-foreground' : 'text-muted-foreground'}>
+        {/* The list holds both roles now, so the summary cannot say "guards".
+            Name them when there are few enough to read at a glance. */}
+        <span className={chosen.length ? 'truncate text-foreground' : 'text-muted-foreground'}>
           {chosen.length === 0
-            ? 'All guards at this location'
-            : `${chosen.length} guard${chosen.length === 1 ? '' : 's'} selected`}
+            ? 'Everyone at this location'
+            : chosen.length <= 3
+              ? chosen.map((g) => g.name).join(', ')
+              : `${chosen.length} people selected`}
         </span>
         <span className="text-xs text-muted-foreground">{open ? 'Close' : 'Select'}</span>
       </button>
@@ -413,7 +431,7 @@ function GuardPicker({
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search guards by name or email"
+              placeholder="Search by name or email"
               className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
             />
           </div>
@@ -429,11 +447,18 @@ function GuardPicker({
                 onClick={() => toggle(g.id)}
                 className="flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-accent"
               >
+                {/* One list for both roles, so the tag has to be on every
+                    row — an untagged name in a mixed list reads as "the
+                    default kind", and there is no default kind here. */}
                 <span className="flex items-center gap-2">
                   {g.name}
-                  {g.role === 'supervisor' && (
-                    <span className="text-[10px] uppercase text-muted-foreground">Supervisor</span>
-                  )}
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+                    g.role === 'supervisor'
+                      ? 'bg-primary/15 text-primary'
+                      : 'bg-muted text-muted-foreground'
+                  }`}>
+                    {g.role === 'supervisor' ? 'Supervisor' : 'Guard'}
+                  </span>
                 </span>
                 {selected.includes(g.id) && <CheckCircle2 className="h-4 w-4 text-primary" />}
               </button>
@@ -584,18 +609,18 @@ function PostOrderDetail({
           />
         </label>
 
-        {/* Reassign: add or remove guards and supervisors on this order. */}
+        {/* Reassign from one list, same as the create form. The split back
+            into guards and supervisors happens on save, from the role each
+            person already has. */}
         <GuardPicker
-          guards={guards.filter((g) => g.role === 'guard')}
-          selected={selected}
-          onChange={setSelected}
-          label="Guard"
-        />
-        <GuardPicker
-          guards={guards.filter((g) => g.role === 'supervisor')}
-          selected={supervisors}
-          onChange={setSupervisors}
-          label="Supervisor"
+          guards={guards}
+          selected={[...selected, ...supervisors]}
+          onChange={(ids) => {
+            const split = splitByRole(ids, guards)
+            setSelected(split.assignedUserIds)
+            setSupervisors(split.supervisorUserIds)
+          }}
+          label="Assign to"
         />
 
         <div className="flex flex-wrap items-center gap-4 text-sm">
