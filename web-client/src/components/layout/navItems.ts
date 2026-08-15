@@ -20,7 +20,18 @@ export const navItems = [
   { to: '/analytics', label: 'Analytics', icon: BarChart3 },
   { to: '/reports', label: 'Reports', icon: FileText },
   { to: '/pass-ons', label: 'Pass-ons', icon: MessageSquare },
-  // Last, and its own entry: an alarm is not something to stumble into
-  // while reading patrol numbers.
-  { to: '/emergency', label: 'Emergency', icon: ShieldAlert },
 ]
+
+/**
+ * Kept out of the list above on purpose.
+ *
+ * Everything in `navItems` is something you browse. This is something you
+ * reach for when something has gone wrong, and it renders below a rule, in
+ * the emergency colour, at the bottom of the rail — far enough from
+ * "Reports" that nobody arrives here by mis-clicking.
+ */
+export const emergencyNavItem = {
+  to: '/emergency',
+  label: 'Emergency',
+  icon: ShieldAlert,
+}

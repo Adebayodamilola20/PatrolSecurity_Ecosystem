@@ -5,6 +5,7 @@ import { useClientData } from '../hooks/useClientData'
 import EmptyState from '../components/ui/EmptyState'
 import { CardSkeleton, LoadingNote } from '../components/ui/Skeleton'
 import { formatDate } from '../utils/format'
+import { PageHeader } from '../components/ui/PageHeader'
 import type { ClientPassOn, ClientSiteDetail } from '../types'
 
 /**
@@ -69,20 +70,18 @@ export default function PassOns() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Pass-ons</h1>
-          <p className="text-sm text-muted-foreground">
-            Instructions your guards see on their phones and have to acknowledge.
-          </p>
-        </div>
-        <button
-          onClick={() => { setShowForm(true); setSendError(null) }}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90"
-        >
-          <Send className="h-4 w-4" /> New pass-on
-        </button>
-      </div>
+      <PageHeader
+        title="Pass-ons"
+        blurb="Instructions your guards see on their phones and have to acknowledge."
+        actions={
+          <button
+            onClick={() => { setShowForm(true); setSendError(null) }}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+          >
+            <Send className="h-4 w-4" /> New pass-on
+          </button>
+        }
+      />
 
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">

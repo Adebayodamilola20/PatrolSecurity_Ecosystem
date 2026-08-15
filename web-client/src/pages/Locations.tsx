@@ -8,6 +8,7 @@ import { CardSkeleton, LoadingNote } from '../components/ui/Skeleton'
 import { Card } from '../components/ui/Card'
 import { formatDate } from '../utils/format'
 import type { ClientScan, ClientSubLocation } from '../types'
+import { PageHeader } from '../components/ui/PageHeader'
 
 // QR data mirrors the staff dashboard's format: the scanner app only reads
 // the trailing ID, so the origin the QR was rendered on doesn't matter.
@@ -21,7 +22,10 @@ function QRCell({ data, size = 88 }: { data: string; size?: number }) {
     if (ref.current) {
       QRCode.toCanvas(ref.current, data, {
         width: size, margin: 1,
-        color: { dark: '#ffffff', light: '#111827' },
+        // Always dark-on-white: a QR is scanned by a camera, not read by
+        // a theme. Inverting it for dark mode made it unscannable on paper
+        // and invisible on a white card once light mode landed.
+        color: { dark: '#111827', light: '#ffffff' },
       }).catch(() => {})
     }
   }, [data, size])
@@ -31,7 +35,10 @@ function QRCell({ data, size = 88 }: { data: string; size?: number }) {
 async function downloadQr(point: ClientSubLocation) {
   try {
     const url = await QRCode.toDataURL(qrDataFor(point.id), {
-      width: 300, margin: 2, color: { dark: '#ffffff', light: '#111827' },
+      width: 300, margin: 2, // Always dark-on-white: a QR is scanned by a camera, not read by
+        // a theme. Inverting it for dark mode made it unscannable on paper
+        // and invisible on a white card once light mode landed.
+        color: { dark: '#111827', light: '#ffffff' },
     })
     const a = document.createElement('a')
     a.href = url
@@ -134,12 +141,10 @@ export default function Locations() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold">Locations</h1>
-        <p className="text-sm text-muted-foreground">
-          Your protected locations and the patrol points inside each of them. These are managed by your security provider.
-        </p>
-      </div>
+      <PageHeader
+        title="Locations"
+        blurb="Your protected locations and the patrol points inside each of them. These are managed by your security provider."
+      />
 
       {allSites.length > 1 ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5">

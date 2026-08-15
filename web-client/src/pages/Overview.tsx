@@ -5,6 +5,7 @@ import { useClientData } from '../hooks/useClientData'
 import { StatCard } from '../components/ui/Card'
 import EmptyState from '../components/ui/EmptyState'
 import { formatTime } from '../utils/format'
+import { PageHeader } from '../components/ui/PageHeader'
 
 export default function Overview() {
   const fetcher = useCallback(() => api.overview(), [])
@@ -12,10 +13,10 @@ export default function Overview() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Overview</h1>
-        <p className="text-sm text-muted-foreground">Live snapshot of your sites and guards.</p>
-      </div>
+      <PageHeader
+        title="Overview"
+        blurb="Live snapshot of your sites and guards."
+      />
 
       {error ? (
         <EmptyState

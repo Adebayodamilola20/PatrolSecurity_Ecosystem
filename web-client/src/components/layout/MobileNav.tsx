@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { Menu, X, ShieldCheck } from 'lucide-react'
+import { Menu, X } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useUnreadReports } from '../../hooks/useUnreadReports'
-import { navItems } from './navItems'
+import { Wordmark } from '../Wordmark'
+import { navItems, emergencyNavItem } from './navItems'
 
 /** The sidebar is `hidden md:flex`, so below 768px the portal had no way to
  *  reach Analytics, Reports or Locations at all — Overview's three shortcuts
@@ -68,10 +69,8 @@ export default function MobileNav() {
             className="nav-slide-in relative flex h-full w-64 max-w-[80%] flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-2xl"
           >
             <div className="flex items-center gap-2 px-5 py-5">
-              <ShieldCheck className="h-6 w-6 shrink-0 text-primary" />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold">Client Portal</p>
-                <p className="truncate text-xs text-muted-foreground">PatrolSecurity</p>
+                <Wordmark />
               </div>
               <button
                 type="button"
@@ -108,6 +107,25 @@ export default function MobileNav() {
                 </NavLink>
               ))}
             </nav>
+
+            {/* Same separation as the desktop rail: browsing above, the
+                alarm below a rule in its own colour. */}
+            <div className="border-t border-sidebar-border p-3">
+              <NavLink
+                to={emergencyNavItem.to}
+                className={({ isActive }) =>
+                  cn(
+                    'flex items-center gap-3 rounded-md px-3 py-3 text-sm font-semibold transition-colors',
+                    isActive
+                      ? 'bg-destructive text-destructive-foreground'
+                      : 'text-destructive hover:bg-destructive/10',
+                  )
+                }
+              >
+                <emergencyNavItem.icon className="h-4 w-4 shrink-0" />
+                {emergencyNavItem.label}
+              </NavLink>
+            </div>
           </aside>
         </div>
       ) : null}

@@ -4,6 +4,7 @@ import { api } from '../services/api'
 import { formatDate } from '../utils/format'
 import { LoadingNote } from '../components/ui/Skeleton'
 import type { ClientEmergency, ClientSiteDetail } from '../types'
+import { PageHeader } from '../components/ui/PageHeader'
 
 /**
  * The emergency screen.
@@ -79,13 +80,10 @@ export default function Emergency() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold">Emergency</h1>
-        <p className="text-sm text-muted-foreground">
-          Raise an alarm at one of your locations. The guards posted there and our control room
-          are alerted immediately.
-        </p>
-      </div>
+      <PageHeader
+        title="Emergency"
+        blurb="Raise an alarm at one of your locations. The guards posted there and our control room are alerted immediately."
+      />
 
       {/* Live alerts first: if something is happening now, that is the only
           thing on this page worth reading. */}
