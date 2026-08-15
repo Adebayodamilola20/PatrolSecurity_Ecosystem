@@ -53,6 +53,17 @@ export default function Alerts() {
 
   useEffect(() => {
     loadAlerts()
+    // This page loaded once and never again, so an emergency raised while it
+    // was open simply never appeared — staff had to know to press reload,
+    // which is precisely what nobody does during an emergency. Poll instead.
+    const timer = window.setInterval(loadAlerts, 15_000)
+    const onFocus = () => loadAlerts()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const loadAlerts = async () => {

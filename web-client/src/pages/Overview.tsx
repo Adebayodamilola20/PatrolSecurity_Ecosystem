@@ -4,7 +4,6 @@ import { api } from '../services/api'
 import { useClientData } from '../hooks/useClientData'
 import { StatCard } from '../components/ui/Card'
 import EmptyState from '../components/ui/EmptyState'
-import EmergencyPanel from '../components/EmergencyPanel'
 import { formatTime } from '../utils/format'
 
 export default function Overview() {
@@ -17,10 +16,6 @@ export default function Overview() {
         <h1 className="text-xl font-semibold">Overview</h1>
         <p className="text-sm text-muted-foreground">Live snapshot of your sites and guards.</p>
       </div>
-
-      {/* Top of the first screen they see, on purpose: a live CODE RED and
-          the button to raise one belong nowhere else. */}
-      <EmergencyPanel />
 
       {error ? (
         <EmptyState

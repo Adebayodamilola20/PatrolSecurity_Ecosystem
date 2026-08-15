@@ -6,6 +6,7 @@ import {
   FileText,
   BarChart3,
   MessageSquare,
+  ShieldAlert,
 } from 'lucide-react'
 
 /** The portal's destinations, shared by the desktop sidebar and the mobile
@@ -19,4 +20,7 @@ export const navItems = [
   { to: '/analytics', label: 'Analytics', icon: BarChart3 },
   { to: '/reports', label: 'Reports', icon: FileText },
   { to: '/pass-ons', label: 'Pass-ons', icon: MessageSquare },
+  // Last, and its own entry: an alarm is not something to stumble into
+  // while reading patrol numbers.
+  { to: '/emergency', label: 'Emergency', icon: ShieldAlert },
 ]

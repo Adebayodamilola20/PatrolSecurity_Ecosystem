@@ -10,6 +10,7 @@ import {
   Download,
   Printer,
   ChevronDown,
+  KeyRound,
   Users,
   UserPlus,
   ShieldCheck,
@@ -229,6 +230,32 @@ export default function ClientDetail() {
   const [pendingSubGuard, setPendingSubGuard] = useState<Record<string, string>>({})
   const [assignBusySubId, setAssignBusySubId] = useState('')
   const [assignOpenPointId, setAssignOpenPointId] = useState('')
+  // Resetting the client's own portal password. Same secure path as a guard's:
+  // set a new one, revoke their sessions, never reveal the old.
+  const [resetLogin, setResetLogin] = useState<{ id: string; email: string } | null>(null)
+  const [newPassword, setNewPassword] = useState('')
+  const [resetting, setResetting] = useState(false)
+  const [resetError, setResetError] = useState('')
+  const [resetDone, setResetDone] = useState('')
+
+  const submitPortalReset = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!resetLogin) return
+    setResetting(true)
+    setResetError('')
+    setResetDone('')
+    try {
+      const result = await api.users.resetPassword(resetLogin.id, newPassword)
+      setResetDone(
+        `Password changed. ${result.sessionsRevoked} signed-in session${result.sessionsRevoked === 1 ? '' : 's'} ended — give them the new password.`,
+      )
+      setNewPassword('')
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : 'Could not reset the password.')
+    } finally {
+      setResetting(false)
+    }
+  }
   // The location header answers "how many", not "who" — names are one click
   // away for the times somebody needs to take a guard off.
   const [showAssignedNames, setShowAssignedNames] = useState<Record<string, boolean>>({})
@@ -790,6 +817,50 @@ export default function ClientDetail() {
 
       {/* Client account header */}
       <div className="rounded-xl border border-border bg-card p-5">
+        {resetLogin && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <form onSubmit={submitPortalReset} className="w-full max-w-md space-y-4 rounded-xl border border-border bg-card p-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Reset portal password</h2>
+                <button type="button" onClick={() => setResetLogin(null)} className="text-muted-foreground hover:text-foreground">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Set a new password for <span className="font-mono">{resetLogin.email}</span> and tell
+                it to them directly. Existing passwords cannot be read back — they are stored hashed,
+                so a forgotten one is replaced, never revealed.
+              </p>
+              <label className="block text-xs text-muted-foreground">
+                New password
+                <input
+                  required
+                  minLength={8}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="At least 8 characters"
+                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                />
+              </label>
+              <div className="rounded-lg bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
+                This signs them out of the portal everywhere.
+              </div>
+              {resetError && (
+                <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">{resetError}</div>
+              )}
+              {resetDone && (
+                <div className="rounded-lg border border-success/20 bg-success/10 px-3 py-2 text-sm text-success">{resetDone}</div>
+              )}
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setResetLogin(null)} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent">Close</button>
+                <button disabled={resetting} type="submit" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60">
+                  {resetting ? 'Saving…' : 'Set password'}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
@@ -797,8 +868,24 @@ export default function ClientDetail() {
             </div>
             <div>
               <h1 className="text-2xl font-semibold">{detail.name}</h1>
-              <div className="mt-1 text-sm text-muted-foreground">
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                 Portal login: <span className="font-mono">{detail.portalLogins[0]?.email ?? detail.email}</span>
+                {/* Clients forget their password like anyone else, and until
+                    now only guards could be reset — leaving a locked-out
+                    client with no way back in short of recreating them. */}
+                {canManage && detail.portalLogins[0] && (
+                  <button
+                    onClick={() => {
+                      setResetLogin(detail.portalLogins[0])
+                      setNewPassword('')
+                      setResetError('')
+                      setResetDone('')
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-accent"
+                  >
+                    <KeyRound className="h-3.5 w-3.5" /> Reset password
+                  </button>
+                )}
               </div>
               {detail.phone ? (
                 <div className="text-sm text-muted-foreground">{detail.phone}</div>

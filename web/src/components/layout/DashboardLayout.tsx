@@ -9,6 +9,7 @@ import { ErrorBoundary } from '../ErrorBoundary'
 import AiAssistantPanel, { AiAssistantLauncher } from '../AiAssistantPanel'
 import IncidentToasts from '../IncidentToasts'
 import { subscribeToEmergency } from '../../services/websocket'
+import { api } from '../../services/api'
 
 interface AppIssue {
   message: string
@@ -71,9 +72,52 @@ export default function DashboardLayout() {
 
   useEffect(() => {
     if (!isAuthenticated || role === 'guard') return
-    return subscribeToEmergency((data) => {
+    const unsubscribe = subscribeToEmergency((data) => {
       setEmergency(data || {})
     })
+
+    // The socket only carries emergencies a guard raised. A client raising one
+    // from their portal never fired it, so a CODE RED could sit on the server
+    // with nobody in the control room seeing anything — and staff on any page
+    // other than Alerts would not have seen it regardless. Polling covers both
+    // sources and survives a dropped socket, which is exactly the moment this
+    // must not be relying on one.
+    let seen = new Set<string>()
+    let primed = false
+    const poll = async () => {
+      try {
+        const active = await api.emergency.active()
+        const ids = new Set(active.map((a) => a.id))
+        // The first pass only records what already exists: reopening the
+        // dashboard should not replay every alert from the last two days.
+        if (!primed) {
+          seen = ids
+          primed = true
+          return
+        }
+        const fresh = active.find((a) => !seen.has(a.id))
+        seen = ids
+        if (fresh) {
+          setEmergency({
+            id: fresh.id,
+            message: fresh.message,
+            note: fresh.reason,
+            siteLabel: fresh.siteName ?? fresh.clientName ?? '',
+            category: fresh.category,
+            triggeredAt: fresh.triggeredAt,
+            userName: fresh.officerName,
+          })
+        }
+      } catch {
+        // Offline or a transient failure; the next tick tries again.
+      }
+    }
+    void poll()
+    const timer = window.setInterval(poll, 20_000)
+    return () => {
+      unsubscribe?.()
+      window.clearInterval(timer)
+    }
   }, [isAuthenticated, role])
 
   if (!isAuthenticated) {

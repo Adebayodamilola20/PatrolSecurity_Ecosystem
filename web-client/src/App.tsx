@@ -14,6 +14,7 @@ import Scans from './pages/Scans'
 import Locations from './pages/Locations'
 import Reports from './pages/Reports'
 import PassOns from './pages/PassOns'
+import Emergency from './pages/Emergency'
 import { useClientAuthStore } from './stores/useClientAuthStore'
 import { useIdleLogout } from './hooks/useIdleLogout'
 
@@ -86,6 +87,7 @@ export default function App() {
           {/* The one screen that flows outward: instructions this client
               writes for the guards posted on its own sites. */}
           <Route path="/pass-ons" element={<PassOns />} />
+          <Route path="/emergency" element={<Emergency />} />
           <Route
             path="/analytics"
             element={
