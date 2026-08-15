@@ -8,6 +8,7 @@ import { useAlertStore } from '../stores/useAlertStore'
 import type { Incident, MissedPatrol } from '../types'
 import { formatDate } from '../utils/format'
 import { photoSrc } from '../utils/photo'
+import { PageHeader } from '../components/ui/PageHeader'
 
 const severityIcon: Record<string, typeof AlertTriangle> = {
   critical: AlertCircle,
@@ -137,20 +138,21 @@ export default function Alerts() {
   return (
     <div className="space-y-5">
       <div>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="text-xs uppercase tracking-wider text-muted-foreground">Notifications</div>
-            <h1 className="text-2xl font-semibold">Alerts & Incidents</h1>
-          </div>
-          <button
-            onClick={handleCheckMissedPatrols}
-            disabled={checking}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm hover:bg-accent disabled:opacity-60"
-          >
-            <RefreshCw className={`h-4 w-4 ${checking ? 'animate-spin' : ''}`} />
-            {checking ? 'Checking...' : 'Check missed patrols now'}
-          </button>
-        </div>
+        <PageHeader
+          eyebrow="Notifications"
+          title="Alerts & Incidents"
+          blurb="Emergencies, missed patrols and anything else needing a decision."
+          actions={
+            <button
+              onClick={handleCheckMissedPatrols}
+              disabled={checking}
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium transition-colors hover:bg-accent disabled:opacity-60"
+            >
+              <RefreshCw className={`h-4 w-4 ${checking ? 'animate-spin' : ''}`} />
+              {checking ? 'Checking…' : 'Check missed patrols now'}
+            </button>
+          }
+        />
       </div>
 
       {/* CODE RED. Deliberately unlike every other card on this page — solid

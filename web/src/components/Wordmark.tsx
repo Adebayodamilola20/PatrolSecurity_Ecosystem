@@ -1,10 +1,13 @@
 /**
  * The Evergreen mark.
  *
- * A stand-in until the real logo arrives — deliberately a wordmark rather
- * than a generic shield glyph, because every security product on earth has a
- * generic shield glyph and it says nothing about who this is. The letterform
- * carries the brand; the leaf is one drawn stroke, not a stock icon.
+ * Shared, by intent, with the client portal — the same drawn leaf and the
+ * same letterform, because staff and clients talking about "the system"
+ * should be picturing one product. Only the second line differs.
+ *
+ * A stand-in until the real logo arrives. Deliberately a wordmark rather than
+ * a generic shield glyph: every security product on earth has one of those
+ * and it says nothing about who this is.
  *
  * WHEN THE LOGO ARRIVES: replace the <svg> below with an <img src=...> (or
  * the supplied SVG) and leave everything else alone. This is the only file
@@ -56,11 +59,11 @@ export function Wordmark({
       </svg>
       {!compact && (
         <span className="min-w-0">
-          <span className="block truncate text-[15px] font-bold tracking-[-0.015em]">
+          <span className="block truncate text-[15px] font-extrabold leading-[1.2] tracking-[-0.015em]">
             Evergreen
           </span>
           <span className="block truncate text-[11px] font-medium uppercase leading-[1.3] tracking-[0.14em] opacity-60">
-            Client Portal
+            Control Room
           </span>
         </span>
       )}

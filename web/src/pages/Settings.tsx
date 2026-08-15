@@ -17,6 +17,7 @@ import { api } from '../services/api'
 import { useIsAdmin } from '../stores/useAuthStore'
 import { useTheme } from '../hooks/useTheme'
 import { Skeleton } from '../components/ui/Skeleton'
+import { PageHeader } from '../components/ui/PageHeader'
 
 type FormKeys =
   | 'emergency_message_template'
@@ -193,10 +194,10 @@ export default function Settings() {
   return (
     <div className="mx-auto max-w-5xl pb-24">
       <div className="mb-5">
-        <h1 className="text-2xl font-semibold">Settings</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Who gets alerted, when reports go out, and how the dashboard behaves.
-        </p>
+        <PageHeader
+          title="Settings"
+          blurb="Who gets alerted, when reports go out, and how the dashboard behaves."
+        />
       </div>
 
       <div className="flex flex-col gap-5 md:flex-row">

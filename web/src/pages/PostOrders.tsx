@@ -6,6 +6,7 @@ import { EmptyState } from '../components/ui/EmptyState'
 import { Skeleton } from '../components/ui/Skeleton'
 import { formatDate } from '../utils/format'
 import { photoSrc } from '../utils/photo'
+import { PageHeader } from '../components/ui/PageHeader'
 
 export default function PostOrders() {
   const [orders, setOrders] = useState<PostOrder[]>([])
@@ -130,15 +131,16 @@ export default function PostOrders() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">Operations</div>
-          <h1 className="text-2xl font-semibold">Post Orders</h1>
-        </div>
-        <button onClick={() => setShowForm(true)} className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
-          <Plus className="h-4 w-4" /> New Post Order
-        </button>
-      </div>
+      <PageHeader
+        eyebrow="Operations"
+        title="Post Orders"
+        blurb="Standing instructions for a location or a single sub-location."
+        actions={
+          <button onClick={() => setShowForm(true)} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90">
+            <Plus className="h-4 w-4" /> New post order
+          </button>
+        }
+      />
 
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">

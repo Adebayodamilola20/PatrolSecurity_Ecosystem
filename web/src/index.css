@@ -1,3 +1,5 @@
+/* Control-room typeface. Must lead the file: @import may not follow rules. */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 @import "leaflet/dist/leaflet.css";
 
@@ -40,74 +42,88 @@
 }
 
 /* Light is the default, so it lives on :root and paints before JS applies a class. */
+/* ── Evergreen control room · design tokens ───────────────────────────────
+ *
+ * The same system as the client portal (see web-client/design.md), turned up.
+ * A client checks their site once a day; staff live in this screen for a
+ * whole shift, so it runs denser, with more contrast between levels and
+ * heavier weights — bold enough to read at a glance across a control room,
+ * without becoming loud.
+ *
+ * Same two rules as the portal:
+ *   1. Neutrals carry a trace of the brand hue, never zero-chroma grey.
+ *   2. Red is the emergency colour and nothing else may borrow it.
+ */
 :root,
 .light {
-  --radius: 0.75rem;
-  /* Bare names to match the dark block + @theme inline mapping. Neutral surfaces. */
-  --background: oklch(0.99 0 0);
-  --foreground: oklch(0.16 0 0);
-  --card: oklch(0.97 0 0);
-  --card-foreground: oklch(0.16 0 0);
-  --popover: oklch(0.97 0 0);
-  --popover-foreground: oklch(0.16 0 0);
-  --primary: oklch(0.55 0.22 265);
+  --radius: 0.625rem;
+  --background: oklch(0.975 0.005 195);
+  --foreground: oklch(0.19 0.02 200);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.19 0.02 200);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.19 0.02 200);
+  /* Evergreen teal, a shade deeper than the portal's — staff surfaces carry
+     more of it, and it has to hold up against dense data. */
+  --primary: oklch(0.48 0.10 190);
   --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.92 0 0);
-  --secondary-foreground: oklch(0.16 0 0);
-  --muted: oklch(0.94 0 0);
-  --muted-foreground: oklch(0.50 0 0);
-  --accent: oklch(0.90 0 0);
-  --accent-foreground: oklch(0.16 0 0);
-  --destructive: oklch(0.60 0.22 25);
+  --secondary: oklch(0.94 0.009 195);
+  --secondary-foreground: oklch(0.21 0.02 200);
+  --muted: oklch(0.955 0.007 195);
+  --muted-foreground: oklch(0.45 0.016 200);
+  --accent: oklch(0.93 0.016 190);
+  --accent-foreground: oklch(0.21 0.02 200);
+  --destructive: oklch(0.53 0.21 25);
   --destructive-foreground: oklch(0.99 0 0);
-  --success: oklch(0.65 0.18 150);
+  --success: oklch(0.50 0.13 160);
   --success-foreground: oklch(0.99 0 0);
-  --warning: oklch(0.75 0.18 75);
-  --warning-foreground: oklch(0.20 0.02 75);
-  --info: oklch(0.65 0.16 220);
+  --warning: oklch(0.60 0.14 65);
+  --warning-foreground: oklch(0.99 0 0);
+  --info: oklch(0.50 0.11 225);
   --info-foreground: oklch(0.99 0 0);
-  --border: oklch(0.88 0 0);
-  --input: oklch(0.88 0 0);
-  --ring: oklch(0.55 0.22 265);
-  --sidebar: oklch(0.94 0 0);
-  --sidebar-foreground: oklch(0.16 0 0);
-  --sidebar-accent: oklch(0.90 0 0);
-  --sidebar-border: oklch(0.88 0 0);
+  --border: oklch(0.89 0.009 195);
+  --input: oklch(0.89 0.009 195);
+  --ring: oklch(0.48 0.10 190);
+  /* The rail goes dark in both themes. It is the one fixed edge of the
+     screen; anchoring it makes the data area read as the workspace. */
+  --sidebar: oklch(0.962 0.009 195);
+  --sidebar-foreground: oklch(0.22 0.02 200);
+  --sidebar-accent: oklch(0.905 0.026 188);
+  --sidebar-border: oklch(0.885 0.010 195);
 }
 
 /* Must stay after :root so it wins at equal specificity when .dark is applied. */
 .dark {
-  --radius: 0.75rem;
-  /* Neutral dark surfaces (no blue cast). Accent colors keep their hue. */
-  --background: oklch(0.16 0 0);
-  --foreground: oklch(0.97 0 0);
-  --card: oklch(0.20 0 0);
-  --card-foreground: oklch(0.97 0 0);
-  --popover: oklch(0.20 0 0);
-  --popover-foreground: oklch(0.97 0 0);
-  --primary: oklch(0.62 0.20 265);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.26 0 0);
-  --secondary-foreground: oklch(0.97 0 0);
-  --muted: oklch(0.24 0 0);
-  --muted-foreground: oklch(0.68 0 0);
-  --accent: oklch(0.28 0 0);
-  --accent-foreground: oklch(0.97 0 0);
-  --destructive: oklch(0.62 0.22 25);
+  --radius: 0.625rem;
+  --background: oklch(0.155 0.014 197);
+  --foreground: oklch(0.97 0.005 195);
+  --card: oklch(0.20 0.016 197);
+  --card-foreground: oklch(0.97 0.005 195);
+  --popover: oklch(0.22 0.016 197);
+  --popover-foreground: oklch(0.97 0.005 195);
+  --primary: oklch(0.76 0.12 185);
+  --primary-foreground: oklch(0.17 0.02 197);
+  --secondary: oklch(0.26 0.016 197);
+  --secondary-foreground: oklch(0.96 0.005 195);
+  --muted: oklch(0.24 0.014 197);
+  --muted-foreground: oklch(0.70 0.014 197);
+  --accent: oklch(0.29 0.022 193);
+  --accent-foreground: oklch(0.97 0.005 195);
+  --destructive: oklch(0.65 0.21 25);
   --destructive-foreground: oklch(0.99 0 0);
-  --success: oklch(0.70 0.16 150);
-  --success-foreground: oklch(0.15 0.02 150);
-  --warning: oklch(0.78 0.16 75);
-  --warning-foreground: oklch(0.20 0.02 75);
-  --info: oklch(0.70 0.14 220);
-  --info-foreground: oklch(0.15 0.02 220);
-  --border: oklch(0.28 0 0);
-  --input: oklch(0.28 0 0);
-  --ring: oklch(0.62 0.20 265);
-  --sidebar: oklch(0.18 0 0);
-  --sidebar-foreground: oklch(0.92 0 0);
-  --sidebar-accent: oklch(0.26 0 0);
-  --sidebar-border: oklch(0.24 0 0);
+  --success: oklch(0.75 0.15 160);
+  --success-foreground: oklch(0.17 0.02 160);
+  --warning: oklch(0.81 0.15 75);
+  --warning-foreground: oklch(0.19 0.02 75);
+  --info: oklch(0.75 0.11 220);
+  --info-foreground: oklch(0.16 0.02 220);
+  --border: oklch(0.28 0.016 197);
+  --input: oklch(0.28 0.016 197);
+  --ring: oklch(0.76 0.12 185);
+  --sidebar: oklch(0.125 0.016 200);
+  --sidebar-foreground: oklch(0.94 0.007 195);
+  --sidebar-accent: oklch(0.245 0.026 193);
+  --sidebar-border: oklch(0.23 0.016 200);
 }
 
 @layer base {
@@ -116,9 +132,20 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    /* Same family as the portal and the marketing site. Three products that
+       look like three companies is the fastest way to look small. */
+    font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system,
+      "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
+  /* Figures in this product are read down a column — scan counts, distances,
+     times, overdue minutes. Proportional digits make 11 look narrower than
+     88 and quietly sabotage that comparison. */
+  table, .tabular, time, [data-numeric] {
+    font-variant-numeric: tabular-nums;
+  }
+
   /* Prevent text overflow on all devices */
   h1, h2, h3, h4, h5, h6, p, span, a, button, li, label, input, textarea, select, option, td, th, div {
     overflow-wrap: break-word;

@@ -6,6 +6,7 @@ import { api } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
 import { CardSkeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
+import { PageHeader } from '../components/ui/PageHeader'
 
 interface ClientRow {
   id: string
@@ -69,20 +70,18 @@ export default function Clients() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">Client Accounts</div>
-          <h1 className="text-2xl font-semibold">Clients</h1>
-        </div>
-        {canManage && (
-          <button
-            onClick={() => setShowModal(true)}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-          >
-            <Plus className="h-4 w-4" /> New Client
-          </button>
-        )}
-      </div>
+      <PageHeader
+        eyebrow="Client Accounts"
+        title="Clients"
+        blurb="Every account with a portal login, their locations and their QR codes."
+        actions={
+          canManage ? (
+            <button onClick={() => setShowModal(true)} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90">
+              <Plus className="h-4 w-4" /> New client
+            </button>
+          ) : undefined
+        }
+      />
 
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

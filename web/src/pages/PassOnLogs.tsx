@@ -5,6 +5,7 @@ import type { PassOnLog } from '../types'
 import { EmptyState } from '../components/ui/EmptyState'
 import { Skeleton } from '../components/ui/Skeleton'
 import { formatDate } from '../utils/format'
+import { PageHeader } from '../components/ui/PageHeader'
 
 export default function PassOnLogs() {
   const [logs, setLogs] = useState<PassOnLog[]>([])
@@ -57,16 +58,16 @@ export default function PassOnLogs() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">Operations</div>
-          <h1 className="text-2xl font-semibold">Pass-On Logs</h1>
-          <p className="text-sm text-muted-foreground mt-1">One-off instructions that officers must acknowledge before scanning.</p>
-        </div>
-        <button onClick={() => setShowForm(true)} className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
-          <Plus className="h-4 w-4" /> New Pass-On Log
-        </button>
-      </div>
+      <PageHeader
+        eyebrow="Operations"
+        title="Pass-On Logs"
+        blurb="One-off instructions officers must acknowledge before they can scan."
+        actions={
+          <button onClick={() => setShowForm(true)} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90">
+            <Plus className="h-4 w-4" /> New pass-on log
+          </button>
+        }
+      />
 
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">

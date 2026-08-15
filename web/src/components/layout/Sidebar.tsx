@@ -9,7 +9,6 @@ import {
   FileText,
   Bell,
   Settings,
-  Shield,
   ChevronLeft,
   LogOut,
   Clock,
@@ -19,6 +18,7 @@ import {
   Activity,
   BarChart3,
 } from 'lucide-react'
+import { Wordmark } from '../Wordmark'
 import { useAuthStore, useCanManageUsers, useCanViewAlerts } from '../../stores/useAuthStore'
 import { useAlertStore } from '../../stores/useAlertStore'
 
@@ -85,6 +85,21 @@ interface SidebarProps {
   onClose?: () => void
 }
 
+/** Initials, so the chip says who you are rather than being a coloured blob. */
+function Initials({ name }: { name?: string }) {
+  const letters = (name || 'U')
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+  return (
+    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold uppercase text-primary-foreground">
+      {letters}
+    </div>
+  )
+}
+
 export default function Sidebar({ collapsed, onToggle, mobile, onClose }: SidebarProps) {
   const location = useLocation()
   const { user, logout } = useAuthStore()
@@ -93,15 +108,16 @@ export default function Sidebar({ collapsed, onToggle, mobile, onClose }: Sideba
 
   return (
     <aside
-      className={`flex flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300 ${
+      className={`flex flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-300 ${
         mobile ? 'w-64 h-full' : collapsed ? 'w-16' : 'w-64'
       }`}
     >
       <div className="flex items-center gap-2 px-5 py-5 min-h-[68px]">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
-          <Shield className="h-5 w-5" />
-        </div>
-        <div className="font-semibold tracking-tight">SentryPatrol</div>
+        {collapsed && !mobile ? (
+          <Wordmark compact />
+        ) : (
+          <Wordmark />
+        )}
         {mobile ? (
           <button onClick={onClose} className="ml-auto p-1 hover:bg-sidebar-accent rounded-lg transition-colors">
             <ChevronLeft className="w-4 h-4 text-sidebar-foreground/60" />
@@ -113,15 +129,6 @@ export default function Sidebar({ collapsed, onToggle, mobile, onClose }: Sideba
         )}
       </div>
 
-      {(!collapsed || mobile) && (
-      <div className="mx-3 mb-3 rounded-xl bg-sidebar-accent/60 px-3 py-2.5 flex items-center gap-2.5">
-        <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary to-info shrink-0" />
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium truncate">{user?.name || 'User'}</div>
-        </div>
-      </div>
-      )}
-
       <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
             {nav.map((item) => {
               const active = location.pathname === item.to
@@ -130,16 +137,25 @@ export default function Sidebar({ collapsed, onToggle, mobile, onClose }: Sideba
                 <React.Fragment key={item.to}>
                   <Link
                     to={item.to}
-                    className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                    className={`group relative flex items-center gap-3 rounded-lg py-2 pl-4 pr-3 text-sm transition-colors ${
                       active
-                        ? "bg-primary text-primary-foreground shadow-sm"
-                        : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                        ? "bg-sidebar-accent font-bold text-sidebar-foreground"
+                        : "text-sidebar-foreground/75 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                     }`}
                   >
-                    <Icon className="h-4 w-4 shrink-0" />
+                    {/* The marker sits on the rail's edge. You read where you
+                        are from the shape of the edge, without the row
+                        shouting an answer you already have. */}
+                    <span
+                      aria-hidden="true"
+                      className={`absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full transition-colors ${
+                        active ? "bg-primary" : "bg-transparent"
+                      }`}
+                    />
+                    <Icon className={`h-[17px] w-[17px] shrink-0 ${active ? "text-primary" : ""}`} />
                     {(!collapsed || mobile) && <span>{item.label}</span>}
                     {(!collapsed || mobile) && item.label === "Alerts" && openIncidentCount > 0 && (
-                      <span className="ml-auto rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-semibold text-destructive-foreground">
+                      <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[11px] font-bold tabular-nums text-destructive-foreground">
                         {openIncidentCount > 99 ? '99+' : openIncidentCount}
                       </span>
                     )}
@@ -149,13 +165,32 @@ export default function Sidebar({ collapsed, onToggle, mobile, onClose }: Sideba
             })}
       </nav>
 
-      <div className="border-t border-sidebar-border">
+      {/* Who you are signed in as, at the foot. It had been a filled box
+          directly under the wordmark, which made the loudest thing on the rail
+          a fact nobody needs during a shift — and put it in competition with
+          the row telling you where you are. */}
+      <div className="border-t border-sidebar-border p-2">
+        {collapsed && !mobile ? (
+          <div className="flex justify-center py-1" title={user?.name || 'User'}>
+            <Initials name={user?.name} />
+          </div>
+        ) : (
+          <div className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
+            <Initials name={user?.name} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-semibold">{user?.name || 'User'}</div>
+              {user?.role && (
+                <div className="truncate text-[11px] capitalize opacity-60">{user.role}</div>
+              )}
+            </div>
+          </div>
+        )}
         <button
           onClick={logout}
-          className="w-full flex items-center gap-3 px-4 py-3 text-sm text-sidebar-foreground/60 hover:text-destructive hover:bg-sidebar-accent/50 transition-colors"
+          className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm opacity-60 transition-colors hover:bg-sidebar-accent/50 hover:text-destructive hover:opacity-100"
         >
           <LogOut className="h-4 w-4 shrink-0" />
-          <span>Sign Out</span>
+          {(!collapsed || mobile) && <span>Sign out</span>}
         </button>
       </div>
     </aside>

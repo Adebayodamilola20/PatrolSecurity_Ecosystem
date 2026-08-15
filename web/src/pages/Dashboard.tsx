@@ -3,7 +3,6 @@ import {
   Activity,
   ClipboardCheck,
   Users,
-  Filter,
   ChevronRight,
   QrCode,
   AlertTriangle,
@@ -15,6 +14,7 @@ import { PatrolMap } from '../components/PatrolMap'
 import { useScanStore, useScanWebSocket } from '../stores/useScanStore'
 import { api } from '../services/api'
 import { StatsCardSkeleton } from '../components/ui/Skeleton'
+import { PageHeader } from '../components/ui/PageHeader'
 
 const toneBg: Record<string, string> = {
   info: 'bg-info/15 text-info',
@@ -97,20 +97,11 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-end justify-between">
-        <div>
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">Overview / Live</div>
-          <h1 className="text-2xl font-semibold">Patrol Monitoring</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <button className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm hover:bg-accent">
-            <Filter className="h-4 w-4" /> Filter
-          </button>
-          <button className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
-            <Activity className="h-4 w-4" /> Generate Report
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Overview"
+        title="Patrol Monitoring"
+        blurb="Who is on shift, what has been scanned, and what needs attention."
+      />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {loading || loadingData ? (
@@ -122,16 +113,20 @@ export default function Dashboard() {
               <button
                 key={s.label}
                 onClick={() => navigate(s.to)}
-                className="rounded-xl border border-border bg-card p-4 text-left hover:bg-accent/50 transition-colors cursor-pointer"
+                className="cursor-pointer rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-primary/50 hover:bg-accent/50"
               >
-                <div className="flex items-center justify-between">
-                  <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${toneBg[s.tone]}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
+                    {s.label}
+                  </p>
+                  <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${toneBg[s.tone]}`}>
                     <Icon className="h-4 w-4" />
                   </div>
-                  <span className="text-xs text-muted-foreground">{s.delta}</span>
                 </div>
-                <div className="mt-3 text-2xl font-semibold">{s.value}</div>
-                <div className="text-xs text-muted-foreground">{s.label}</div>
+                <p className="mt-3 text-[32px] font-extrabold leading-none tracking-[-0.03em] tabular-nums">
+                  {s.value}
+                </p>
+                <p className="mt-2 text-xs text-muted-foreground">{s.delta}</p>
               </button>
             )
           })

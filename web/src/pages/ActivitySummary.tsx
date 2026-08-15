@@ -3,6 +3,7 @@ import { formatDate } from '../utils/format'
 import { TableSkeleton } from '../components/ui/Skeleton'
 import { api } from '../services/api'
 import { Download, Filter, FileSpreadsheet, FileText, Users, MapPin } from 'lucide-react'
+import { PageHeader } from '../components/ui/PageHeader'
 
 const ACTIVITY_TYPES = [
   { value: '', label: 'All Activities' },
@@ -102,34 +103,24 @@ export default function ActivitySummary() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-end justify-between">
-        <div>
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">
-            Monitoring / Activity
-          </div>
-          <h1 className="text-2xl font-semibold">Site Activity Summary</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <a
-            href={exportUrl('csv')}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm hover:bg-accent"
-          >
-            <FileSpreadsheet className="h-4 w-4" /> CSV
-          </a>
-          <a
-            href={exportUrl('xlsx')}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm hover:bg-accent"
-          >
-            <FileText className="h-4 w-4" /> Excel
-          </a>
-          <a
-            href={exportUrl('pdf')}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm hover:bg-accent"
-          >
-            <Download className="h-4 w-4" /> PDF
-          </a>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Monitoring"
+        title="Site Activity Summary"
+        blurb="What happened at each location over the period you choose."
+        actions={
+          <>
+            <a href={exportUrl('csv')} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium transition-colors hover:bg-accent">
+              <FileSpreadsheet className="h-4 w-4" /> CSV
+            </a>
+            <a href={exportUrl('xlsx')} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium transition-colors hover:bg-accent">
+              <FileText className="h-4 w-4" /> Excel
+            </a>
+            <a href={exportUrl('pdf')} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium transition-colors hover:bg-accent">
+              <Download className="h-4 w-4" /> PDF
+            </a>
+          </>
+        }
+      />
 
       <div className="flex flex-wrap gap-3 rounded-xl border border-border bg-card p-4">
         <div className="flex items-center gap-2">

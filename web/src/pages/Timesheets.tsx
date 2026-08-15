@@ -7,6 +7,8 @@ import { getScheduleStatus } from '../utils/patrolSchedule'
 import { formatDate, formatDuration } from '../utils/format'
 import { subscribeToScans, subscribeToShiftUpdates } from '../services/websocket'
 import { photoSrc } from '../utils/photo'
+import { PageHeader } from '../components/ui/PageHeader'
+import { StatCard } from '../components/ui/Card'
 
 type DateFilter = 'all' | 'today' | 'yesterday' | 'custom'
 
@@ -180,10 +182,11 @@ export default function Timesheets() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <div className="text-xs uppercase tracking-wider text-muted-foreground">GPS Verified</div>
-        <h1 className="text-2xl font-semibold">Timesheets</h1>
-      </div>
+      <PageHeader
+        eyebrow="Payroll"
+        title="Timesheets"
+        blurb="Hours worked, from GPS-verified clock-ins and clock-outs."
+      />
 
       {loading ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -195,23 +198,11 @@ export default function Timesheets() {
           ))}
         </div>
       ) : summary && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="text-xs text-muted-foreground">Total Shifts (7d)</div>
-            <div className="mt-1 text-2xl font-semibold">{summary.totalShifts}</div>
-          </div>
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="text-xs text-muted-foreground">Active Now</div>
-            <div className="mt-1 text-2xl font-semibold text-success">{summary.activeShifts}</div>
-          </div>
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="text-xs text-muted-foreground">Today's Shifts</div>
-            <div className="mt-1 text-2xl font-semibold">{summary.todayShifts}</div>
-          </div>
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="text-xs text-muted-foreground">Total Hours</div>
-            <div className="mt-1 text-2xl font-semibold">{summary.totalHours}h</div>
-          </div>
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <StatCard label="Total shifts (7d)" value={summary.totalShifts} />
+          <StatCard label="Active now" value={summary.activeShifts} tone="good" />
+          <StatCard label="Today's shifts" value={summary.todayShifts} />
+          <StatCard label="Total hours" value={`${summary.totalHours}h`} />
         </div>
       )}
 

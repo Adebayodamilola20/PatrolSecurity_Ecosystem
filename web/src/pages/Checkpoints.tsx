@@ -10,6 +10,7 @@ import type { PlaceSuggestion } from '../services/placesSearch'
 import type { Checkpoint } from '../types'
 import { CardSkeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
+import { PageHeader } from '../components/ui/PageHeader'
 
 function escapeHtmlForPrint(text: string): string {
   return text
@@ -438,20 +439,18 @@ export default function Checkpoints() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">Locations</div>
-          <h1 className="text-2xl font-semibold">Checkpoints</h1>
-        </div>
-        {canManage && (
-          <button
-            onClick={() => setShowModal(true)}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-          >
-            <ScanLine className="h-4 w-4" /> Add Checkpoint
-          </button>
-        )}
-      </div>
+      <PageHeader
+        eyebrow="Locations"
+        title="Checkpoints"
+        blurb="Locations and the sub-locations officers scan inside them."
+        actions={
+          canManage ? (
+            <button onClick={() => setShowModal(true)} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90">
+              <ScanLine className="h-4 w-4" /> Add checkpoint
+            </button>
+          ) : undefined
+        }
+      />
       {actionError ? (
         <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {actionError}

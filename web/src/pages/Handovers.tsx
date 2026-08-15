@@ -7,6 +7,7 @@ import { Skeleton } from '../components/ui/Skeleton'
 import { formatDate } from '../utils/format'
 import { photoSrc } from '../utils/photo'
 import { ClipboardCheck } from 'lucide-react'
+import { PageHeader } from '../components/ui/PageHeader'
 
 const statuses = ['pending', 'accepted', 'closed'] as const
 
@@ -40,10 +41,11 @@ export default function Handovers() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <div className="text-xs uppercase tracking-wider text-muted-foreground">Operations</div>
-        <h1 className="text-2xl font-semibold">Handovers</h1>
-      </div>
+      <PageHeader
+        eyebrow="Operations"
+        title="Handovers"
+        blurb="Shift-to-shift notes officers leave for whoever relieves them."
+      />
 
       {loading ? (
         <Skeleton className="h-72 w-full rounded-xl" />

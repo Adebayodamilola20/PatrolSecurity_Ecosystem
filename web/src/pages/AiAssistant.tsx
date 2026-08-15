@@ -74,8 +74,12 @@ export default function AiAssistant() {
     <div className="space-y-5">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">Operations / AI</div>
-          <h1 className="text-2xl font-semibold">AI Operations Assistant</h1>
+          <p className="mb-1.5 text-[11px] font-bold uppercase tracking-[0.13em] text-primary">
+            Operations
+          </p>
+          <h1 className="text-[26px] font-extrabold leading-[1.1] tracking-[-0.025em]">
+            AI Operations Assistant
+          </h1>
         </div>
         <div className="grid grid-cols-2 gap-2 md:flex">
           {capabilities.map((item) => {

@@ -6,6 +6,7 @@ import { TableSkeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
 import { REPORT_TEMPLATES, type ReportTemplate, type TemplateField } from '../lib/reportTemplates'
 import { formatDate } from '../utils/format'
+import { PageHeader } from '../components/ui/PageHeader'
 
 interface ReportRow {
   id: string
@@ -276,18 +277,16 @@ export default function Reports() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">Operations</div>
-          <h1 className="text-2xl font-semibold">Client Reports</h1>
-        </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-        >
-          <Plus className="h-4 w-4" /> New Report
-        </button>
-      </div>
+      <PageHeader
+        eyebrow="Operations"
+        title="Client Reports"
+        blurb="Reports written for a client, from one of ten category templates."
+        actions={
+          <button onClick={() => setShowForm(true)} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90">
+            <Plus className="h-4 w-4" /> New report
+          </button>
+        }
+      />
 
       {/* New report modal: category picker → template form */}
       {showForm && (
