@@ -1,99 +1,27 @@
 PODS:
-  - audioplayers_darwin (0.0.1):
-    - Flutter
-    - FlutterMacOS
-  - device_info_plus (0.0.1):
-    - Flutter
   - Flutter (1.0.0)
   - flutter_secure_storage (6.0.0):
     - Flutter
-  - geolocator_apple (1.2.0):
-    - Flutter
-    - FlutterMacOS
-  - image_picker_ios (0.0.1):
-    - Flutter
-  - mobile_scanner (7.0.0):
-    - Flutter
-    - FlutterMacOS
-  - package_info_plus (0.4.5):
-    - Flutter
-  - path_provider_foundation (0.0.1):
-    - Flutter
-    - FlutterMacOS
   - permission_handler_apple (9.3.0):
-    - Flutter
-  - Sentry/HybridSDK (8.46.0)
-  - sentry_flutter (8.14.2):
-    - Flutter
-    - FlutterMacOS
-    - Sentry/HybridSDK (= 8.46.0)
-  - url_launcher_ios (0.0.1):
-    - Flutter
-  - vibration (3.0.0):
     - Flutter
 
 DEPENDENCIES:
-  - audioplayers_darwin (from `.symlinks/plugins/audioplayers_darwin/darwin`)
-  - device_info_plus (from `.symlinks/plugins/device_info_plus/ios`)
   - Flutter (from `Flutter`)
   - flutter_secure_storage (from `.symlinks/plugins/flutter_secure_storage/ios`)
-  - geolocator_apple (from `.symlinks/plugins/geolocator_apple/darwin`)
-  - image_picker_ios (from `.symlinks/plugins/image_picker_ios/ios`)
-  - mobile_scanner (from `.symlinks/plugins/mobile_scanner/darwin`)
-  - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
-  - path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)
   - permission_handler_apple (from `.symlinks/plugins/permission_handler_apple/ios`)
-  - sentry_flutter (from `.symlinks/plugins/sentry_flutter/ios`)
-  - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
-  - vibration (from `.symlinks/plugins/vibration/ios`)
-
-SPEC REPOS:
-  trunk:
-    - Sentry
 
 EXTERNAL SOURCES:
-  audioplayers_darwin:
-    :path: ".symlinks/plugins/audioplayers_darwin/darwin"
-  device_info_plus:
-    :path: ".symlinks/plugins/device_info_plus/ios"
   Flutter:
     :path: Flutter
   flutter_secure_storage:
     :path: ".symlinks/plugins/flutter_secure_storage/ios"
-  geolocator_apple:
-    :path: ".symlinks/plugins/geolocator_apple/darwin"
-  image_picker_ios:
-    :path: ".symlinks/plugins/image_picker_ios/ios"
-  mobile_scanner:
-    :path: ".symlinks/plugins/mobile_scanner/darwin"
-  package_info_plus:
-    :path: ".symlinks/plugins/package_info_plus/ios"
-  path_provider_foundation:
-    :path: ".symlinks/plugins/path_provider_foundation/darwin"
   permission_handler_apple:
     :path: ".symlinks/plugins/permission_handler_apple/ios"
-  sentry_flutter:
-    :path: ".symlinks/plugins/sentry_flutter/ios"
-  url_launcher_ios:
-    :path: ".symlinks/plugins/url_launcher_ios/ios"
-  vibration:
-    :path: ".symlinks/plugins/vibration/ios"
 
 SPEC CHECKSUMS:
-  audioplayers_darwin: 835ced6edd4c9fc8ebb0a7cc9e294a91d99917d5
-  device_info_plus: 21fcca2080fbcd348be798aa36c3e5ed849eefbe
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_secure_storage: 1ed9476fba7e7a782b22888f956cce43e2c62f13
-  geolocator_apple: ab36aa0e8b7d7a2d7639b3b4e48308394e8cef5e
-  image_picker_ios: e0ece4aa2a75771a7de3fa735d26d90817041326
-  mobile_scanner: 9157936403f5a0644ca3779a38ff8404c5434a93
-  package_info_plus: af8e2ca6888548050f16fa2f1938db7b5a5df499
-  path_provider_foundation: bb55f6dbba17d0dccd6737fe6f7f34fbd0376880
   permission_handler_apple: 4ed2196e43d0651e8ff7ca3483a069d469701f2d
-  Sentry: da60d980b197a46db0b35ea12cb8f39af48d8854
-  sentry_flutter: 27892878729f42701297c628eb90e7c6529f3684
-  url_launcher_ios: 7a95fa5b60cc718a708b8f2966718e93db0cef1b
-  vibration: ca8104a8875b9c493e15b21b04e456befd0ff6eb
 
 PODFILE CHECKSUM: 07de65af562856e27e5951c84a3a6721564f5f7f
 
