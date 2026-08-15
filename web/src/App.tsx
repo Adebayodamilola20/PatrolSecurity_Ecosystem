@@ -3,33 +3,38 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import DashboardLayout from './components/layout/DashboardLayout'
 import CookieConsent from './components/CookieConsent'
 import Dashboard from './pages/Dashboard'
-import Monitoring from './pages/Monitoring'
 import Scans from './pages/Scans'
 import Clients from './pages/Clients'
-import ClientDetail from './pages/ClientDetail'
-import Reports from './pages/Reports'
 import Users from './pages/Users'
 // NOTE: pages/Checkpoints.tsx is intentionally no longer routed — checkpoint
 // management moved inside client accounts (Clients -> ClientDetail).
-import UserDetail from './pages/UserDetail'
-import Settings from './pages/Settings'
 import Alerts from './pages/Alerts'
-import Profile from './pages/Profile'
-import ScanDetail from './pages/ScanDetail'
-import CheckpointDetail from './pages/CheckpointDetail'
-import Timesheets from './pages/Timesheets'
-import PostOrders from './pages/PostOrders'
-import Handovers from './pages/Handovers'
-import PassOnLogs from './pages/PassOnLogs'
-import ActivitySummary from './pages/ActivitySummary'
-import AiAssistant from './pages/AiAssistant'
 import Login from './pages/Login'
 import { useAuthStore, useCanViewLiveTracking, type UserRole } from './stores/useAuthStore'
 import { useIdleLogout } from './hooks/useIdleLogout'
 
 // Analytics pulls in the charting library; loading it on demand keeps it out
 // of the bundle every other page pays for.
+// Route-level splitting. The whole dashboard shipped in one 1MB bundle,
+// so opening the login page downloaded Leaflet, the QR generator, the
+// charting library and every page nobody had asked for yet. Login, the
+// layout and the Dashboard stay eager — they are the first paint; the
+// rest arrive when someone actually navigates to them.
 const Analytics = lazy(() => import('./pages/Analytics'))
+const Monitoring = lazy(() => import('./pages/Monitoring'))
+const ClientDetail = lazy(() => import('./pages/ClientDetail'))
+const CheckpointDetail = lazy(() => import('./pages/CheckpointDetail'))
+const ScanDetail = lazy(() => import('./pages/ScanDetail'))
+const Reports = lazy(() => import('./pages/Reports'))
+const Timesheets = lazy(() => import('./pages/Timesheets'))
+const PostOrders = lazy(() => import('./pages/PostOrders'))
+const Handovers = lazy(() => import('./pages/Handovers'))
+const PassOnLogs = lazy(() => import('./pages/PassOnLogs'))
+const ActivitySummary = lazy(() => import('./pages/ActivitySummary'))
+const AiAssistant = lazy(() => import('./pages/AiAssistant'))
+const Settings = lazy(() => import('./pages/Settings'))
+const UserDetail = lazy(() => import('./pages/UserDetail'))
+const Profile = lazy(() => import('./pages/Profile'))
 
 const roleHomePath: Record<UserRole, string> = {
   admin: '/',

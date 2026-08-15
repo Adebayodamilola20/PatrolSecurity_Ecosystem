@@ -11,6 +11,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ReactLenis } from 'lenis/react';
+import { Suspense } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { Menu, X, ChevronDown, ArrowRight } from 'lucide-react';
 
@@ -193,7 +194,9 @@ export default function MarketingLayout() {
 
                 <AnimatePresence mode="wait">
                     <PageWrapper key={pathname}>
-                        <Outlet />
+                        <Suspense fallback={<div className="min-h-[60vh]" />}>
+                            <Outlet />
+                        </Suspense>
                     </PageWrapper>
                 </AnimatePresence>
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { Outlet, Navigate } from 'react-router-dom'
 import { AlertTriangle, MapPin, X } from 'lucide-react'
 import Sidebar from './Sidebar'
@@ -6,6 +6,7 @@ import Header from './Header'
 import { formatDate } from '../../utils/format'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { ErrorBoundary } from '../ErrorBoundary'
+import { Skeleton } from '../ui/Skeleton'
 import AiAssistantPanel, { AiAssistantLauncher } from '../AiAssistantPanel'
 import IncidentToasts from '../IncidentToasts'
 import { subscribeToEmergency } from '../../services/websocket'
@@ -192,11 +193,45 @@ export default function DashboardLayout() {
         )}
         <main className="flex-1 overflow-y-auto p-3 md:p-5">
           <ErrorBoundary>
-            <Outlet />
+            {/* Every page but the Dashboard is now loaded on demand, so there
+                is a moment between clicking a menu item and the page arriving.
+                A blank panel in that moment reads as a broken click; a shape
+                the size of the page reads as "coming". */}
+            <Suspense fallback={<PageSkeleton />}>
+              <Outlet />
+            </Suspense>
           </ErrorBoundary>
         </main>
         <AiAssistantLauncher onClick={() => setAiOpen(true)} />
         <AiAssistantPanel open={aiOpen} onClose={() => setAiOpen(false)} />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Stand-in for a page that is still downloading.
+ *
+ * Deliberately generic — a heading, some stat tiles, a list — because it has
+ * to serve every page and a shape that is wrong is worse than a shape that is
+ * vague. It only has to say "something is coming, the click worked".
+ */
+function PageSkeleton() {
+  return (
+    <div className="space-y-5">
+      <div className="space-y-2">
+        <Skeleton className="h-7 w-56" />
+        <Skeleton className="h-4 w-80" />
+      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-24 w-full" />
+        ))}
+      </div>
+      <div className="space-y-2">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-14 w-full" />
+        ))}
       </div>
     </div>
   )

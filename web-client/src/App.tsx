@@ -3,24 +3,29 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import ClientLayout from './components/layout/ClientLayout'
 import MarketingLayout from './marketing/MarketingLayout'
 import Landing from './marketing/Landing'
-import Solutions from './marketing/Solutions'
-import AboutUs from './marketing/AboutUs'
-import ContactUs from './marketing/ContactUs'
 import ComingSoon from './marketing/ComingSoon'
 import Login from './pages/Login'
 import Overview from './pages/Overview'
-import Guards from './pages/Guards'
-import Scans from './pages/Scans'
-import Locations from './pages/Locations'
-import Reports from './pages/Reports'
-import PassOns from './pages/PassOns'
-import Emergency from './pages/Emergency'
 import { useClientAuthStore } from './stores/useClientAuthStore'
 import { useIdleLogout } from './hooks/useIdleLogout'
 
 // Analytics pulls in the charting library; loading it on demand keeps it out
 // of the bundle every other page pays for.
+// Route-level splitting. The marketing site and the signed-in portal
+// shipped as one 878KB bundle, so a client logging in first downloaded
+// the landing page's animation library, and a visitor reading the landing
+// page downloaded Leaflet and the QR generator. Landing, Login and
+// Overview stay eager — everything else arrives on navigation.
 const Analytics = lazy(() => import('./pages/Analytics'))
+const Solutions = lazy(() => import('./marketing/Solutions'))
+const AboutUs = lazy(() => import('./marketing/AboutUs'))
+const ContactUs = lazy(() => import('./marketing/ContactUs'))
+const Locations = lazy(() => import('./pages/Locations'))
+const Scans = lazy(() => import('./pages/Scans'))
+const Reports = lazy(() => import('./pages/Reports'))
+const PassOns = lazy(() => import('./pages/PassOns'))
+const Emergency = lazy(() => import('./pages/Emergency'))
+const Guards = lazy(() => import('./pages/Guards'))
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useClientAuthStore((s) => s.isAuthenticated)
