@@ -28,30 +28,25 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Camera is used to scan QR codes at checkpoints</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Your location is used to verify you are at the checkpoint</string>
 	<!-- Tracking continues while the phone is pocketed and the app closed.
-	     Without the Always permission and the location background mode iOS
-	     suspends the app on the home button and position updates stop dead:
-	     a guard's dot froze wherever they last had the app open and stayed
-	     there for days. The background indicator keeps the blue status bar
-	     visible so a guard can always tell tracking is running. -->
+	     Without the Always permission AND the location background mode below,
+	     iOS suspends the app on the home button and position updates stop
+	     dead: a guard's dot froze wherever they last had the app open and
+	     stayed there for days. -->
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Your location is shared with the control room for the whole of your shift, including while the app is closed, so supervisors can see where you are and send help to the right place. Tracking stops when you clock out.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>Your location is shared with the control room for the whole of your shift, including while the app is closed. Tracking stops when you clock out.</string>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>location</string>
-	</array>
-	<!-- Without this dictionary iOS refuses the temporary full-accuracy prompt
-	     outright, so a guard whose Precise Location is off can never be asked
-	     for it and every scan fails on a fuzzed ~1400m reading. -->
+	<!-- Without this dictionary iOS refuses the temporary full-accuracy
+	     prompt outright, so a guard whose Precise Location is off can never
+	     be asked for it and every scan fails on a fuzzed ~1400m reading. -->
 	<key>NSLocationTemporaryUsageDescriptionDictionary</key>
 	<dict>
 		<key>PatrolScan</key>
 		<string>Exact location is needed to confirm you are standing at the checkpoint. Without it a patrol scan cannot be verified.</string>
 	</dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Your location is used to verify you are at the checkpoint</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Photos can be attached to scan reports</string>
 	<key>UIApplicationSceneManifest</key>
@@ -77,22 +72,27 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- Required for background tracking. See the Always-permission note
+	     above; removing either one breaks the same thing. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
-		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
+		<string>UIInterfaceOrientationPortrait</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
+		<string>UIInterfaceOrientationLandscapeRight</string>
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 </dict>
 </plist>
