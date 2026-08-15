@@ -232,6 +232,27 @@ export default function ClientDetail() {
   const [assignOpenPointId, setAssignOpenPointId] = useState('')
   // Resetting the client's own portal password. Same secure path as a guard's:
   // set a new one, revoke their sessions, never reveal the old.
+  // Deleting the whole client company: the largest destructive action here,
+  // so the numbers are read from the server and shown before it can be done.
+  const [showDeleteClient, setShowDeleteClient] = useState(false)
+  const [clientImpact, setClientImpact] = useState<Awaited<ReturnType<typeof api.clients.deletionImpact>> | null>(null)
+  const [deletingClient, setDeletingClient] = useState(false)
+  const [deleteClientError, setDeleteClientError] = useState('')
+  const [confirmName, setConfirmName] = useState('')
+
+  const confirmDeleteClient = async () => {
+    if (!detail) return
+    setDeletingClient(true)
+    setDeleteClientError('')
+    try {
+      await api.clients.remove(detail.id)
+      navigate('/clients')
+    } catch (err) {
+      setDeleteClientError(err instanceof Error ? err.message : 'Could not delete this client.')
+      setDeletingClient(false)
+    }
+  }
+
   const [resetLogin, setResetLogin] = useState<{ id: string; email: string } | null>(null)
   const [newPassword, setNewPassword] = useState('')
   const [resetting, setResetting] = useState(false)
@@ -817,6 +838,65 @@ export default function ClientDetail() {
 
       {/* Client account header */}
       <div className="rounded-xl border border-border bg-card p-5">
+        {showDeleteClient && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <div className="w-full max-w-md space-y-4 rounded-xl border border-destructive/40 bg-card p-6">
+              <div className="flex items-start justify-between gap-3">
+                <h2 className="text-lg font-semibold text-destructive">Delete {detail.name}?</h2>
+                <button onClick={() => setShowDeleteClient(false)} disabled={deletingClient} className="text-muted-foreground hover:text-foreground disabled:opacity-50">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {deleteClientError ? (
+                <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">{deleteClientError}</div>
+              ) : !clientImpact ? (
+                <CardSkeleton />
+              ) : (
+                <>
+                  <div className="space-y-2 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm">
+                    <div className="font-medium text-destructive">This removes, permanently:</div>
+                    <ul className="ml-4 list-disc space-y-1 text-muted-foreground">
+                      <li>{clientImpact.sites} location{clientImpact.sites === 1 ? '' : 's'}{clientImpact.siteNames.length ? ` (${clientImpact.siteNames.join(', ')})` : ''}</li>
+                      <li>{clientImpact.qrCodes} QR code{clientImpact.qrCodes === 1 ? '' : 's'} — they stop working immediately</li>
+                      <li>{clientImpact.postOrders} post order{clientImpact.postOrders === 1 ? '' : 's'} and this client's pass-ons</li>
+                      <li>{clientImpact.portalLogins} portal login{clientImpact.portalLogins === 1 ? '' : 's'}</li>
+                    </ul>
+                  </div>
+                  <div className="space-y-1 rounded-lg border border-border bg-background/60 p-3 text-sm">
+                    <div className="font-medium">This is kept:</div>
+                    <ul className="ml-4 list-disc space-y-1 text-muted-foreground">
+                      <li>{clientImpact.scansKept} scan{clientImpact.scansKept === 1 ? '' : 's'} — the record of patrols that really happened</li>
+                      <li>{clientImpact.guardsUnassigned} guard{clientImpact.guardsUnassigned === 1 ? '' : 's'} — they work for you, not this client, and are simply unposted</li>
+                    </ul>
+                  </div>
+                  <label className="block text-xs text-muted-foreground">
+                    Type <span className="font-mono text-foreground">{detail.name}</span> to confirm
+                    <input
+                      value={confirmName}
+                      onChange={(e) => setConfirmName(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                    />
+                  </label>
+                </>
+              )}
+
+              <div className="flex gap-2">
+                <button onClick={() => setShowDeleteClient(false)} disabled={deletingClient} className="flex-1 rounded-lg border border-border py-2 text-sm hover:bg-accent disabled:opacity-50">
+                  Cancel
+                </button>
+                <button
+                  onClick={() => void confirmDeleteClient()}
+                  disabled={deletingClient || !clientImpact || confirmName.trim() !== detail.name}
+                  className="flex-1 rounded-lg bg-destructive py-2 text-sm font-medium text-destructive-foreground hover:opacity-90 disabled:opacity-50"
+                >
+                  {deletingClient ? 'Deleting…' : 'Delete client'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {resetLogin && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
             <form onSubmit={submitPortalReset} className="w-full max-w-md space-y-4 rounded-xl border border-border bg-card p-6">
@@ -897,19 +977,26 @@ export default function ClientDetail() {
               {detail.active ? 'Active' : 'Inactive'}
             </span>
             {canManage && (
+              /* Deactivating left the company greyed out in the list forever,
+                 which is not what anyone means by removing a client. Delete
+                 takes it off the list entirely. */
               <button
-                onClick={async () => {
-                  try {
-                    setActionError('')
-                    await api.clients.update(detail.id, { active: !detail.active })
-                    load()
-                  } catch (error) {
-                    setActionError(error instanceof Error ? error.message : 'Could not update the client.')
-                  }
+                onClick={() => {
+                  setShowDeleteClient(true)
+                  setClientImpact(null)
+                  setDeleteClientError('')
+                  api.clients
+                    .deletionImpact(detail.id)
+                    .then(setClientImpact)
+                    .catch((err) =>
+                      setDeleteClientError(
+                        err instanceof Error ? err.message : 'Could not read this client’s record.',
+                      ),
+                    )
                 }}
-                className={`rounded-lg border px-2.5 py-1.5 text-xs hover:bg-accent ${detail.active ? 'text-warning border-warning/30' : 'text-success border-success/30'}`}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-destructive/30 px-2.5 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10"
               >
-                {detail.active ? 'Deactivate' : 'Activate'}
+                <Trash2 className="h-3.5 w-3.5" /> Delete Client
               </button>
             )}
           </div>

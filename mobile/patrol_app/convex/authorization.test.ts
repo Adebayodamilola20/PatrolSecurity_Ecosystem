@@ -1623,3 +1623,82 @@ describe("shifts nobody clocked out of", () => {
     expect(shift?.status).toBe("active");
   });
 });
+
+describe("deleting a client company", () => {
+  test("an admin removes the company, its locations and its QR codes", async () => {
+    const res = await t.fetch(`/clients/${w.alphaClient}`, {
+      method: "DELETE",
+      headers: auth(w.tokens.admin),
+    });
+    expect(res.status).toBe(200);
+
+    const clients = await t.run((ctx) => ctx.db.query("clients").collect());
+    expect(clients.map((c) => c._id)).not.toContain(w.alphaClient);
+    // Gone from the list entirely, not sitting there greyed out.
+    const sites = await t.run((ctx) => ctx.db.query("sites").collect());
+    expect(sites.every((s) => s.clientId !== w.alphaClient)).toBe(true);
+    const checkpoints = await t.run((ctx) => ctx.db.query("checkpoints").collect());
+    expect(checkpoints.every((c) => c.clientId !== w.alphaClient)).toBe(true);
+    // The portal login goes with the company.
+    const users = await t.run((ctx) => ctx.db.query("users").collect());
+    expect(users.map((u) => u._id)).not.toContain(w.alphaPortal);
+  });
+
+  test("guards and patrol history survive the deletion", async () => {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("scans", {
+        clientId: w.alphaClient,
+        siteId: w.alphaSite,
+        officerId: w.alphaGuard,
+        checkpointId: w.alphaCheckpoint,
+        scannedAt: Date.now(),
+        receivedAt: Date.now(),
+        gpsValid: true,
+        notes: "",
+      });
+    });
+    await t.fetch(`/clients/${w.alphaClient}`, {
+      method: "DELETE",
+      headers: auth(w.tokens.admin),
+    });
+
+    // The guard works for the security company, not the customer.
+    const users = await t.run((ctx) => ctx.db.query("users").collect());
+    expect(users.map((u) => u._id)).toContain(w.alphaGuard);
+    // The evidence trail for nights that were really worked stays.
+    const scans = await t.run((ctx) => ctx.db.query("scans").collect());
+    expect(scans).toHaveLength(1);
+    // ...and the deleted location's name stays readable on it.
+    const tombstones = await t.run((ctx) => ctx.db.query("deletedEntities").collect());
+    expect(tombstones.some((tomb) => tomb.name === "Alpha Ikeja Warehouse")).toBe(true);
+  });
+
+  test("another client is untouched", async () => {
+    await t.fetch(`/clients/${w.alphaClient}`, {
+      method: "DELETE",
+      headers: auth(w.tokens.admin),
+    });
+    const clients = await t.run((ctx) => ctx.db.query("clients").collect());
+    expect(clients.map((c) => c._id)).toContain(w.bravoClient);
+    const sites = await t.run((ctx) => ctx.db.query("sites").collect());
+    expect(sites.some((s) => s._id === w.bravoSite)).toBe(true);
+  });
+
+  test("a supervisor cannot delete a client", async () => {
+    const res = await t.fetch(`/clients/${w.alphaClient}`, {
+      method: "DELETE",
+      headers: auth(w.tokens.supervisor),
+    });
+    expect(res.status).toBe(403);
+    const clients = await t.run((ctx) => ctx.db.query("clients").collect());
+    expect(clients.map((c) => c._id)).toContain(w.alphaClient);
+  });
+
+  test("a client cannot delete itself or anyone else", async () => {
+    const res = await t.fetch(`/clients/${w.alphaClient}`, {
+      method: "DELETE",
+      headers: auth(w.tokens.alphaPortal),
+    });
+    expect([401, 403]).toContain(res.status);
+  });
+});

@@ -2,6 +2,7 @@ import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { scrubOfficerName } from "./lib/anonymize";
+import { recordTombstone } from "./lib/tombstones";
 
 export const list = internalQuery({
   args: { clientId: v.optional(v.id("clients")) },
@@ -562,5 +563,224 @@ export const portalCheckpoints = internalQuery({
       }
     }
     return results;
+  },
+});
+
+/**
+ * What deleting a client company would take with it.
+ *
+ * Read before the confirm dialog. Deleting a client is the largest destructive
+ * action in the system — it removes every location, QR code and instruction
+ * belonging to them — so staff are shown the numbers, and told plainly which
+ * records survive, before they commit to it.
+ */
+export const getDeletionImpact = internalQuery({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const client = await ctx.db.get(args.clientId);
+    if (!client) return null;
+
+    const sites = await ctx.db
+      .query("sites")
+      .withIndex("by_clientId", (q) => q.eq("clientId", args.clientId))
+      .collect();
+    const checkpoints = await ctx.db
+      .query("checkpoints")
+      .withIndex("by_clientId", (q) => q.eq("clientId", args.clientId))
+      .collect();
+    const scans = await ctx.db
+      .query("scans")
+      .withIndex("by_clientId", (q) => q.eq("clientId", args.clientId))
+      .collect();
+    const postOrders = await ctx.db
+      .query("postOrders")
+      .withIndex("by_clientId", (q) => q.eq("clientId", args.clientId))
+      .collect();
+    const portalUsers = await ctx.db
+      .query("users")
+      .withIndex("by_role_clientId", (q) =>
+        q.eq("role", "main_account").eq("clientId", args.clientId),
+      )
+      .collect();
+
+    const guardIds = new Set<string>();
+    for (const site of sites) {
+      const assignments = await ctx.db
+        .query("userSiteAssignments")
+        .withIndex("by_siteId", (q) => q.eq("siteId", site._id))
+        .collect();
+      for (const a of assignments) guardIds.add(a.userId);
+    }
+
+    return {
+      name: client.name,
+      sites: sites.length,
+      siteNames: sites.map((s) => s.name),
+      qrCodes: checkpoints.length,
+      postOrders: postOrders.length,
+      portalLogins: portalUsers.length,
+      // Guards are not deleted — they work for the security company, not for
+      // this customer — they are only unposted.
+      guardsUnassigned: guardIds.size,
+      // Kept: the record of patrols that really happened.
+      scansKept: scans.length,
+    };
+  },
+});
+
+/**
+ * Hard-deletes a client company and everything that only exists because of it.
+ *
+ * Deactivating left the company sitting in the list greyed out forever, which
+ * is not what "remove this client" means to anyone using it. This removes the
+ * company, its locations, its QR codes, its post orders and pass-ons, and its
+ * portal logins.
+ *
+ * Guards are NOT deleted: they are the security company's staff, not the
+ * customer's, and they simply stop being posted here. Scans, shifts and
+ * incidents are kept too — they are the evidence trail for nights that were
+ * really worked, and a court or an insurer can still ask about them after the
+ * contract ends. Tombstones keep the location and checkpoint names readable on
+ * that history rather than leaving it full of blanks.
+ */
+export const remove = internalMutation({
+  args: {
+    clientId: v.id("clients"),
+    deletedByUserId: v.optional(v.id("users")),
+    deletedByName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const client = await ctx.db.get(args.clientId);
+    if (!client) return null;
+
+    const sites = await ctx.db
+      .query("sites")
+      .withIndex("by_clientId", (q) => q.eq("clientId", args.clientId))
+      .collect();
+
+    let checkpointsRemoved = 0;
+    for (const site of sites) {
+      const checkpoints = await ctx.db
+        .query("checkpoints")
+        .withIndex("by_siteId", (q) => q.eq("siteId", site._id))
+        .collect();
+      for (const checkpoint of checkpoints) {
+        // Close open alerts first: an alert for a location that no longer
+        // exists is noise staff can never action.
+        const openAlerts = await ctx.db
+          .query("missedPatrolAlerts")
+          .withIndex("by_checkpointId_status", (q) =>
+            q.eq("checkpointId", checkpoint._id).eq("status", "open"),
+          )
+          .collect();
+        for (const alert of openAlerts) {
+          await ctx.db.patch(alert._id, { status: "resolved", resolvedAt: Date.now() });
+        }
+        const postings = await ctx.db
+          .query("userCheckpointAssignments")
+          .withIndex("by_checkpointId", (q) => q.eq("checkpointId", checkpoint._id))
+          .collect();
+        for (const posting of postings) await ctx.db.delete(posting._id);
+
+        await recordTombstone(ctx, {
+          entityType: "checkpoint",
+          entityId: checkpoint._id,
+          legacyId: checkpoint.legacyId,
+          contextName: site.name,
+          name: checkpoint.name,
+          deletedByUserId: args.deletedByUserId,
+          deletedByName: args.deletedByName,
+        });
+        await ctx.db.delete(checkpoint._id);
+        checkpointsRemoved++;
+      }
+
+      const assignments = await ctx.db
+        .query("userSiteAssignments")
+        .withIndex("by_siteId", (q) => q.eq("siteId", site._id))
+        .collect();
+      for (const assignment of assignments) await ctx.db.delete(assignment._id);
+
+      await recordTombstone(ctx, {
+        entityType: "site",
+        entityId: site._id,
+        legacyId: site.legacyId,
+        contextName: client.name,
+        name: site.name,
+        deletedByUserId: args.deletedByUserId,
+        deletedByName: args.deletedByName,
+      });
+      await ctx.db.delete(site._id);
+    }
+
+    // Instructions and messages written for this client have no meaning once
+    // the client is gone, and would otherwise keep reaching guards.
+    const postOrders = await ctx.db
+      .query("postOrders")
+      .withIndex("by_clientId", (q) => q.eq("clientId", args.clientId))
+      .collect();
+    for (const order of postOrders) {
+      const completions = await ctx.db
+        .query("postOrderCompletions")
+        .withIndex("by_postOrderId", (q) => q.eq("postOrderId", order._id))
+        .collect();
+      for (const completion of completions) await ctx.db.delete(completion._id);
+      await ctx.db.delete(order._id);
+    }
+
+    const passOns = await ctx.db
+      .query("passOnLogs")
+      .withIndex("by_clientId", (q) => q.eq("clientId", args.clientId))
+      .collect();
+    for (const log of passOns) {
+      const acks = await ctx.db
+        .query("passOnLogAcknowledgements")
+        .withIndex("by_passOnLogId", (q) => q.eq("passOnLogId", log._id))
+        .collect();
+      for (const ack of acks) await ctx.db.delete(ack._id);
+      await ctx.db.delete(log._id);
+    }
+
+    const observations = await ctx.db
+      .query("observations")
+      .withIndex("by_clientId", (q) => q.eq("clientId", args.clientId))
+      .collect();
+    for (const note of observations) await ctx.db.delete(note._id);
+
+    // The portal logins go with the company, and their sessions with them: a
+    // refresh in flight must not outlive the account it belongs to.
+    const portalUsers = await ctx.db
+      .query("users")
+      .withIndex("by_role_clientId", (q) =>
+        q.eq("role", "main_account").eq("clientId", args.clientId),
+      )
+      .collect();
+    for (const user of portalUsers) {
+      const tokens = await ctx.db
+        .query("refreshTokens")
+        .withIndex("by_userId", (q) => q.eq("userId", user._id))
+        .collect();
+      for (const token of tokens) await ctx.db.delete(token._id);
+      await recordTombstone(ctx, {
+        entityType: "user",
+        entityId: user._id,
+        legacyId: user.legacyId,
+        contextName: client.name,
+        name: user.name,
+        deletedByUserId: args.deletedByUserId,
+        deletedByName: args.deletedByName,
+      });
+      await ctx.db.delete(user._id);
+    }
+
+    await ctx.db.delete(args.clientId);
+
+    return {
+      name: client.name,
+      sitesRemoved: sites.length,
+      checkpointsRemoved,
+      postOrdersRemoved: postOrders.length,
+      portalLoginsRemoved: portalUsers.length,
+    };
   },
 });

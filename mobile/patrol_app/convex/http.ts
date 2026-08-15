@@ -3990,6 +3990,42 @@ http.route({ pathPrefix: "/observations/", method: "POST", handler: httpAction(a
   }
 })});
 
+// Deleting a client company. Admin-only, and the largest destructive action
+// here: it takes every location, QR code and instruction belonging to them.
+// Guards and patrol history survive — see clients.remove for why.
+http.route({ path: "/clients/deletion-impact", method: "GET", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  const roleErr = requireRole(user, ["admin"]);
+  if (roleErr) return roleErr;
+  const clientId = await ctx.runQuery(internal.clients.resolveId, {
+    id: new URL(request.url).searchParams.get("id") ?? "",
+  });
+  if (!clientId) return notFound("Client not found");
+  return json(await ctx.runQuery(internal.clients.getDeletionImpact, { clientId }));
+})});
+
+http.route({ pathPrefix: "/clients/", method: "DELETE", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  const roleErr = requireRole(user, ["admin"]);
+  if (roleErr) return roleErr;
+  const clientId = await ctx.runQuery(internal.clients.resolveId, { id: lastPathPart(request) });
+  if (!clientId) return notFound("Client not found");
+  const result = await ctx.runMutation(internal.clients.remove, {
+    clientId,
+    deletedByUserId: _uid(user.convexId),
+    deletedByName: user.name,
+  });
+  if (!result) return notFound("Client not found");
+  await recordAudit(ctx, user, "client.deleted", {
+    targetType: "client", targetId: clientId as string,
+    details: `Deleted client ${result.name}: ${result.sitesRemoved} location(s), ${result.checkpointsRemoved} QR code(s), ${result.portalLoginsRemoved} portal login(s)`,
+    ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+  });
+  return json(result);
+})});
+
 // Postings to a single sub-location (QR point). Separate from the site
 // assignments above because the two answer different questions: a site
 // assignment decides whether a guard's scans at this location count at all,

@@ -417,6 +417,25 @@ export const api = {
       request<any>('/clients', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: string, data: any) =>
       request<any>(`/clients/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    // What deleting this client would take with it — read before confirming.
+    deletionImpact: (id: string) =>
+      request<{
+        name: string
+        sites: number
+        siteNames: string[]
+        qrCodes: number
+        postOrders: number
+        portalLogins: number
+        guardsUnassigned: number
+        scansKept: number
+      }>(`/clients/deletion-impact?id=${encodeURIComponent(id)}`),
+    // Removes the company, its locations, QR codes, instructions and portal
+    // logins. Guards and patrol history survive.
+    remove: (id: string) =>
+      request<{ name: string; sitesRemoved: number; checkpointsRemoved: number }>(
+        `/clients/${id}`,
+        { method: 'DELETE' },
+      ),
   },
   sites: {
     list: (params?: Record<string, string>) =>

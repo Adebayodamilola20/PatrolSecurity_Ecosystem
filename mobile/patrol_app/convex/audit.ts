@@ -30,6 +30,7 @@ const sensitiveActions = [
   "site.guard_unassigned",
   "client.created",
   "client.updated",
+  "client.deleted",
   "emergency.triggered",
   "emergency.created",
   "emergency.resolved",
