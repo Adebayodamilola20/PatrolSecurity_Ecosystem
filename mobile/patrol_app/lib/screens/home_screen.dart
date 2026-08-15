@@ -890,22 +890,38 @@ class _DashboardTab extends StatelessWidget {
       final hasLocation = location.isSuccess;
       final nearestCheckpoint = !hasLocation
           ? null
-          : _findNearestCheckpoint(
+          : nearestCheckpointWithin(
               scanProvider.checkpoints,
               location.latitude,
               location.longitude,
+              LocationService.calculateDistance,
             );
+      final coords = !hasLocation
+          ? ''
+          : '${location.latitude.toStringAsFixed(6)}, '
+                '${location.longitude.toStringAsFixed(6)}';
+      // Away from any known checkpoint the coordinates are the whole answer,
+      // and the control room has to be told that plainly rather than shown a
+      // site name that only means "this pin was the least far away".
       final locationText = !hasLocation
           ? ''
           : nearestCheckpoint == null
-          ? '${location.latitude.toStringAsFixed(6)}, ${location.longitude.toStringAsFixed(6)}'
-          : '${nearestCheckpoint.name} '
-                '(${location.latitude.toStringAsFixed(6)}, ${location.longitude.toStringAsFixed(6)})';
-      final note = location.error == null
-          ? nearestCheckpoint == null
-                ? 'Emergency button pressed from mobile patrol app.'
-                : 'Emergency button pressed from mobile patrol app near ${nearestCheckpoint.name}.'
-          : 'Emergency button pressed from mobile patrol app. GPS note: ${location.error}';
+          ? 'Away from any known checkpoint ($coords)'
+          : '${nearestCheckpoint.name} ($coords)';
+      final String note;
+      if (location.error != null) {
+        note =
+            'Emergency button pressed from mobile patrol app. '
+            'GPS note: ${location.error}';
+      } else if (nearestCheckpoint == null) {
+        note =
+            'Emergency button pressed from mobile patrol app. The guard is '
+            'not at any checkpoint on their list — go by the coordinates.';
+      } else {
+        note =
+            'Emergency button pressed from mobile patrol app near '
+            '${nearestCheckpoint.name}.';
+      }
 
       final result = await ApiService.triggerEmergency(
         checkpointId: nearestCheckpoint?.id,
@@ -946,33 +962,6 @@ class _DashboardTab extends StatelessWidget {
     if (category != null && category.trim().isNotEmpty && context.mounted) {
       await _triggerEmergency(context, category: category);
     }
-  }
-
-  Checkpoint? _findNearestCheckpoint(
-    List<Checkpoint> checkpoints,
-    double latitude,
-    double longitude,
-  ) {
-    Checkpoint? nearest;
-    double? nearestDistance;
-
-    for (final checkpoint in checkpoints) {
-      if (checkpoint.latitude == null || checkpoint.longitude == null) {
-        continue; // sub-location QR with no own coordinates
-      }
-      final distance = LocationService.calculateDistance(
-        latitude,
-        longitude,
-        checkpoint.latitude!,
-        checkpoint.longitude!,
-      );
-      if (nearestDistance == null || distance < nearestDistance) {
-        nearest = checkpoint;
-        nearestDistance = distance;
-      }
-    }
-
-    return nearest;
   }
 
   @override

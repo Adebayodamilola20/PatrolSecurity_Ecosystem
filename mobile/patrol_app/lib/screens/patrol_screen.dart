@@ -149,15 +149,22 @@ class _PatrolScreenState extends State<PatrolScreen> {
     try {
       final location = await LocationService.getCurrentLocation();
       final nearest = location.isSuccess
-          ? _findNearestCheckpoint(
+          ? nearestCheckpointWithin(
               scanProvider.checkpoints,
               location.latitude,
               location.longitude,
+              LocationService.calculateDistance,
             )
           : null;
-      final locationText = location.isSuccess
-          ? '${location.latitude.toStringAsFixed(6)}, ${location.longitude.toStringAsFixed(6)}'
-          : 'GPS unavailable';
+      final coords = location.isSuccess
+          ? '${location.latitude.toStringAsFixed(6)}, '
+                '${location.longitude.toStringAsFixed(6)}'
+          : '';
+      final locationText = !location.isSuccess
+          ? 'GPS unavailable'
+          : nearest == null
+          ? 'Away from any known checkpoint ($coords)'
+          : '${nearest.name} ($coords)';
       final timestamp = DateTime.now().toIso8601String();
 
       await ApiService.triggerEmergency(
@@ -187,31 +194,6 @@ class _PatrolScreenState extends State<PatrolScreen> {
     } finally {
       if (mounted) setState(() => _sendingEmergency = false);
     }
-  }
-
-  Checkpoint? _findNearestCheckpoint(
-    List<Checkpoint> checkpoints,
-    double latitude,
-    double longitude,
-  ) {
-    Checkpoint? nearest;
-    double? nearestDistance;
-    for (final checkpoint in checkpoints) {
-      if (checkpoint.latitude == null || checkpoint.longitude == null) {
-        continue; // sub-location QR with no own coordinates
-      }
-      final distance = LocationService.calculateDistance(
-        latitude,
-        longitude,
-        checkpoint.latitude!,
-        checkpoint.longitude!,
-      );
-      if (nearestDistance == null || distance < nearestDistance) {
-        nearest = checkpoint;
-        nearestDistance = distance;
-      }
-    }
-    return nearest;
   }
 
   @override

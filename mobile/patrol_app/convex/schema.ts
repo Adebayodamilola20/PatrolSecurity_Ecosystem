@@ -497,6 +497,16 @@ export default defineSchema({
     emailRecipients: v.array(v.string()),
     phoneRecipients: v.array(v.string()),
     status: v.string(),
+    // Whether the SMS and email actually went out: "delivered", "failed",
+    // "partial_failure", "no_recipients_configured".
+    //
+    // This used to be written straight into `status`, which is the lifecycle
+    // column. The moment the texts went out, an alert nobody had so much as
+    // looked at displayed as DELIVERED, and whether anyone was responding to
+    // it was gone. Two state machines need two columns. Optional because rows
+    // written before the split have their delivery outcome sitting in
+    // `status` — see describeEvents, which reads both.
+    deliveryStatus: v.optional(v.string()),
     deliveryPayload: v.any(),
   })
     .index("by_legacyId", ["legacyId"])

@@ -83,38 +83,46 @@ export default function DashboardLayout() {
     // other than Alerts would not have seen it regardless. Polling covers both
     // sources and survives a dropped socket, which is exactly the moment this
     // must not be relying on one.
+    const show = (a: Awaited<ReturnType<typeof api.emergency.active>>[number]) =>
+      setEmergency({
+        id: a.id,
+        message: a.message,
+        note: a.reason,
+        siteLabel: a.siteName ?? a.clientName ?? '',
+        category: a.category,
+        triggeredAt: a.triggeredAt,
+        userName: a.officerName,
+      })
+
     let seen = new Set<string>()
     let primed = false
     const poll = async () => {
       try {
         const active = await api.emergency.active()
         const ids = new Set(active.map((a) => a.id))
-        // The first pass only records what already exists: reopening the
-        // dashboard should not replay every alert from the last two days.
+        // On the first pass, an alert nobody has picked up yet still
+        // interrupts. Priming used to swallow everything already on the
+        // server, so an emergency raised a minute before you opened the
+        // dashboard showed you nothing at all — the case where this matters
+        // most. One somebody has already acknowledged is different: it has an
+        // owner, and it lives on Alerts.
         if (!primed) {
           seen = ids
           primed = true
+          const unattended = active.find((a) => a.status === 'triggered')
+          if (unattended) show(unattended)
           return
         }
         const fresh = active.find((a) => !seen.has(a.id))
         seen = ids
-        if (fresh) {
-          setEmergency({
-            id: fresh.id,
-            message: fresh.message,
-            note: fresh.reason,
-            siteLabel: fresh.siteName ?? fresh.clientName ?? '',
-            category: fresh.category,
-            triggeredAt: fresh.triggeredAt,
-            userName: fresh.officerName,
-          })
-        }
+        if (fresh) show(fresh)
       } catch {
         // Offline or a transient failure; the next tick tries again.
       }
     }
     void poll()
-    const timer = window.setInterval(poll, 20_000)
+    // A CODE RED is the one thing here worth checking often.
+    const timer = window.setInterval(poll, 10_000)
     return () => {
       unsubscribe?.()
       window.clearInterval(timer)

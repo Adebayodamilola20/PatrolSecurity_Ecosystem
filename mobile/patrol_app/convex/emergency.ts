@@ -145,6 +145,9 @@ export const listActive = internalQuery({
  * number to ring — the guard's phone number in particular was missing, so an
  * alert arrived with no way to call the person who raised it.
  */
+/** The lifecycle a human moves an alert through, in order. */
+const LIFECYCLE = ["triggered", "acknowledged", "responding", "resolved"] as const;
+
 async function describeEvents(
   ctx: { db: any },
   events: Array<Record<string, any>>,
@@ -162,7 +165,13 @@ async function describeEvents(
       // The reason the button was pressed, in the words of whoever pressed it.
       note: event.note,
       reason: event.note || event.category || "Not stated",
-      status: event.status,
+      // Rows written before delivery got its own column have an outcome like
+      // "delivered" sitting in `status`. That never meant a human had picked
+      // the alert up, so it reads as untouched — which is what it was.
+      status: LIFECYCLE.includes(event.status) ? event.status : "triggered",
+      deliveryStatus:
+        event.deliveryStatus ??
+        (LIFECYCLE.includes(event.status) ? null : (event.status ?? null)),
       source: event.source ?? "guard",
       siteLabel: event.siteLabel,
       siteId: event.siteId ?? null,
@@ -242,7 +251,6 @@ export const listForGuard = internalQuery({
  * Each step records who moved it and when — an alert nobody owns is the
  * failure mode this is here to prevent.
  */
-const LIFECYCLE = ["triggered", "acknowledged", "responding", "resolved"] as const;
 
 export const setStatus = internalMutation({
   args: {
@@ -304,10 +312,14 @@ export const recordDelivery = internalMutation({
     deliveryPayload: v.any(),
   },
   handler: async (ctx, args) => {
+    // Deliberately does NOT touch `status`. Whether the SMS went out and
+    // whether a human is responding are different questions, and writing the
+    // first into the second lost the answer to both: the card read DELIVERED
+    // for an alert nobody had seen.
     await ctx.db.patch(args.eventId, {
       emailRecipients: args.emailRecipients,
       phoneRecipients: args.phoneRecipients,
-      status: args.status,
+      deliveryStatus: args.status,
       deliveryPayload: args.deliveryPayload,
     });
     return await ctx.db.get(args.eventId);

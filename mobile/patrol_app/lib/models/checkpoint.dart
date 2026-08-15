@@ -52,3 +52,50 @@ class Checkpoint {
     lastScan: json['lastScan'],
   );
 }
+
+/// Which checkpoint an emergency should be attributed to, if any.
+///
+/// Lives here, once, because there were two copies of this walk — one in the
+/// home screen and one in the patrol screen — and both had the same hole.
+Checkpoint? nearestCheckpointWithin(
+  List<Checkpoint> checkpoints,
+  double latitude,
+  double longitude,
+  double Function(double, double, double, double) distanceBetween, {
+  double radiusMeters = emergencyAttributionRadiusMeters,
+}) {
+  Checkpoint? nearest;
+  double? nearestDistance;
+
+  for (final checkpoint in checkpoints) {
+    if (checkpoint.latitude == null || checkpoint.longitude == null) {
+      continue; // sub-location QR with no own coordinates
+    }
+    final distance = distanceBetween(
+      latitude,
+      longitude,
+      checkpoint.latitude!,
+      checkpoint.longitude!,
+    );
+    if (nearestDistance == null || distance < nearestDistance) {
+      nearest = checkpoint;
+      nearestDistance = distance;
+    }
+  }
+
+  // "Nearest" with no ceiling is not a location — it is whichever pin happens
+  // to be least far away on the whole planet. A phone reporting a fix in San
+  // Francisco was attributed to a checkpoint in Lagos about 12,000km off, and
+  // because the checkpoint id rides along with the alert, the control room was
+  // shown a site and a client the guard has no connection to. Out of range
+  // means unknown, and unknown gets reported as unknown.
+  if (nearest == null ||
+      nearestDistance == null ||
+      nearestDistance > radiusMeters) {
+    return null;
+  }
+  return nearest;
+}
+
+/// How close a checkpoint must be before an emergency may be attributed to it.
+const double emergencyAttributionRadiusMeters = 500;

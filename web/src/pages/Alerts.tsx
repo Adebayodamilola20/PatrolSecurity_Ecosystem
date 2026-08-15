@@ -216,6 +216,23 @@ export default function Alerts() {
                   <span className="text-muted-foreground"> · {sos.respondingByName} responding</span>
                 )}
               </div>
+              {/* Whether the texts went out is a separate question from
+                  whether anyone is responding. Both used to share one column,
+                  so an alert nobody had seen read as DELIVERED. */}
+              {sos.deliveryStatus && (
+                <div>
+                  <span className="text-muted-foreground">Alerts sent </span>
+                  <span className="font-medium">
+                    {sos.deliveryStatus === 'delivered'
+                      ? 'Yes'
+                      : sos.deliveryStatus === 'no_recipients_configured'
+                        ? 'Nobody is set up to receive these'
+                        : sos.deliveryStatus === 'partial_failure'
+                          ? 'Some failed'
+                          : 'Failed'}
+                  </span>
+                </div>
+              )}
               {sos.gpsLatitude != null && sos.gpsLongitude != null && (
                 <div>
                   <span className="text-muted-foreground">Position </span>

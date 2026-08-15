@@ -346,6 +346,7 @@ export const api = {
         checkpointName: string | null
         clientName: string | null
         acknowledgedAt: string | null
+        deliveryStatus: string | null
         acknowledgedByName: string | null
         createdAt: string
       }>>(
@@ -484,6 +485,7 @@ export const api = {
         gpsLatitude: number | null
         gpsLongitude: number | null
         acknowledgedAt: string | null
+        deliveryStatus: string | null
         acknowledgedByName: string | null
         respondingAt: string | null
         respondingByName: string | null
