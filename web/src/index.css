@@ -136,3 +136,20 @@
     hyphens: none;
   }
 }
+
+/* The emergency modal announces itself.
+   A red panel that simply appears can be missed by someone typing; a short
+   attention pulse cannot. It runs three times and stops — a light that never
+   stops flashing is one people learn to look away from. */
+@keyframes emergency-attention {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(239 68 68 / 0.55); }
+  50%      { box-shadow: 0 0 0 18px rgb(239 68 68 / 0); }
+}
+
+.emergency-alert {
+  animation: emergency-attention 1.1s ease-out 3;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .emergency-alert { animation: none; }
+}

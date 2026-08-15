@@ -243,15 +243,19 @@ function EmergencyPopup({ alert, onClose }: { alert: EmergencyAlert; onClose: ()
   const smsDelivery = alert.delivery?.sms
 
   return (
-    <div className="fixed inset-x-3 top-3 z-[80] md:inset-x-auto md:right-5 md:top-5 md:w-[440px]">
-      <div className="overflow-hidden rounded-2xl border border-destructive/40 bg-card shadow-2xl shadow-destructive/20">
+    /* A corner toast is what you use for "report ready". An emergency has to
+       stop the room: full screen, over everything, dismissable only by saying
+       you have seen it. Whatever the operator was doing can wait ninety
+       seconds; someone is in trouble. */
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-destructive/25 p-4 backdrop-blur-sm">
+      <div className="emergency-alert w-full max-w-lg overflow-hidden rounded-2xl border-2 border-destructive bg-card shadow-2xl">
         <div className="bg-destructive px-4 py-3 text-destructive-foreground">
           <div className="flex items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/18">
               <AlertTriangle className="h-6 w-6" />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-black uppercase tracking-wide">Emergency Alert Triggered</div>
+              <div className="text-base font-black uppercase tracking-wide">🚨 Code Red — Emergency</div>
               <div className="mt-0.5 text-xs opacity-90">Immediate response required</div>
             </div>
             <button
@@ -273,6 +277,7 @@ function EmergencyPopup({ alert, onClose }: { alert: EmergencyAlert; onClose: ()
           </div>
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <Info label="Raised by" value={alert.userName || 'Unknown'} />
             <Info label="Site" value={alert.siteLabel || 'Unknown site'} />
             <Info label="Category" value={alert.category || 'Not specified'} />
             <Info label="Time" value={when} />
