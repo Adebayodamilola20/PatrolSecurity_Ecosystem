@@ -10,7 +10,17 @@ import { Skeleton } from '../ui/Skeleton'
 import AiAssistantPanel, { AiAssistantLauncher } from '../AiAssistantPanel'
 import IncidentToasts from '../IncidentToasts'
 import { subscribeToEmergency } from '../../services/websocket'
+
 import { api } from '../../services/api'
+
+/**
+ * How recent an unattended alert must be to interrupt you when the dashboard
+ * first loads. Long enough to catch one raised while you were walking to the
+ * desk; short enough that yesterday's unclosed alert does not greet you every
+ * morning. New alerts arriving while the dashboard is open always interrupt,
+ * regardless of this.
+ */
+const FIRST_LOAD_ALERT_WINDOW_MS = 30 * 60 * 1000
 
 interface AppIssue {
   message: string
@@ -100,16 +110,22 @@ export default function DashboardLayout() {
       try {
         const active = await api.emergency.active()
         const ids = new Set(active.map((a) => a.id))
-        // On the first pass, an alert nobody has picked up yet still
-        // interrupts. Priming used to swallow everything already on the
-        // server, so an emergency raised a minute before you opened the
-        // dashboard showed you nothing at all — the case where this matters
-        // most. One somebody has already acknowledged is different: it has an
-        // owner, and it lives on Alerts.
+        // On the first pass, only a *recent* unattended alert interrupts.
+        //
+        // Two wrong versions preceded this one. Swallowing everything meant an
+        // emergency raised a minute before you opened the dashboard showed you
+        // nothing. Showing everything unattended meant a day-old alert nobody
+        // had closed hijacked every single login, forever — which teaches you
+        // to click past a CODE RED, the exact habit this modal exists to
+        // prevent. Anything older than the window is a backlog item: it
+        // belongs on Alerts, with the badge, not across your screen at 8am.
         if (!primed) {
           seen = ids
           primed = true
-          const unattended = active.find((a) => a.status === 'triggered')
+          const cutoff = Date.now() - FIRST_LOAD_ALERT_WINDOW_MS
+          const unattended = active.find(
+            (a) => a.status === 'triggered' && Date.parse(a.triggeredAt) >= cutoff,
+          )
           if (unattended) show(unattended)
           return
         }
@@ -163,7 +179,18 @@ export default function DashboardLayout() {
       <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300`}>
         <Header onMenuClick={() => setMobileSidebarOpen(true)} />
         {emergency && (
-          <EmergencyPopup alert={emergency} onClose={() => setEmergency(null)} />
+          <EmergencyPopup
+            alert={emergency}
+            onClose={() => setEmergency(null)}
+            onAcknowledge={async () => {
+              // No id means it arrived over the socket without one; there is
+              // nothing to acknowledge server-side, so just close.
+              if (emergency.id) {
+                await api.emergency.setStatus(emergency.id, 'acknowledged')
+              }
+              setEmergency(null)
+            }}
+          />
         )}
         {role !== 'guard' && <IncidentToasts />}
         {(!online || issue) && (
@@ -245,10 +272,20 @@ function PageSkeleton() {
   )
 }
 
-function EmergencyPopup({ alert, onClose }: { alert: EmergencyAlert; onClose: () => void }) {
+function EmergencyPopup({
+  alert,
+  onClose,
+  onAcknowledge,
+}: {
+  alert: EmergencyAlert
+  onClose: () => void
+  onAcknowledge: () => Promise<void>
+}) {
   const when = formatDate(alert.triggeredAt ?? new Date())
   const emailDelivery = alert.delivery?.email
   const smsDelivery = alert.delivery?.sms
+  const [acknowledging, setAcknowledging] = useState(false)
+  const [ackError, setAckError] = useState<string | null>(null)
 
   return (
     /* A corner toast is what you use for "report ready". An emergency has to
@@ -308,12 +345,39 @@ function EmergencyPopup({ alert, onClose }: { alert: EmergencyAlert; onClose: ()
             <div>SMS: {smsDelivery?.skipped ? smsDelivery.reason : smsDelivery ? 'sent' : 'not configured'}</div>
           </div>
 
+          {ackError && (
+            <div className="rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {ackError}
+            </div>
+          )}
+
+          {/* This used to call onClose and nothing else — it shut the dialog
+              and told the server nothing, so the alert stayed "triggered"
+              forever and reappeared at every login. A button labelled
+              Acknowledge has to actually acknowledge. */}
           <button
-            onClick={onClose}
-            className="w-full rounded-lg bg-destructive px-4 py-2 text-sm font-semibold text-destructive-foreground hover:opacity-90"
+            onClick={async () => {
+              setAcknowledging(true)
+              setAckError(null)
+              try {
+                await onAcknowledge()
+              } catch (err) {
+                setAckError(
+                  err instanceof Error
+                    ? err.message
+                    : 'Could not record that. The alert stays open on the Alerts page.',
+                )
+                setAcknowledging(false)
+              }
+            }}
+            disabled={acknowledging}
+            className="w-full rounded-lg bg-destructive px-4 py-2 text-sm font-semibold text-destructive-foreground hover:opacity-90 disabled:opacity-60"
           >
-            Acknowledge On Screen
+            {acknowledging ? 'Recording…' : 'Acknowledge — I have seen this'}
           </button>
+          <p className="text-center text-[11px] text-muted-foreground">
+            Closing without acknowledging leaves it unattended on the Alerts page.
+          </p>
         </div>
       </div>
     </div>
