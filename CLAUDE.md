@@ -14,6 +14,34 @@ Convex agent skills for common tasks can be installed by running
 
 ---
 
+# Git workflow — NON-NEGOTIABLE
+
+**Never commit or push to `main`.** Not for a one-line fix, not for a typo, not
+because the change is obviously safe. `main` is merged by the repo owner and by
+nobody else.
+
+Every change goes:
+
+1. `git checkout -b <type>/<short-name>` off an up-to-date `main`
+   (`fix/`, `feat/`, `chore/`, `docs/`).
+2. Commit on that branch.
+3. `git push -u origin <branch>`
+4. `gh pr create` with a body that says **what changed and why** — the reason
+   the change exists, what it cost, and anything the owner has to do by hand
+   (a Convex deploy, an app rebuild, a new env var). Not a list of files.
+5. Stop. The owner reviews and merges. Do not merge your own PR.
+
+If you have already committed to `main` locally by mistake, do not push. Move
+the commits onto a branch:
+
+```bash
+git branch <type>/<name>          # save the work
+git reset --hard origin/main      # put main back
+git checkout <type>/<name>
+```
+
+---
+
 # Project Second Brain — PatrolSecurity Ecosystem
 
 ## What This Project Is
