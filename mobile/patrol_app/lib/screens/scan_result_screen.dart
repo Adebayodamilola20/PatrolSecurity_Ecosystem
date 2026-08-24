@@ -454,6 +454,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
       'locationCaptured': hasLocation,
       'locationError': location.error,
       'timestamp': DateTime.now().toIso8601String(),
+      'gpsMocked': location.isMocked,
     };
 
     Navigator.pushReplacementNamed(
@@ -493,6 +494,12 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
       'checkpointId': _checkpoint!.id,
       'gpsLatitude': gpsLat,
       'gpsLongitude': gpsLng,
+      // Both travel with the scan into the offline queue and are written once,
+      // here, so flushing the queue hours later cannot change them. The server
+      // treats capturedAt as a claim and clamps it to the shift.
+      'capturedAt':
+          data['timestamp'] as String? ?? DateTime.now().toIso8601String(),
+      'gpsMocked': data['gpsMocked'] == true,
       'notes': _notesCtrl.text.trim().isEmpty
           ? 'Instant QR scan GPS update'
           : _notesCtrl.text.trim(),

@@ -2,6 +2,7 @@ import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { findDeletedCheckpoint, recordTombstone } from "./lib/tombstones";
 import { isAssignedToSite, isAssignedUnderClient } from "./lib/authHelpers";
+import { rowInScope } from "./lib/scope";
 
 export const list = internalQuery({
   args: {
@@ -41,7 +42,15 @@ export const list = internalQuery({
 });
 
 export const listForApi = internalQuery({
-  args: { clientId: v.optional(v.id("clients")) },
+  args: {
+    clientId: v.optional(v.id("clients")),
+    // Guard scope. `code` here is the QR value and the row carries the
+    // geofence and the patrol schedule, so an unfiltered read of this table
+    // hands over every customer's timetable and the coordinates to stand at.
+    // Callers pass these from lib/scope.ts; see the note there.
+    siteIds: v.optional(v.array(v.id("sites"))),
+    siteClientIds: v.optional(v.array(v.id("clients"))),
+  },
   handler: async (ctx, args) => {
     const query = args.clientId
       ? ctx.db.query("checkpoints").withIndex("by_clientId", (q) =>
@@ -52,6 +61,10 @@ export const listForApi = internalQuery({
 
     if (args.clientId) {
       checkpoints = checkpoints.filter((cp) => cp.clientId === args.clientId);
+    }
+
+    if (args.siteIds) {
+      checkpoints = checkpoints.filter((cp) => rowInScope(args, cp));
     }
 
     const scans = await ctx.db.query("scans").take(500);

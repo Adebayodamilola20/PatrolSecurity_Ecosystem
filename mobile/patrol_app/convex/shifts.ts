@@ -6,7 +6,61 @@ import type { MutationCtx } from "./_generated/server";
 import { distanceMeters } from "./lib/geo";
 import { deletedNamesByType } from "./lib/tombstones";
 
+/**
+ * Was this clock-in taken inside the geofence of a location the guard is
+ * posted to?
+ *
+ * Two things were wrong here, and both made the stored flag lie.
+ *
+ * It was called with `assignment?.siteId` — the *first* posting the index
+ * returned. A guard who covers three sites and clocks in at the second was
+ * measured against the first and recorded as outside the fence, so the one
+ * signal distinguishing an honest clock-in from a fraudulent one was noise for
+ * exactly the staff who move around most. It now takes every posting and keeps
+ * the best match.
+ *
+ * And when nothing could be measured — an unmapped site with no located
+ * sub-locations — it returned `gpsValid: true`. A flag that reads "verified"
+ * when no verification happened is worse than an absent one: it is evidence
+ * that says the opposite of the truth. Unverifiable is now `false`, matching
+ * the rule the scan path already applies.
+ *
+ * Note this is recorded, not enforced: a clock-in outside the fence still
+ * succeeds. Scans are the gate that decides whether patrol evidence exists.
+ */
 async function validateSiteGeofence(
+  ctx: MutationCtx,
+  siteIds: Array<Id<"sites">>,
+  latitude?: number,
+  longitude?: number,
+): Promise<{
+  gpsValid: boolean;
+  distanceMeters: number | undefined;
+  /** The posting the guard actually turned up at, when one matched. */
+  siteId: Id<"sites"> | undefined;
+}> {
+  if (siteIds.length === 0 || latitude == null || longitude == null) {
+    return { gpsValid: false, distanceMeters: undefined, siteId: siteIds[0] };
+  }
+  let best: {
+    gpsValid: boolean;
+    distanceMeters: number | undefined;
+    siteId: Id<"sites"> | undefined;
+  } | null = null;
+  for (const siteId of siteIds) {
+    const candidate = { ...(await geofenceForSite(ctx, siteId, latitude, longitude)), siteId };
+    if (candidate.gpsValid) return candidate;
+    if (
+      best === null ||
+      (candidate.distanceMeters ?? Infinity) < (best.distanceMeters ?? Infinity)
+    ) {
+      best = candidate;
+    }
+  }
+  return best ?? { gpsValid: false, distanceMeters: undefined, siteId: siteIds[0] };
+}
+
+async function geofenceForSite(
   ctx: MutationCtx,
   siteId: Id<"sites"> | undefined,
   latitude?: number,
@@ -42,7 +96,9 @@ async function validateSiteGeofence(
       radius: checkpoint.radiusMeters ?? 50,
     }));
   if (distances.length === 0) {
-    return { gpsValid: true, distanceMeters: undefined as number | undefined };
+    // Nothing to measure against. This used to return true — "verified" with
+    // no verification behind it. Unverifiable is not valid.
+    return { gpsValid: false, distanceMeters: undefined as number | undefined };
   }
   const nearest = distances.sort((a, b) => a.distance - b.distance)[0];
   return {
@@ -244,19 +300,24 @@ export const clockIn = internalMutation({
 
     const now = Date.now();
     const user = await ctx.db.get(args.userId);
-    const assignment = await ctx.db
+    const assignments = await ctx.db
       .query("userSiteAssignments")
       .withIndex("by_userId", (q) => q.eq("userId", args.userId))
-      .first();
+      .collect();
     const geofence = await validateSiteGeofence(
       ctx,
-      assignment?.siteId,
+      assignments.map((a) => a.siteId),
       args.latitude,
       args.longitude,
     );
+    // The shift is attributed to the posting the guard actually turned up at,
+    // not to whichever assignment the index happened to return first. Scans
+    // carry this shiftId and emergency.trigger falls back to its siteId, so a
+    // guard covering several sites was previously logged at the wrong one for
+    // the whole night.
     const shiftId = await ctx.db.insert("shifts", {
       clientId: user?.clientId,
-      siteId: assignment?.siteId,
+      siteId: geofence.siteId,
       userId: args.userId,
       status: "active",
       clockIn: now,
@@ -271,7 +332,7 @@ export const clockIn = internalMutation({
 
     await ctx.runMutation(internal.activity.record, {
       clientId: user?.clientId,
-      siteId: assignment?.siteId,
+      siteId: geofence.siteId,
       officerId: args.userId,
       activityType: "clock_in",
       sourceTable: "shifts",
@@ -317,7 +378,7 @@ export const clockOut = internalMutation({
     const clockOutAt = Date.now();
     const geofence = await validateSiteGeofence(
       ctx,
-      existing.siteId,
+      existing.siteId ? [existing.siteId] : [],
       args.latitude,
       args.longitude,
     );

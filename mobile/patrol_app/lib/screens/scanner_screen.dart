@@ -107,7 +107,11 @@ class _ScannerScreenState extends State<ScannerScreen> {
           'gpsLongitude': hasLocation ? location.longitude : null,
           'locationCaptured': hasLocation,
           'locationError': location.error,
+          // Carried to the server as capturedAt. Stamped here, at the moment
+          // the QR was read, so that a scan queued offline is credited to when
+          // it happened rather than to whenever the phone next found signal.
           'timestamp': DateTime.now().toIso8601String(),
+          'gpsMocked': location.isMocked,
         },
       },
     );

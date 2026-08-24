@@ -3,6 +3,7 @@ import type { QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { isAssignedToSite, isAssignedUnderClient } from "./lib/authHelpers";
+import { rowInScope } from "./lib/scope";
 
 const handoverStatus = v.union(
   v.literal("pending"),
@@ -49,9 +50,28 @@ export async function handoverRefusalReason(
 }
 
 export const listAll = internalQuery({
-  args: { clientId: v.optional(v.id("clients")) },
+  args: {
+    clientId: v.optional(v.id("clients")),
+    siteIds: v.optional(v.array(v.id("sites"))),
+    siteClientIds: v.optional(v.array(v.id("clients"))),
+    /**
+     * The guard reading the list. A handover they are personally party to
+     * stays visible even when it carries no site — losing sight of your own
+     * shift hand-off would break the feature the app relies on.
+     */
+    participantId: v.optional(v.id("users")),
+  },
   handler: async (ctx, args) => {
     let handovers = await ctx.db.query("handovers").order("desc").collect();
+    if (args.siteIds) {
+      handovers = handovers.filter(
+        (h) =>
+          rowInScope(args, h) ||
+          (!!args.participantId &&
+            (h.fromUserId === args.participantId ||
+              h.toUserId === args.participantId)),
+      );
+    }
     if (args.clientId) {
       const clientUsers = await ctx.db.query("users").collect();
       const clientUserIds = new Set(

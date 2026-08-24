@@ -2,6 +2,7 @@ import { internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { deletedNamesByType } from "./lib/tombstones";
+import { rowInScope } from "./lib/scope";
 
 const incidentStatus = v.union(
   v.literal("open"),
@@ -56,6 +57,8 @@ export const listForApi = internalQuery({
     officerId: v.optional(v.id("users")),
     severity: v.optional(v.string()),
     clientId: v.optional(v.id("clients")),
+    siteIds: v.optional(v.array(v.id("sites"))),
+    siteClientIds: v.optional(v.array(v.id("clients"))),
   },
   handler: async (ctx, args) => {
     const query = args.clientId && args.status
@@ -91,6 +94,25 @@ export const listForApi = internalQuery({
         (i) =>
           i.clientId === args.clientId ||
           (i.checkpointId && cpIds.has(i.checkpointId)),
+      );
+    }
+    // Guard scope. An incident often names a checkpoint rather than a site, so
+    // the sub-location's parent is resolved before deciding — otherwise a guard
+    // would be refused sight of an incident raised at their own gate.
+    if (args.siteIds) {
+      const checkpoints = await ctx.db.query("checkpoints").collect();
+      const siteByCheckpoint = new Map(
+        checkpoints.map((c) => [String(c._id), c.siteId ?? null]),
+      );
+      incidents = incidents.filter((i) =>
+        rowInScope(args, {
+          clientId: i.clientId,
+          siteId:
+            i.siteId ??
+            (i.checkpointId
+              ? siteByCheckpoint.get(String(i.checkpointId)) ?? null
+              : null),
+        }),
       );
     }
     const users = await ctx.db.query("users").collect();
@@ -165,7 +187,11 @@ export const updateStatus = internalMutation({
 });
 
 export const missedPatrols = internalQuery({
-  args: { clientId: v.optional(v.id("clients")) },
+  args: {
+    clientId: v.optional(v.id("clients")),
+    siteIds: v.optional(v.array(v.id("sites"))),
+    siteClientIds: v.optional(v.array(v.id("clients"))),
+  },
   handler: async (ctx, args) => {
     const queryCheckpoints = args.clientId
       ? ctx.db.query("checkpoints").withIndex("by_clientId", (q) =>
@@ -173,6 +199,11 @@ export const missedPatrols = internalQuery({
         )
       : ctx.db.query("checkpoints");
     let checkpoints = await queryCheckpoints.take(500);
+    // Which locations have gone unpatrolled is a customer's own operational
+    // weakness; a guard sees it only for the locations they are posted to.
+    if (args.siteIds) {
+      checkpoints = checkpoints.filter((c) => rowInScope(args, c));
+    }
     const now = Date.now();
     const sixHours = 6 * 60 * 60 * 1000;
     const scans = await ctx.db.query("scans").order("desc").take(500);
@@ -242,6 +273,32 @@ export const create = internalMutation({
     const checkpoint = args.checkpointId
       ? await ctx.db.get(args.checkpointId)
       : null;
+
+    // [tenant-isolation] A guard may only report against a place they are
+    // posted to.
+    //
+    // The checkpointId arrives in the request body and it is what decides which
+    // company and location the incident is filed under. Unchecked, a guard
+    // could put a fabricated theft or fire into another customer's incident
+    // log — where it reaches that customer's portal, their reports and their
+    // alerting, over the name of an officer who has never worked for them.
+    // observations.create and handovers.create both refuse this already; this
+    // one never did.
+    const targetSiteId = checkpoint?.siteId;
+    if (
+      targetSiteId &&
+      officer?.role !== "admin" &&
+      officer?.role !== "supervisor"
+    ) {
+      const posted = await ctx.db
+        .query("userSiteAssignments")
+        .withIndex("by_userId_siteId", (q) =>
+          q.eq("userId", args.officerId).eq("siteId", targetSiteId),
+        )
+        .first();
+      if (!posted) throw new Error("You are not posted to that location");
+    }
+
     const reportedAt = Date.now();
     const incidentId = await ctx.db.insert("incidents", {
       clientId: checkpoint?.clientId ?? officer?.clientId,

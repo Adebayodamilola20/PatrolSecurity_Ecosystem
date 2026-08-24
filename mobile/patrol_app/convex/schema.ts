@@ -263,8 +263,30 @@ export default defineSchema({
     shiftId: v.optional(v.id("shifts")),
     scannedAt: v.number(),
     receivedAt: v.number(),
+    /**
+     * What the phone said the time was when the guard actually scanned, kept
+     * exactly as sent and never used as the authoritative time.
+     *
+     * scannedAt used to be stamped on receipt, which made it identical to
+     * receivedAt on every row: a scan taken at 22:00 in a basement and synced
+     * at 06:00 was recorded as a 06:00 patrol. That let a guard walk the whole
+     * round at the start of the shift with the network off and then release the
+     * queue through the night, manufacturing an evenly spaced record with
+     * genuine GPS behind it.
+     *
+     * scannedAt now derives from this, clamped to a window the shift makes
+     * possible. Keeping the raw claim alongside is what makes a device clock
+     * that has been wound back visible instead of merely corrected.
+     */
+    deviceReportedAt: v.optional(v.number()),
     gpsLatitude: v.optional(v.number()),
     gpsLongitude: v.optional(v.number()),
+    /**
+     * The OS said this fix came from a mock location provider. Android reports
+     * it directly; iOS does not populate it, so absence is not proof of
+     * anything. A scan carrying true is refused — see scans.create.
+     */
+    gpsMocked: v.optional(v.boolean()),
     gpsValid: v.boolean(),
     distanceMeters: v.optional(v.number()),
     notes: v.string(),
@@ -318,6 +340,13 @@ export default defineSchema({
     accuracy: v.optional(v.number()),
     speed: v.optional(v.number()),
     heading: v.optional(v.number()),
+    /**
+     * A breadcrumb the OS flagged as coming from a mock provider. Recorded
+     * rather than refused: dropping it would make a spoofing guard's dot simply
+     * vanish from the live map, which reads as a flat battery. A visible trail
+     * marked untrustworthy is more use to the control room than no trail.
+     */
+    mocked: v.optional(v.boolean()),
     capturedAt: v.number(),
   })
     .index("by_legacyId", ["legacyId"])

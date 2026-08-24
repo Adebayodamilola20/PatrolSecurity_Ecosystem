@@ -2,6 +2,7 @@ import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { recordTombstone } from "./lib/tombstones";
+import { rowInScope } from "./lib/scope";
 
 const siteShape = (s: Doc<"sites">, clientName?: string) => ({
   id: s.legacyId ?? s._id,
@@ -21,10 +22,20 @@ const siteShape = (s: Doc<"sites">, clientName?: string) => ({
 });
 
 export const list = internalQuery({
-  args: { clientId: v.optional(v.id("clients")) },
+  args: {
+    clientId: v.optional(v.id("clients")),
+    siteIds: v.optional(v.array(v.id("sites"))),
+    siteClientIds: v.optional(v.array(v.id("clients"))),
+  },
   handler: async (ctx, args) => {
     let sites = await ctx.db.query("sites").collect();
     if (args.clientId) sites = sites.filter(s => s.clientId === args.clientId);
+    // The row *is* the site here, so its own id is what has to be in scope.
+    if (args.siteIds) {
+      sites = sites.filter((s) =>
+        rowInScope(args, { clientId: s.clientId, siteId: s._id }),
+      );
+    }
     const clients = await ctx.db.query("clients").collect();
     return sites.map(s =>
       siteShape(s, clients.find(c => c._id === s.clientId)?.name ?? ""),

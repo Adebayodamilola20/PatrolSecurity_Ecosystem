@@ -165,6 +165,7 @@ class ShiftProvider extends ChangeNotifier {
         accuracy: location.accuracyMeters,
         speed: location.speed,
         heading: location.heading,
+        mocked: location.isMocked,
       );
     } finally {
       _sendingPosition = false;

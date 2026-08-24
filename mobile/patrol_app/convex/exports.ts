@@ -79,3 +79,27 @@ export const createDailyExportRecord = internalMutation({
     };
   },
 });
+
+/**
+ * Who owns the export held under this storage id.
+ *
+ * Used by the /files/ route as a second gate behind the signed URL, matching
+ * what /photos/ already does for images. An export is a whole client's patrol
+ * history in one file, so it is the last thing that should rest on a single
+ * check — if any read path ever mints a download link without authorizing the
+ * record first, this is what still refuses it.
+ */
+export const ownerByStorageId = internalQuery({
+  args: { storageId: v.string() },
+  handler: async (ctx, args) => {
+    const file = await ctx.db
+      .query("exportFiles")
+      .filter((q) => q.eq(q.field("storageId"), args.storageId))
+      .first();
+    if (!file) return null;
+    return {
+      clientId: file.clientId ?? null,
+      requestedBy: file.requestedBy,
+    };
+  },
+});
