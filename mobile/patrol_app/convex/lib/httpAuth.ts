@@ -37,6 +37,9 @@ export async function requireAuth(
       clientName: string | null;
       liveTracking: boolean;
       siteIds: string[];
+      // Tenants this user is posted under. Load-bearing for guards, who have no
+      // clientId of their own — see lib/scope.ts.
+      clientIds: string[];
     } | null;
     if (profile?.role === "main_account" && !opts?.allowClientPortal) {
       return null;

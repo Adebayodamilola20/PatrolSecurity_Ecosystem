@@ -31,6 +31,24 @@ export const getSafeProfile = internalQuery({
 
     const client = user.clientId ? await ctx.db.get(user.clientId) : null;
 
+    // The tenants this user's postings belong to.
+    //
+    // A guard has no clientId of their own, so this join is the only thing
+    // tying them to a customer. lib/scope.ts needs it to decide whether a guard
+    // may see a row that names a client but no site, without re-reading the
+    // assignments on every request. Resolved through the parent site as well as
+    // the assignment's own column, because assignments written before that
+    // column existed carry only the site.
+    const clientIds = new Set<string>();
+    for (const assignment of assignments) {
+      if (assignment.clientId) {
+        clientIds.add(assignment.clientId);
+        continue;
+      }
+      const site = await ctx.db.get(assignment.siteId);
+      if (site?.clientId) clientIds.add(site.clientId);
+    }
+
     return {
       id: user.legacyId ?? user._id,
       convexId: user._id,
@@ -43,6 +61,7 @@ export const getSafeProfile = internalQuery({
       clientName: client?.name ?? null,
       liveTracking: user.liveTracking,
       siteIds: assignments.map((assignment) => assignment.siteId),
+      clientIds: [...clientIds],
     };
   },
 });

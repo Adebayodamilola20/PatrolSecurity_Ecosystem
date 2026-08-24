@@ -55,6 +55,24 @@ const limits: Record<string, RateLimitConfig> = {
   report: { windowMs: 60 * 1000, maxRequests: 10 },
   emergency: { windowMs: 5 * 60 * 1000, maxRequests: 6 },
   export: { windowMs: 60 * 1000, maxRequests: 5 },
+  // Upload URLs and their claims. Generous enough for an incident with five
+  // photos plus retries on a bad connection, tight enough that the endpoint
+  // cannot be used to mint unauthenticated write URLs in bulk.
+  upload: { windowMs: 60 * 1000, maxRequests: 60 },
+  /**
+   * Failed logins across the WHOLE deployment, counted on failure only.
+   *
+   * The per-IP bucket is only as trustworthy as X-Forwarded-For, and that
+   * header is trustworthy only if a proxy in front of us appends the real peer.
+   * If it does not, an attacker rotates the value and every IP-keyed bucket
+   * becomes a fresh budget — which is precisely the bypass this exists to
+   * survive. This bucket has no key at all, so there is nothing to rotate.
+   *
+   * Sized well above a real shift change (a whole company mistyping passwords
+   * at handover is nowhere near this) and far below what credential stuffing
+   * needs. Successful logins never touch it, so ordinary use cannot trip it.
+   */
+  loginFail: { windowMs: 15 * 60 * 1000, maxRequests: 100 },
   write: { windowMs: 60 * 1000, maxRequests: 40 },
 };
 
@@ -218,5 +236,58 @@ export const purgeExpired = internalMutation({
       await ctx.db.delete(row._id);
     }
     return { deleted: stale.length };
+  },
+});
+
+/**
+ * Reads a bucket without consuming from it.
+ *
+ * Needed for counters that must only advance on a particular outcome — the
+ * failed-login budget is checked on the way in and incremented only when the
+ * credentials turn out to be wrong, so a deployment full of people signing in
+ * normally never moves it.
+ */
+export const peek = internalQuery({
+  args: { action: v.string(), actorId: v.string() },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const config = getRateLimit(args.action);
+    const windowStart = Math.floor(now / config.windowMs) * config.windowMs;
+    const row = await ctx.db
+      .query("rateLimits")
+      .withIndex("by_bucketKey", (q) =>
+        q.eq("bucketKey", `${args.action}:${args.actorId}:${windowStart}`),
+      )
+      .unique();
+    const count = row?.count ?? 0;
+    return {
+      exceeded: count >= config.maxRequests,
+      retryAfterMs: Math.max(windowStart + config.windowMs - now, 1000),
+    };
+  },
+});
+
+/** Consumes one unit from a bucket. Pair with {@link peek}. */
+export const bump = internalMutation({
+  args: { action: v.string(), actorId: v.string() },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const config = getRateLimit(args.action);
+    const windowStart = Math.floor(now / config.windowMs) * config.windowMs;
+    const bucketKey = `${args.action}:${args.actorId}:${windowStart}`;
+    const row = await ctx.db
+      .query("rateLimits")
+      .withIndex("by_bucketKey", (q) => q.eq("bucketKey", bucketKey))
+      .unique();
+    if (row) {
+      await ctx.db.patch(row._id, { count: row.count + 1 });
+      return;
+    }
+    await ctx.db.insert("rateLimits", {
+      bucketKey,
+      count: 1,
+      windowStart,
+      expiresAt: windowStart + config.windowMs + COUNTER_GRACE_MS,
+    });
   },
 });

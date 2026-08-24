@@ -115,9 +115,15 @@ export const listForApi = internalQuery({
         checkpointCode: checkpoint?.code ?? "",
         scannedAt: new Date(scan.scannedAt).toISOString(),
         receivedAt: new Date(scan.receivedAt).toISOString(),
+        // How long this scan sat on the phone before it reached the server.
+        // Zero for a live scan. A large value is not proof of anything on its
+        // own, but a night of them from one guard is worth a question — which
+        // is exactly what the old `receivedAt: scannedAt` made unaskable.
+        syncDelayMs: Math.max(0, scan.receivedAt - scan.scannedAt),
         gpsLatitude: scan.gpsLatitude ?? 0,
         gpsLongitude: scan.gpsLongitude ?? 0,
         gpsValid: scan.gpsValid,
+        gpsMocked: scan.gpsMocked ?? false,
         distanceMeters: scan.distanceMeters ?? 0,
         notes: scan.notes,
       };
@@ -209,6 +215,14 @@ export const getDetail = internalQuery({
         scan.clientId ??
         checkpoints.find((c) => c._id === scan.checkpointId)?.clientId ??
         null,
+      // Both resolved through the checkpoint when the scan predates the
+      // denormalised columns. The /scans/{id} route needs them to decide
+      // whether the caller is allowed to see this row at all, so a null here
+      // is a refusal rather than a blank field.
+      siteId:
+        scan.siteId ??
+        checkpoints.find((c) => c._id === scan.checkpointId)?.siteId ??
+        null,
       officerId: scan.officerId,
       officerName:
         users.find(u => u._id === scan.officerId)?.name ??
@@ -269,6 +283,97 @@ export const getById = internalQuery({
   },
 });
 
+/**
+ * How far ahead of the server a phone's clock may run before its claim is
+ * discarded. Phones drift; a scan cannot have happened in the future.
+ */
+const CLOCK_SKEW_TOLERANCE_MS = 2 * 60 * 1000;
+
+/**
+ * Marks an error as a deliberate refusal rather than a fault.
+ *
+ * The payload after the prefix is JSON: `message` is written for the guard
+ * standing at the gate, `details` is for the audit trail. Both have to travel
+ * out through the exception because the refusal has to abort the mutation —
+ * see recordRejection for why the audit row cannot be written before it.
+ */
+export const SCAN_REFUSED_PREFIX = "SCAN_REFUSED:";
+
+export function scanRefusal(details: string, message: string): Error {
+  return new Error(SCAN_REFUSED_PREFIX + JSON.stringify({ details, message }));
+}
+
+export function parseScanRefusal(
+  error: unknown,
+): { details: string; message: string } | null {
+  if (!(error instanceof Error) || !error.message.startsWith(SCAN_REFUSED_PREFIX)) {
+    return null;
+  }
+  try {
+    return JSON.parse(error.message.slice(SCAN_REFUSED_PREFIX.length));
+  } catch {
+    return { details: "Scan refused", message: "This scan could not be accepted." };
+  }
+}
+
+/**
+ * Records a refused scan, from outside the mutation that refused it.
+ *
+ * A Convex mutation is one transaction. `rejectScan` wrote its audit row and
+ * then threw to abort the scan — and the throw rolled the audit row back with
+ * everything else, so every `scan.rejected` entry this system has ever written
+ * was discarded at the moment it mattered. The trail showing a guard trying to
+ * scan from outside the geofence, or from a spoofed location, did not exist.
+ *
+ * The HTTP action is not transactional, so it catches the refusal and calls
+ * this afterwards as a fresh transaction that actually commits.
+ */
+export const recordRejection = internalMutation({
+  args: {
+    officerId: v.id("users"),
+    checkpointId: v.optional(v.id("checkpoints")),
+    details: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const officer = await ctx.db.get(args.officerId);
+    const checkpoint = args.checkpointId ? await ctx.db.get(args.checkpointId) : null;
+    await ctx.runMutation(internal.audit.record, {
+      action: "scan.rejected",
+      actorId: args.officerId,
+      actorRole: officer?.role ?? "guard",
+      targetType: "checkpoint",
+      targetId: args.checkpointId,
+      details: args.details,
+      clientId: checkpoint?.clientId ?? officer?.clientId,
+      siteId: checkpoint?.siteId,
+      success: false,
+    });
+  },
+});
+
+/**
+ * Works out when a scan actually happened, from an untrusted device clock.
+ *
+ * Every rule here is "what could physically have occurred": not in the future
+ * beyond ordinary drift, not before the guard clocked in because they were not
+ * on duty, and not after the moment it arrived. Anything outside that collapses
+ * to the arrival time — the old behaviour, and the safe direction to fail. A
+ * scan credited later than it happened understates a patrol; one credited
+ * earlier would let a wound-back device clock rewrite history.
+ */
+export function resolveScannedAt(
+  deviceReportedAt: number | undefined,
+  receivedAt: number,
+  shiftStart: number,
+): number {
+  if (deviceReportedAt == null || !Number.isFinite(deviceReportedAt)) {
+    return receivedAt;
+  }
+  if (deviceReportedAt > receivedAt + CLOCK_SKEW_TOLERANCE_MS) return receivedAt;
+  if (deviceReportedAt < shiftStart) return shiftStart;
+  return Math.min(deviceReportedAt, receivedAt);
+}
+
 export const create = internalMutation({
   args: {
     officerId: v.id("users"),
@@ -276,6 +381,10 @@ export const create = internalMutation({
     gpsLatitude: v.optional(v.number()),
     gpsLongitude: v.optional(v.number()),
     notes: v.optional(v.string()),
+    /** When the phone says the scan was taken. Untrusted; clamped below. */
+    capturedAt: v.optional(v.number()),
+    /** The OS flagged this fix as coming from a mock location provider. */
+    gpsMocked: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const checkpoint = await ctx.db.get(args.checkpointId);
@@ -286,7 +395,10 @@ export const create = internalMutation({
     const clientId = checkpoint.clientId ?? officer?.clientId;
     const siteId = checkpoint.siteId;
 
-    const scannedAt = Date.now();
+    const receivedAt = Date.now();
+    // Provisional. The real value needs the shift, which is loaded below, and
+    // the checks in between are all "may this scan exist at all".
+    let scannedAt = receivedAt;
 
     // A patrol scan is only real if the guard is on duty. Without an open shift
     // the scan is refused outright rather than recorded — an off-duty scan must
@@ -298,19 +410,14 @@ export const create = internalMutation({
       )
       .first();
     if (!activeShift) {
-      await ctx.runMutation(internal.audit.record, {
-        action: "scan.rejected",
-        actorId: args.officerId,
-        actorRole: officer?.role ?? "guard",
-        targetType: "checkpoint",
-        targetId: args.checkpointId,
-        details: "Scan attempted while off duty (not clocked in)",
-        clientId,
-        siteId,
-        success: false,
-      });
-      throw new Error("Officer must clock in before scanning");
+      throw scanRefusal(
+        "Scan attempted while off duty (not clocked in)",
+        "You must clock in before you can scan a location.",
+      );
     }
+
+    // Now the shift is known, settle the real time of the scan.
+    scannedAt = resolveScannedAt(args.capturedAt, receivedAt, activeShift.clockIn);
 
     // A guard may only scan checkpoints at a site they are posted to. This used
     // to run only `if (siteId)`, which meant a checkpoint carrying no site — and
@@ -319,19 +426,13 @@ export const create = internalMutation({
     // system. Every path now has to produce an authorisation, and a checkpoint
     // that belongs to no site and no client cannot produce one at all: a scan
     // nobody is posted to is not patrol evidence.
+    // Refusals carry both a guard-facing message and an audit detail out
+    // through the exception. The audit row is written by the caller once this
+    // transaction has aborted — writing it here would roll it back — and the
+    // marker lets the route tell a deliberate "no" from a genuine fault, which
+    // is what previously turned the geofence message into an opaque 500.
     const rejectScan = async (details: string, message: string) => {
-      await ctx.runMutation(internal.audit.record, {
-        action: "scan.rejected",
-        actorId: args.officerId,
-        actorRole: officer?.role ?? "guard",
-        targetType: "checkpoint",
-        targetId: args.checkpointId,
-        details,
-        clientId,
-        siteId,
-        success: false,
-      });
-      throw new Error(message);
+      throw scanRefusal(details, message);
     };
 
     if (siteId) {
@@ -411,18 +512,10 @@ export const create = internalMutation({
       (s) => s.checkpointId === args.checkpointId,
     );
     if (duplicate) {
-      await ctx.runMutation(internal.audit.record, {
-        action: "scan.rejected",
-        actorId: args.officerId,
-        actorRole: officer?.role ?? "guard",
-        targetType: "checkpoint",
-        targetId: args.checkpointId,
-        details: "Duplicate scan within 60 second window",
-        clientId,
-        siteId,
-        success: false,
-      });
-      throw new Error("Duplicate scan within 60 seconds");
+      throw scanRefusal(
+        "Duplicate scan within 60 second window",
+        "You have just scanned this point. Wait a moment before scanning it again.",
+      );
     }
 
     // GPS verification, enforced here and not in the app.
@@ -438,6 +531,25 @@ export const create = internalMutation({
     // row, so a failed scan cannot reach a report, and — since post orders
     // are resolved from the stored scan — it cannot reveal a post order
     // either. The guard is told what is wrong and can simply scan again.
+    // A fix the OS itself says is fabricated is not evidence of anything.
+    //
+    // Every other check in this function was satisfiable from a sofa: enabling
+    // a mock-location app (a developer setting on Android, no root needed),
+    // pointing it at the site's published coordinates and scanning a photocopy
+    // of the QR. Clocked in, posted there, inside the geofence, not a duplicate
+    // — all green, and the record indistinguishable from a real round.
+    //
+    // Refused rather than flagged, matching the no-GPS rule directly below: a
+    // scan whose location is admitted fiction must not reach a client's report
+    // at all. Android reports this directly; iOS never populates it, so this
+    // catches the cheap attack rather than every possible one.
+    if (args.gpsMocked === true) {
+      await rejectScan(
+        "Scan submitted with a mock GPS provider active",
+        "This phone is reporting a simulated location. Turn off any mock-location or GPS-spoofing app, then scan again.",
+      );
+    }
+
     const scanSite = siteId ? await ctx.db.get(siteId) : null;
     const fence =
       checkpoint.latitude != null && checkpoint.longitude != null
@@ -505,9 +617,13 @@ export const create = internalMutation({
       checkpointId: args.checkpointId,
       shiftId: activeShift._id,
       scannedAt,
-      receivedAt: scannedAt,
+      // Was `receivedAt: scannedAt`, which made the two identical on every row
+      // and quietly removed the only signal that a scan had been held back.
+      receivedAt,
+      deviceReportedAt: args.capturedAt,
       gpsLatitude: args.gpsLatitude,
       gpsLongitude: args.gpsLongitude,
+      gpsMocked: args.gpsMocked,
       gpsValid,
       distanceMeters: computedDistance,
       notes: args.notes ?? "",

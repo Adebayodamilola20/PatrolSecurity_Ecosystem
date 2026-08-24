@@ -30,7 +30,40 @@ export const trigger = internalMutation({
     // was plainly posted somewhere — useless in the one message that has to
     // be right. Fall back to the shift they are on, then to the location they
     // are posted to.
-    let siteId = checkpoint?.siteId ?? args.siteId;
+    const source = args.source ?? "guard";
+
+    // [tenant-isolation] A guard cannot pin an alarm to somebody else's site.
+    //
+    // The checkpointId and siteId arrive in the request body and decide which
+    // company and location the CODE RED is filed against — it reaches that
+    // client's portal, their guards' phones and the control room as an incident
+    // at their property. Only the client path was ever checked, so a guard
+    // could raise a false emergency at a site they have no connection to.
+    //
+    // Deliberately *ignored* rather than refused: this is a panic button, and
+    // the one thing worse than a misattributed alarm is a suppressed one. A
+    // location the guard is not posted to is dropped and the fallbacks below
+    // resolve where they actually are, so the alert always goes out — it just
+    // goes out against the truth.
+    let requestedSiteId = checkpoint?.siteId ?? args.siteId;
+    let ownedCheckpoint = checkpoint;
+    if (requestedSiteId && source === "guard" && user?.role === "guard") {
+      const posted = await ctx.db
+        .query("userSiteAssignments")
+        .withIndex("by_userId_siteId", (q) =>
+          q.eq("userId", args.userId).eq("siteId", requestedSiteId!),
+        )
+        .first();
+      if (!posted) {
+        requestedSiteId = undefined;
+        // Drop the checkpoint too. It is what the clientId is derived from
+        // below, so keeping it would file the alarm against the wrong company
+        // even after the site had been discarded.
+        ownedCheckpoint = null;
+      }
+    }
+
+    let siteId = requestedSiteId;
     if (!siteId) {
       const activeShift = await ctx.db
         .query("shifts")
@@ -48,12 +81,11 @@ export const trigger = internalMutation({
       siteId = posting?.siteId;
     }
     const site = siteId ? await ctx.db.get(siteId) : null;
-    const source = args.source ?? "guard";
 
     // A client account can only raise an emergency on its own property.
     // The route resolves whatever site id it is handed; it does not own it.
     if (source === "client") {
-      const owner = checkpoint?.clientId ?? site?.clientId;
+      const owner = ownedCheckpoint?.clientId ?? site?.clientId;
       if (!user?.clientId || !owner || owner !== user.clientId) {
         throw new Error("That location does not belong to your account");
       }
@@ -67,10 +99,10 @@ export const trigger = internalMutation({
         : `Emergency alert from ${user?.name ?? "officer"} at ${where}. Immediate response required.`;
     const triggeredAt = Date.now();
     const id = await ctx.db.insert("emergencyEvents", {
-      clientId: checkpoint?.clientId ?? site?.clientId ?? user?.clientId,
+      clientId: ownedCheckpoint?.clientId ?? site?.clientId ?? user?.clientId,
       siteId,
       userId: args.userId,
-      checkpointId: args.checkpointId,
+      checkpointId: ownedCheckpoint?._id,
       siteLabel: args.siteLabel || site?.name || "",
       category: args.category,
       message,
@@ -86,9 +118,9 @@ export const trigger = internalMutation({
       deliveryPayload: {},
     });
     await ctx.runMutation(internal.activity.record, {
-      clientId: checkpoint?.clientId ?? site?.clientId ?? user?.clientId,
+      clientId: ownedCheckpoint?.clientId ?? site?.clientId ?? user?.clientId,
       siteId,
-      checkpointId: args.checkpointId,
+      checkpointId: ownedCheckpoint?._id,
       officerId: args.userId,
       activityType: "emergency",
       sourceTable: "emergencyEvents",
@@ -101,7 +133,7 @@ export const trigger = internalMutation({
     return {
       id,
       userId: args.userId,
-      checkpointId: args.checkpointId ?? null,
+      checkpointId: ownedCheckpoint?._id ?? null,
       siteId: siteId ?? null,
       siteLabel: args.siteLabel || site?.name || "",
       message,

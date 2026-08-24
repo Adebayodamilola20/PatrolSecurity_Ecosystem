@@ -20,6 +20,15 @@ export const listForApi = internalQuery({
           ? ctx.db.query("visitorLogs").withIndex("by_clientId", (q) => q.eq("clientId", args.clientId!))
           : ctx.db.query("visitorLogs");
     let logs = await query.order("desc").take(args.limit ?? 100);
+    // The index above is only a way of reading rows efficiently — it is not the
+    // authorization. Choosing it by `siteId` first meant a caller who supplied
+    // ?siteId= took a branch where neither the officer pin nor the tenant pin
+    // was ever applied, and this table carries third-party PII: visitor names,
+    // phone numbers, ID numbers and plates. Every filter is re-applied here so
+    // no combination of parameters can skip one.
+    if (args.siteId) logs = logs.filter((l) => l.siteId === args.siteId);
+    if (args.officerId) logs = logs.filter((l) => l.officerId === args.officerId);
+    if (args.clientId) logs = logs.filter((l) => l.clientId === args.clientId);
     if (args.status) logs = logs.filter((l) => l.status === args.status);
     const users = await ctx.db.query("users").collect();
     return logs.map((l) => ({

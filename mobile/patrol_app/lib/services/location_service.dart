@@ -11,6 +11,17 @@ class SafeLocationResult {
   final double? speed;
   final double? heading;
 
+  /// The OS said this fix came from a mock location provider.
+  ///
+  /// Android reports this directly on [Position], and setting a mock provider
+  /// is an ordinary developer-options toggle — no root, no jailbreak, free apps
+  /// on the store. Without this flag every server-side check was satisfiable
+  /// from home: point the spoofer at the site's coordinates, scan a photocopy
+  /// of the QR, and the record is indistinguishable from a real patrol.
+  ///
+  /// iOS does not populate it, so `false` means "not detected", never "genuine".
+  final bool isMocked;
+
   const SafeLocationResult({
     required this.latitude,
     required this.longitude,
@@ -19,6 +30,7 @@ class SafeLocationResult {
     this.error,
     this.speed,
     this.heading,
+    this.isMocked = false,
   });
 
   bool get isSuccess => error == null;
@@ -31,6 +43,7 @@ class SafeLocationResult {
     'capturedAt': capturedAt.toIso8601String(),
     if (speed != null) 'speed': speed,
     if (heading != null) 'heading': heading,
+    'mocked': isMocked,
   };
 }
 
@@ -128,6 +141,7 @@ class LocationService {
               capturedAt: position.timestamp,
               speed: position.speed,
               heading: position.heading,
+              isMocked: position.isMocked,
             );
           },
           // Losing the stream must not take the app down.
@@ -380,6 +394,7 @@ class LocationService {
         capturedAt: position.timestamp,
         speed: position.speed,
         heading: position.heading,
+        isMocked: position.isMocked,
       );
     } on TimeoutException {
       final lastKnown = await Geolocator.getLastKnownPosition();
@@ -393,6 +408,7 @@ class LocationService {
             capturedAt: lastKnown.timestamp,
             speed: lastKnown.speed,
             heading: lastKnown.heading,
+            isMocked: lastKnown.isMocked,
           );
         }
       }
@@ -425,6 +441,7 @@ class LocationService {
             capturedAt: lastKnown.timestamp,
             speed: lastKnown.speed,
             heading: lastKnown.heading,
+            isMocked: lastKnown.isMocked,
           );
         }
       }

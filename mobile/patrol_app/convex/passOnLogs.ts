@@ -256,6 +256,52 @@ export const acknowledge = internalMutation({
     note: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // [tenant-isolation] You may only acknowledge a pass-on that actually
+    // reaches you.
+    //
+    // This mutation took an id and wrote, with no check of any kind. An
+    // acknowledgement is a compliance record — it asserts that a named officer
+    // read a named instruction at a named time — so an unchecked write both
+    // pollutes another tenant's records (the row is stamped with *their*
+    // clientId and siteId, and lands in their activity feed) and fabricates
+    // evidence about a person. The read path has always been scoped by
+    // `reaches`; the write is now held to exactly the same rule, so a guard can
+    // never acknowledge something they were never shown.
+    const target = await ctx.db.get(args.passOnLogId);
+    if (!target) throw new Error("Pass-on-log not found");
+    const actor = await ctx.db.get(args.userId);
+    if (!actor) throw new Error("Pass-on-log not found");
+    const assignments = await ctx.db
+      .query("userSiteAssignments")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .collect();
+    const siteIds = new Set<unknown>(assignments.map((a) => a.siteId));
+    const allCheckpoints = await ctx.db.query("checkpoints").collect();
+    const userCheckpointIds = new Set<unknown>(
+      allCheckpoints
+        .filter((c) => c.siteId && siteIds.has(c.siteId))
+        .map((c) => c._id),
+    );
+    const clientIds = new Set<unknown>();
+    for (const assignment of assignments) {
+      if (assignment.clientId) clientIds.add(assignment.clientId);
+      else {
+        const site = await ctx.db.get(assignment.siteId);
+        if (site?.clientId) clientIds.add(site.clientId);
+      }
+    }
+    if (
+      !reaches(target, {
+        user: actor,
+        userId: args.userId,
+        siteIds,
+        userCheckpointIds,
+        clientIds,
+      })
+    ) {
+      throw new Error("This pass-on was not addressed to you");
+    }
+
     const existing = await ctx.db
       .query("passOnLogAcknowledgements")
       .withIndex("by_passOnLogId_userId", (q) =>

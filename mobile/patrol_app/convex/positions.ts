@@ -17,6 +17,13 @@ export const record = internalMutation({
     speed: v.optional(v.number()),
     heading: v.optional(v.number()),
     capturedAt: v.optional(v.number()),
+    /**
+     * The OS flagged this fix as coming from a mock provider. Stored, not
+     * refused: dropping it would make a spoofing guard's dot simply disappear
+     * from the live map, which reads as a flat battery. A visible trail marked
+     * untrustworthy tells the control room more than no trail at all.
+     */
+    mocked: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const capturedAt = args.capturedAt ?? Date.now();
@@ -61,6 +68,7 @@ export const record = internalMutation({
       accuracy: args.accuracy,
       speed: args.speed,
       heading: args.heading,
+      mocked: args.mocked,
       capturedAt,
     });
     return { status: "ok" };

@@ -20,6 +20,13 @@ export const listForApi = internalQuery({
           ? ctx.db.query("truckLogs").withIndex("by_clientId", (q) => q.eq("clientId", args.clientId!))
           : ctx.db.query("truckLogs");
     let logs = await query.order("desc").take(args.limit ?? 100);
+    // See visitors.listForApi: the index is a read strategy, not the
+    // authorization. Supplying ?siteId= used to take a branch that applied
+    // neither the officer nor the tenant pin, exposing another company's
+    // gate traffic — drivers, plates, haulage firms and cargo.
+    if (args.siteId) logs = logs.filter((l) => l.siteId === args.siteId);
+    if (args.officerId) logs = logs.filter((l) => l.officerId === args.officerId);
+    if (args.clientId) logs = logs.filter((l) => l.clientId === args.clientId);
     if (args.status) logs = logs.filter((l) => l.status === args.status);
     const users = await ctx.db.query("users").collect();
     return logs.map((l) => ({

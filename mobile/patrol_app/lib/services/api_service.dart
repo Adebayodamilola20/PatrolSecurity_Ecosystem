@@ -487,6 +487,7 @@ class ApiService {
     double? accuracy,
     double? speed,
     double? heading,
+    bool mocked = false,
   }) async {
     _ensureHttps();
     try {
@@ -501,6 +502,9 @@ class ApiService {
               'speed': speed,
               'heading': heading,
               'capturedAt': DateTime.now().toIso8601String(),
+              // Recorded rather than withheld: the control room is better off
+              // seeing a dot marked untrustworthy than seeing nothing.
+              'mocked': mocked,
             }),
           )
           .timeout(const Duration(seconds: 10));

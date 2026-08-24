@@ -18,6 +18,9 @@ import { convexTest } from "convex-test";
 import schema from "./schema";
 import { internal } from "./_generated/api";
 import { signPatrolToken } from "./lib/jwt";
+import { signPhotoToken } from "./lib/photoRefs";
+import { resolveScannedAt } from "./scans";
+import { getRateLimit } from "./lib/rateLimiter";
 import type { Id } from "./_generated/dataModel";
 
 const modules = import.meta.glob("./**/*.*s");
@@ -811,7 +814,7 @@ describe("personnel editing and password reset", () => {
     const res = await t.fetch("/users/reset-password", {
       method: "POST",
       headers: auth(w.tokens.admin),
-      body: JSON.stringify({ userId: w.alphaGuard, newPassword: "a-fresh-password" }),
+      body: JSON.stringify({ userId: w.alphaGuard, newPassword: "A-fresh-password1" }),
     });
     expect(res.status).toBe(200);
     expect((await res.json()).sessionsRevoked).toBe(1);
@@ -825,7 +828,7 @@ describe("personnel editing and password reset", () => {
     const res = await t.fetch("/users/reset-password", {
       method: "POST",
       headers: auth(w.tokens.supervisor),
-      body: JSON.stringify({ userId: w.alphaGuard, newPassword: "a-fresh-password" }),
+      body: JSON.stringify({ userId: w.alphaGuard, newPassword: "A-fresh-password1" }),
     });
     expect(res.status).toBe(403);
   });
@@ -1700,5 +1703,906 @@ describe("deleting a client company", () => {
       headers: auth(w.tokens.alphaPortal),
     });
     expect([401, 403]).toContain(res.status);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-SCOPE — a guard is confined to the locations they are posted to.
+//
+// The regression these lock down was systemic rather than local. Routes decided
+// scope with `user.role === "admin" ? undefined : user.clientId`, which reads
+// as "everyone but an admin is pinned to their own tenant" and is not what it
+// does: a guard works for the security company rather than for one customer and
+// carries no clientId at all, so the filter evaporated and the guard was handed
+// the admin's view.
+//
+// Every test below was run against the pre-fix code first and failed there —
+// each one describes a read that genuinely worked. `alphaGuard` is posted only
+// to Alpha; `bravo*` belongs to a different security customer entirely.
+// ---------------------------------------------------------------------------
+describe("F-SCOPE — cross-tenant reads by a guard", () => {
+  const asAlphaGuard = () => auth(w.tokens.alphaGuard);
+
+  test("GET /checkpoints hides another customer's QR codes and schedules", async () => {
+    const res = await t.fetch("/checkpoints", { method: "GET", headers: asAlphaGuard() });
+    expect(res.status).toBe(200);
+    const rows = await res.json();
+    const body = JSON.stringify(rows);
+    // The QR value, the geofence and the patrol timetable all live on this row.
+    // Leaking them tells an outsider when each property is unwatched.
+    expect(body).not.toContain("BRAVO-GATE-001");
+    expect(body).not.toContain(String(w.bravoCheckpoint));
+    expect(body).not.toContain(String(w.bravoSite));
+    // Their own post is still there — scoping must not blind the app.
+    expect(body).toContain(String(w.alphaCheckpoint));
+  });
+
+  test("an admin still sees every checkpoint", async () => {
+    const res = await t.fetch("/checkpoints", { method: "GET", headers: auth(w.tokens.admin) });
+    const body = JSON.stringify(await res.json());
+    expect(body).toContain("BRAVO-GATE-001");
+    expect(body).toContain("ALPHA-GATE-001");
+  });
+
+  test("a supervisor still sees every checkpoint", async () => {
+    const res = await t.fetch("/checkpoints", { method: "GET", headers: auth(w.tokens.supervisor) });
+    expect(JSON.stringify(await res.json())).toContain("BRAVO-GATE-001");
+  });
+
+  test("GET /sites hides another customer's locations", async () => {
+    const res = await t.fetch("/sites", { method: "GET", headers: asAlphaGuard() });
+    const body = JSON.stringify(await res.json());
+    expect(body).not.toContain(String(w.bravoSite));
+    expect(body).toContain(String(w.alphaSite));
+  });
+
+  test("GET /sites?clientId= cannot be used to name another customer", async () => {
+    // The parameter was reachable by anyone with an empty clientId, so a guard
+    // could simply ask for a rival by id.
+    const res = await t.fetch(`/sites?clientId=${w.bravoClient}`, {
+      method: "GET",
+      headers: asAlphaGuard(),
+    });
+    const rows = await res.json();
+    expect(JSON.stringify(rows)).not.toContain(String(w.bravoSite));
+  });
+
+  test("an admin may still filter /sites by client", async () => {
+    const res = await t.fetch(`/sites?clientId=${w.bravoClient}`, {
+      method: "GET",
+      headers: auth(w.tokens.admin),
+    });
+    const body = JSON.stringify(await res.json());
+    expect(body).toContain(String(w.bravoSite));
+    expect(body).not.toContain(String(w.alphaSite));
+  });
+
+  test("GET /incidents hides another customer's incidents", async () => {
+    const res = await t.fetch("/incidents", { method: "GET", headers: asAlphaGuard() });
+    const body = JSON.stringify(await res.json());
+    expect(body).not.toContain("Attempted break-in at tank farm");
+    expect(body).not.toContain(String(w.bravoIncident));
+    expect(body).toContain("Perimeter light out");
+  });
+
+  test("GET /handovers hides another customer's hand-offs", async () => {
+    const res = await t.fetch("/handovers", { method: "GET", headers: asAlphaGuard() });
+    const body = JSON.stringify(await res.json());
+    expect(body).not.toContain(String(w.bravoHandover));
+  });
+
+  test("GET /scans/recent is refused to a guard outright", async () => {
+    const res = await t.fetch("/scans/recent", { method: "GET", headers: asAlphaGuard() });
+    expect(res.status).toBe(403);
+  });
+
+  test("GET /shifts/missing-clockins is refused to a guard outright", async () => {
+    const res = await t.fetch("/shifts/missing-clockins", { method: "GET", headers: asAlphaGuard() });
+    expect(res.status).toBe(403);
+  });
+
+  test("GET /incidents/missed-patrols is refused to a guard outright", async () => {
+    const res = await t.fetch("/incidents/missed-patrols", { method: "GET", headers: asAlphaGuard() });
+    expect(res.status).toBe(403);
+  });
+
+  test("GET /post-orders/completions is refused to a guard outright", async () => {
+    const res = await t.fetch("/post-orders/completions", { method: "GET", headers: asAlphaGuard() });
+    expect(res.status).toBe(403);
+  });
+
+  test("staff still reach the four supervisory routes", async () => {
+    for (const path of [
+      "/scans/recent",
+      "/shifts/missing-clockins",
+      "/incidents/missed-patrols",
+      "/post-orders/completions",
+    ]) {
+      const res = await t.fetch(path, { method: "GET", headers: auth(w.tokens.admin) });
+      expect([200, 201]).toContain(res.status);
+    }
+  });
+
+  test("GET /scans/{id} will not serve another customer's scan by id", async () => {
+    const bravoScan = await t.run(async (ctx) =>
+      ctx.db.insert("scans", {
+        clientId: w.bravoClient,
+        siteId: w.bravoSite,
+        officerId: w.bravoGuard,
+        checkpointId: w.bravoCheckpoint,
+        scannedAt: Date.now(),
+        receivedAt: Date.now(),
+        gpsValid: true,
+        notes: "bravo patrol round",
+      }),
+    );
+    const res = await t.fetch(`/scans/${bravoScan}`, { method: "GET", headers: asAlphaGuard() });
+    // Reported missing rather than refused, so the route cannot be used to
+    // confirm which ids exist.
+    expect(res.status).toBe(404);
+  });
+
+  test("GET /scans/{id} still serves the guard their own scan", async () => {
+    const ownScan = await t.run(async (ctx) =>
+      ctx.db.insert("scans", {
+        clientId: w.alphaClient,
+        siteId: w.alphaSite,
+        officerId: w.alphaGuard,
+        checkpointId: w.alphaCheckpoint,
+        scannedAt: Date.now(),
+        receivedAt: Date.now(),
+        gpsValid: true,
+        notes: "alpha patrol round",
+      }),
+    );
+    const res = await t.fetch(`/scans/${ownScan}`, { method: "GET", headers: asAlphaGuard() });
+    expect(res.status).toBe(200);
+  });
+
+  test("a guard posted nowhere is given nothing rather than everything", async () => {
+    // The failure mode this whole module exists to prevent: an empty scope must
+    // never widen into an unfiltered one.
+    const orphan = await t.run(async (ctx) =>
+      ctx.db.insert("users", {
+        name: "Unposted Guard",
+        email: "unposted@example.test",
+        passwordHash: "not-a-real-hash",
+        role: "guard",
+        phone: "+2348000000099",
+        active: true,
+        liveTracking: false,
+        createdAt: Date.now(),
+      }),
+    );
+    const token = await signPatrolToken({
+      userId: orphan,
+      email: "unposted@example.test",
+      role: "guard",
+    });
+    for (const path of ["/checkpoints", "/sites", "/incidents", "/handovers"]) {
+      const res = await t.fetch(path, { method: "GET", headers: auth(token) });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual([]);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-HARDENING — the rest of the 2026-08-23 audit.
+//
+// Timestamp clamping, mock-GPS refusal, the password policy and the token
+// audience. Each was reachable through the real HTTP stack before the fix.
+// ---------------------------------------------------------------------------
+describe("F-HARDENING — offline scan timestamps", () => {
+  test("resolveScannedAt keeps an honest device time", () => {
+    const shiftStart = 1_000_000;
+    const received = 1_900_000;
+    const claimed = 1_500_000;
+    expect(resolveScannedAt(claimed, received, shiftStart)).toBe(claimed);
+  });
+
+  test("a scan cannot be dated before the guard clocked in", () => {
+    // Winding the phone's clock back would otherwise place patrol evidence in
+    // a shift the guard was not working.
+    expect(resolveScannedAt(500, 1_900_000, 1_000_000)).toBe(1_000_000);
+  });
+
+  test("a scan cannot be dated in the future", () => {
+    const received = 1_900_000;
+    expect(resolveScannedAt(received + 60 * 60 * 1000, received, 1_000_000)).toBe(received);
+  });
+
+  test("ordinary clock drift is tolerated rather than discarded", () => {
+    const received = 1_900_000;
+    const slightlyAhead = received + 30_000;
+    expect(resolveScannedAt(slightlyAhead, received, 1_000_000)).toBe(received);
+  });
+
+  test("no device time at all falls back to arrival, as before", () => {
+    expect(resolveScannedAt(undefined, 1_900_000, 1_000_000)).toBe(1_900_000);
+    expect(resolveScannedAt(NaN, 1_900_000, 1_000_000)).toBe(1_900_000);
+  });
+
+  test("a queued scan is credited to when it was taken, not when it synced", async () => {
+    // The exploit: walk the whole round at the start of the shift with the
+    // network off, then release the queue through the night so the record shows
+    // an evenly spaced patrol. scannedAt used to be stamped on arrival, so the
+    // held-back scans looked live.
+    const clockIn = Date.now() - 6 * 60 * 60 * 1000;
+    await t.run(async (ctx) => {
+      await ctx.db.insert("shifts", {
+        clientId: w.alphaClient,
+        siteId: w.alphaSite,
+        userId: w.alphaGuard,
+        clockIn,
+        status: "active",
+        clockInPhoto: "test-photo",
+        siteLabel: "Alpha Ikeja Warehouse",
+        createdAt: clockIn,
+      });
+    });
+    const takenAt = clockIn + 30 * 60 * 1000; // half an hour into the shift
+    const res = await t.fetch("/scans", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({
+        checkpointId: w.alphaCheckpoint,
+        gpsLatitude: 6.6018,
+        gpsLongitude: 3.3515,
+        capturedAt: new Date(takenAt).toISOString(),
+      }),
+    });
+    expect(res.status).toBe(201);
+    const [scan] = await t.run((ctx) => ctx.db.query("scans").collect());
+    expect(scan.scannedAt).toBe(takenAt);
+    // receivedAt used to be assigned from scannedAt, so the two were always
+    // identical and the delay was invisible.
+    expect(scan.receivedAt).toBeGreaterThan(scan.scannedAt);
+    expect(scan.deviceReportedAt).toBe(takenAt);
+  });
+});
+
+describe("F-HARDENING — mock GPS", () => {
+  test("a scan from a spoofed location is refused", async () => {
+    const clockIn = Date.now() - 60 * 60 * 1000;
+    await t.run(async (ctx) => {
+      await ctx.db.insert("shifts", {
+        clientId: w.alphaClient,
+        siteId: w.alphaSite,
+        userId: w.alphaGuard,
+        clockIn,
+        status: "active",
+        clockInPhoto: "test-photo",
+        siteLabel: "Alpha Ikeja Warehouse",
+        createdAt: clockIn,
+      });
+    });
+    const res = await t.fetch("/scans", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({
+        checkpointId: w.alphaCheckpoint,
+        // Coordinates that would otherwise pass the geofence perfectly.
+        gpsLatitude: 6.6018,
+        gpsLongitude: 3.3515,
+        gpsMocked: true,
+      }),
+    });
+    expect(res.status).toBe(403);
+    // Refused means no row: a fabricated location must not reach a report.
+    expect(await t.run((ctx) => ctx.db.query("scans").collect())).toHaveLength(0);
+    const audits = await t.run((ctx) => ctx.db.query("auditLogs").collect());
+    expect(audits.some((a) => a.details?.includes("mock GPS provider"))).toBe(true);
+  });
+});
+
+describe("F-HARDENING — password policy", () => {
+  const weak = ["short1A", "alllowercase1", "ALLUPPERCASE1", "NoDigitsHere"];
+
+  test("creating a user requires a password meeting the policy", async () => {
+    for (const password of weak) {
+      const res = await t.fetch("/users", {
+        method: "POST",
+        headers: auth(w.tokens.admin),
+        body: JSON.stringify({
+          name: "Test Guard", email: `t${Math.random()}@example.test`,
+          role: "guard", password,
+        }),
+      });
+      expect(res.status).toBe(400);
+    }
+  });
+
+  test("creating a user with no password at all is refused", async () => {
+    // This used to silently become "123456".
+    const res = await t.fetch("/users", {
+      method: "POST",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({ name: "Test Guard", email: "np@example.test", role: "guard" }),
+    });
+    expect(res.status).toBe(400);
+    const created = await t.run((ctx) =>
+      ctx.db.query("users").filter((q) => q.eq(q.field("email"), "np@example.test")).first(),
+    );
+    expect(created).toBeNull();
+  });
+
+  test("a strong password is still accepted", async () => {
+    const res = await t.fetch("/users", {
+      method: "POST",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({
+        name: "Test Guard", email: "ok@example.test",
+        role: "guard", password: "Str0ngEnough",
+      }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  test("an admin reset is held to the same policy", async () => {
+    const res = await t.fetch("/users/reset-password", {
+      method: "POST",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({ userId: w.alphaGuard, newPassword: "alllowercase1" }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("F-HARDENING — token audience", () => {
+  test("a photo capability token is not accepted as a session token", async () => {
+    // Both are signed with the same secret. The session side declared no
+    // audience and checked none, so separation ran only one way.
+    const photoToken = await signPhotoToken({
+      sid: "some-storage-id",
+      cid: null,
+      uid: w.alphaGuard,
+      role: "admin",
+    });
+    const res = await t.fetch("/checkpoints", {
+      method: "GET",
+      headers: auth(photoToken),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  test("a real session token still works", async () => {
+    const res = await t.fetch("/checkpoints", {
+      method: "GET",
+      headers: auth(w.tokens.admin),
+    });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("F-HARDENING — a refused scan is actually audited", () => {
+  test("the rejection record survives the aborted transaction", async () => {
+    // rejectScan wrote its audit row inside the mutation and then threw to
+    // abort the scan. A Convex mutation is one transaction, so the throw rolled
+    // the audit row back too: every scan.rejected entry was discarded at the
+    // moment it mattered. The row is now written by the HTTP action instead.
+    const clockIn = Date.now() - 60 * 60 * 1000;
+    await t.run(async (ctx) => {
+      await ctx.db.insert("shifts", {
+        clientId: w.alphaClient, siteId: w.alphaSite, userId: w.alphaGuard,
+        clockIn, status: "active", clockInPhoto: "test-photo",
+        siteLabel: "Alpha Ikeja Warehouse", createdAt: clockIn,
+      });
+    });
+    const res = await t.fetch("/scans", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({
+        checkpointId: w.alphaCheckpoint,
+        gpsLatitude: 6.6018, gpsLongitude: 3.3515, gpsMocked: true,
+      }),
+    });
+    expect(res.status).toBe(403);
+    const audits = await t.run((ctx) =>
+      ctx.db.query("auditLogs").filter((q) => q.eq(q.field("action"), "scan.rejected")).collect(),
+    );
+    expect(audits).toHaveLength(1);
+    expect(audits[0].details).toContain("mock GPS provider");
+    expect(audits[0].success).toBe(false);
+    expect(String(audits[0].actorId)).toBe(String(w.alphaGuard));
+  });
+
+  test("an off-duty scan is refused with its message, not a 500", async () => {
+    const res = await t.fetch("/scans", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({
+        checkpointId: w.alphaCheckpoint,
+        gpsLatitude: 6.6018, gpsLongitude: 3.3515,
+      }),
+    });
+    expect(res.status).toBe(403);
+    expect((await res.json()).message).toContain("clock in");
+  });
+});
+
+describe("F-HARDENING — X-Forwarded-For cannot be forged", () => {
+  const login = (headers: Record<string, string>) =>
+    t.fetch("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...headers },
+      body: JSON.stringify({ email: "nobody@example.test", password: "wrong" }),
+    });
+
+  test("a client-supplied hop is not taken as the caller's address", async () => {
+    // The header is a list and the client controls the front of it. Reading it
+    // raw meant a fresh value per request bought a fresh rate-limit budget, and
+    // put an attacker-chosen string into the audit trail.
+    await login({ "x-forwarded-for": "1.2.3.4, 203.0.113.9" });
+    const audits = await t.run((ctx) => ctx.db.query("auditLogs").collect());
+    for (const row of audits) {
+      expect(row.ipAddress).not.toBe("1.2.3.4, 203.0.113.9");
+      expect(row.ipAddress).not.toBe("1.2.3.4");
+    }
+  });
+
+  test("a junk header is discarded rather than used as a bucket key", async () => {
+    // Anything unparseable must collapse to the shared bucket, which throttles,
+    // rather than becoming a unique key, which does not.
+    const res = await login({ "x-forwarded-for": "not-an-ip-at-all" });
+    expect([401, 429]).toContain(res.status);
+    const sessions = await t.run((ctx) => ctx.db.query("auditLogs").collect());
+    for (const row of sessions) {
+      expect(row.ipAddress).not.toBe("not-an-ip-at-all");
+    }
+  });
+
+  test("rotating the header does not buy a fresh budget", async () => {
+    // The point of the keyless failed-login cap. Where no proxy appends a real
+    // peer, every IP-keyed bucket is rotatable and useless; this one is not.
+    // Driven to just under the cap directly so the test does not have to pay
+    // for a hundred bcrypt comparisons to make its point.
+    const { maxRequests } = getRateLimit("loginFail");
+    for (let i = 0; i < maxRequests; i++) {
+      await t.mutation(internal.lib.rateLimiter.bump, {
+        action: "loginFail",
+        actorId: "global",
+      });
+    }
+    // A brand-new address, which would reset both IP-keyed buckets.
+    const res = await login({ "x-forwarded-for": "198.51.100.77" });
+    expect(res.status).toBe(429);
+  });
+
+  test("the cap counts failures only, so ordinary sign-ins are unaffected", async () => {
+    // A shift change is a burst of *successful* logins and must never trip it.
+    const before = await t.query(internal.lib.rateLimiter.peek, {
+      action: "loginFail",
+      actorId: "global",
+    });
+    expect(before.exceeded).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-ROUND2 — findings from the second, independent pass (2026-08-24).
+//
+// Written to fail against the code as it stood after the first round of fixes.
+// The theme is the one the first round did not finish: the first pass chased
+// the `clientId ?? undefined` read pattern and missed both a route that still
+// had it and a whole class of *write* mutations that trust an id they are
+// handed.
+// ---------------------------------------------------------------------------
+describe("F-ROUND2 — /reports still leaked across tenants", () => {
+  test("a guard cannot read another customer's report submissions", async () => {
+    // Same defect as /checkpoints and /incidents — a guard has no clientId, so
+    // `admin ? param : user.clientId` passed undefined and listAll returned
+    // every tenant's submissions. Missed in the first pass.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("reportSubmissions", {
+        clientId: w.bravoClient,
+        type: "Incident Report",
+        title: "Bravo tank farm breach",
+        summary: "Confidential to Bravo",
+        details: {},
+        userId: w.bravoGuard,
+        status: "submitted",
+        submittedAt: Date.now(),
+        deliveryPayload: {},
+        siteLabel: "Bravo Tank Farm",
+      });
+    });
+    const res = await t.fetch("/reports", {
+      method: "GET",
+      headers: auth(w.tokens.alphaGuard),
+    });
+    // Refused outright: filing reports is a control-room function, the portal
+    // has /client/reports, and the phone only ever POSTs to the two report
+    // templates. A guard has no business on this listing at all.
+    expect(res.status).toBe(403);
+    expect(JSON.stringify(await res.json())).not.toContain("Bravo tank farm breach");
+  });
+
+  test("an admin still sees them", async () => {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("reportSubmissions", {
+        clientId: w.bravoClient, type: "Incident Report",
+        title: "Bravo tank farm breach", summary: "x", details: {},
+        userId: w.bravoGuard, status: "submitted", submittedAt: Date.now(),
+        deliveryPayload: {}, siteLabel: "Bravo Tank Farm",
+      });
+    });
+    const res = await t.fetch("/reports", { method: "GET", headers: auth(w.tokens.admin) });
+    expect(JSON.stringify(await res.json())).toContain("Bravo tank farm breach");
+  });
+});
+
+describe("F-ROUND2 — writes that trust the id they are handed", () => {
+  test("a guard cannot file an incident onto another customer's location", async () => {
+    // observations.create and handovers.create both refuse this explicitly;
+    // incidents.create never checked. The incident lands under Bravo's clientId
+    // and siteId, reaches Bravo's portal and their alerting, and names an
+    // officer who has no relationship with them.
+    const res = await t.fetch("/incidents", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({
+        title: "Planted incident",
+        checkpointId: w.bravoCheckpoint,
+        category: "Theft",
+      }),
+    });
+    expect(res.status).toBe(403);
+    const planted = await t.run((ctx) =>
+      ctx.db.query("incidents").filter((q) => q.eq(q.field("title"), "Planted incident")).first(),
+    );
+    expect(planted).toBeNull();
+  });
+
+  test("a guard can still file an incident at their own post", async () => {
+    const res = await t.fetch("/incidents", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({
+        title: "Genuine incident",
+        checkpointId: w.alphaCheckpoint,
+        category: "Theft",
+      }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  test("a guard cannot acknowledge another customer's pass-on", async () => {
+    // Acknowledgement is a compliance record: it asserts a named officer read a
+    // named instruction. Writing one into another tenant's log both pollutes
+    // their records and fabricates evidence.
+    const bravoLog = await t.run(async (ctx) =>
+      ctx.db.insert("passOnLogs", {
+        clientId: w.bravoClient, siteId: w.bravoSite,
+        title: "Bravo night orders", instruction: "Confidential",
+        priority: "high", siteLabel: "Bravo Tank Farm",
+        requiresAcknowledgement: true, createdBy: w.admin,
+        active: true, createdAt: Date.now(),
+      }),
+    );
+    const res = await t.fetch(`/pass-on-logs/${bravoLog}/acknowledge`, {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({ note: "not mine to read" }),
+    });
+    expect([403, 404]).toContain(res.status);
+    const acks = await t.run((ctx) => ctx.db.query("passOnLogAcknowledgements").collect());
+    expect(acks).toHaveLength(0);
+  });
+
+  test("a guard cannot acknowledge or complete another customer's post order", async () => {
+    const bravoOrder = await t.run(async (ctx) =>
+      ctx.db.insert("postOrders", {
+        clientId: w.bravoClient, siteId: w.bravoSite,
+        title: "Bravo standing order", summary: "s", instructions: "Confidential",
+        assignedRole: "guard", priority: "high", active: true,
+        requiresAcknowledgement: true, requiresPhotoProof: false,
+        createdBy: w.admin, createdAt: Date.now(),
+      }),
+    );
+    const ack = await t.fetch(`/post-orders/${bravoOrder}/acknowledge`, {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({}),
+    });
+    expect([403, 404]).toContain(ack.status);
+
+    const done = await t.fetch(`/post-orders/${bravoOrder}/complete`, {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({ proofNote: "claimed" }),
+    });
+    expect([403, 404]).toContain(done.status);
+
+    const completions = await t.run((ctx) => ctx.db.query("postOrderCompletions").collect());
+    expect(completions).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-MATRIX — the authorization table, asserted rather than assumed.
+//
+// Every role against every sensitive route, positive and negative. Written to
+// find the routes nobody thought about rather than to confirm the ones they
+// did: a table makes an odd cell obvious in a way reading 119 handlers does
+// not. 401 = not a credential this route accepts (portal tokens are refused by
+// requireAuth on staff routes); 403 = authenticated but not permitted.
+// ---------------------------------------------------------------------------
+describe("F-MATRIX — role authorization across the API", () => {
+  type Expect = { admin: number[]; supervisor: number[]; guard: number[]; portal: number[] };
+  const OK = [200, 201];
+  const DENIED = [401, 403];
+
+  const staffOnly: Expect = { admin: OK, supervisor: OK, guard: DENIED, portal: DENIED };
+  const adminOnly: Expect = { admin: OK, supervisor: DENIED, guard: DENIED, portal: DENIED };
+  const portalOnly: Expect = { admin: DENIED, supervisor: DENIED, guard: DENIED, portal: OK };
+
+  const cases: Array<[string, string, Expect]> = [
+    // Supervisory listings — a guard has no business on any of these.
+    ["/scans/recent", "GET", staffOnly],
+    ["/shifts/missing-clockins", "GET", staffOnly],
+    ["/incidents/missed-patrols", "GET", staffOnly],
+    ["/post-orders/completions", "GET", staffOnly],
+    ["/reports", "GET", staffOnly],
+    ["/analytics", "GET", staffOnly],
+    ["/checkpoint-assignments?checkpointId=none", "GET", { ...staffOnly, admin: [404], supervisor: [404] }],
+    // Admin-only: the escalation roster and the staff directory.
+    ["/emergency/settings", "GET", adminOnly],
+    ["/users", "GET", adminOnly],
+    ["/deletion-impact?type=user&id=x", "GET", { ...adminOnly, admin: [200, 400, 404] }],
+    // Portal-only.
+    ["/client/overview", "GET", portalOnly],
+    ["/client/guard-stats", "GET", portalOnly],
+    ["/client/analytics", "GET", portalOnly],
+    ["/client/checkpoints", "GET", portalOnly],
+  ];
+
+  test.each(cases)("%s %s enforces its role table", async (path, method, expected) => {
+    const actors: Array<[keyof Expect, string]> = [
+      ["admin", w.tokens.admin],
+      ["supervisor", w.tokens.supervisor],
+      ["guard", w.tokens.alphaGuard],
+      ["portal", w.tokens.alphaPortal],
+    ];
+    for (const [role, token] of actors) {
+      const res = await t.fetch(path, { method, headers: auth(token) });
+      expect(
+        expected[role],
+        `${method} ${path} as ${role} returned ${res.status}`,
+      ).toContain(res.status);
+    }
+  });
+
+  test("every sensitive route refuses an anonymous caller", async () => {
+    for (const [path, method] of cases) {
+      const res = await t.fetch(path, { method });
+      expect([401, 404], `${method} ${path} anonymous`).toContain(res.status);
+    }
+  });
+
+  test("malformed credentials are refused, not crashed on", async () => {
+    const bad = [
+      { Authorization: "Bearer not-a-jwt" },
+      { Authorization: "Bearer " },
+      { Authorization: "Basic YWRtaW46YWRtaW4=" },
+      { Authorization: "  " },
+      // A structurally valid JWT signed with the wrong key.
+      { Authorization: "Bearer eyJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOiJ4In0.bogus" },
+    ];
+    for (const headers of bad) {
+      const res = await t.fetch("/checkpoints", { method: "GET", headers });
+      expect([401]).toContain(res.status);
+    }
+  });
+
+  test("a token naming a user that no longer exists is refused", async () => {
+    // Deleting a person must end their access even while their JWT is inside
+    // its 30-minute window.
+    const ghost = await t.run(async (ctx) => {
+      const id = await ctx.db.insert("users", {
+        name: "Ghost", email: "ghost@example.test", passwordHash: "x",
+        role: "admin", phone: "+2340000000000", active: true,
+        liveTracking: false, createdAt: Date.now(),
+      });
+      await ctx.db.delete(id);
+      return id;
+    });
+    const token = await signPatrolToken({
+      userId: ghost, email: "ghost@example.test", role: "admin",
+    });
+    const res = await t.fetch("/users", { method: "GET", headers: auth(token) });
+    expect(res.status).toBe(401);
+  });
+
+  test("a deactivated user's live token stops working", async () => {
+    await t.run(async (ctx) => {
+      await ctx.db.patch(w.alphaGuard, { active: false });
+    });
+    const res = await t.fetch("/checkpoints", {
+      method: "GET",
+      headers: auth(w.tokens.alphaGuard),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  test("the role in the token cannot be used to escalate", async () => {
+    // The JWT carries a role claim, but authorization must read the database.
+    // A token minted with role=admin for a guard's id must still be a guard.
+    const forged = await signPatrolToken({
+      userId: w.alphaGuard,
+      email: "alpha.guard@example.test",
+      role: "admin",
+    });
+    const res = await t.fetch("/users", { method: "GET", headers: auth(forged) });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("F-ROUND2 — the siteId filter bypassed the officer and tenant pins", () => {
+  // listForApi chose its index as `siteId ? ... : officerId ? ... : clientId`
+  // and afterwards filtered only on `status`. So supplying ?siteId= took the
+  // by_siteId branch and neither the officer pin nor the tenant pin was ever
+  // applied. Visitor logs carry third-party PII — names, phone numbers, ID
+  // numbers, vehicle plates — belonging to people who never dealt with the
+  // caller's employer at all.
+  beforeEach(async () => {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("visitorLogs", {
+        clientId: w.bravoClient,
+        siteId: w.bravoSite,
+        officerId: w.bravoGuard,
+        visitorName: "Bravo Confidential Visitor",
+        visitorPhone: "+2348099999999",
+        hostName: "Bravo Host",
+        purpose: "Meeting",
+        vehiclePlate: "BRAVO-VAN-9",
+        idNumber: "ID-BRAVO-001",
+        status: "active",
+        checkInAt: Date.now(),
+        createdAt: Date.now(),
+        notes: "",
+      });
+      await ctx.db.insert("truckLogs", {
+        clientId: w.bravoClient,
+        siteId: w.bravoSite,
+        officerId: w.bravoGuard,
+        driverName: "Bravo Confidential Driver",
+        plateNumber: "BRAVO-PLATE-1",
+        company: "Bravo Haulage",
+        purpose: "Delivery",
+        cargoDescription: "Fuel",
+        status: "active",
+        checkInAt: Date.now(),
+        createdAt: Date.now(),
+        notes: "",
+      });
+    });
+  });
+
+  test("a guard cannot read another tenant's visitor log via ?siteId=", async () => {
+    const res = await t.fetch(`/visitors?siteId=${w.bravoSite}`, {
+      method: "GET",
+      headers: auth(w.tokens.alphaGuard),
+    });
+    expect(res.status).toBe(200);
+    const body = JSON.stringify(await res.json());
+    expect(body).not.toContain("Bravo Confidential Visitor");
+    expect(body).not.toContain("+2348099999999");
+    expect(body).not.toContain("ID-BRAVO-001");
+  });
+
+  test("a guard cannot read another tenant's truck log via ?siteId=", async () => {
+    const res = await t.fetch(`/trucks?siteId=${w.bravoSite}`, {
+      method: "GET",
+      headers: auth(w.tokens.alphaGuard),
+    });
+    expect(res.status).toBe(200);
+    const body = JSON.stringify(await res.json());
+    expect(body).not.toContain("Bravo Confidential Driver");
+    expect(body).not.toContain("BRAVO-PLATE-1");
+  });
+
+  test("an admin may still filter by site", async () => {
+    const res = await t.fetch(`/visitors?siteId=${w.bravoSite}`, {
+      method: "GET",
+      headers: auth(w.tokens.admin),
+    });
+    expect(JSON.stringify(await res.json())).toContain("Bravo Confidential Visitor");
+  });
+});
+
+describe("F-ROUND2 — a guard cannot pin an alarm to another tenant's site", () => {
+  beforeEach(async () => {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("shifts", {
+        clientId: w.alphaClient, siteId: w.alphaSite, userId: w.alphaGuard,
+        clockIn: Date.now() - 3600_000, status: "active",
+        clockInPhoto: "test-photo", siteLabel: "Alpha Ikeja Warehouse",
+        createdAt: Date.now() - 3600_000,
+      });
+    });
+  });
+
+  test("a foreign checkpoint is ignored, and the alarm still goes out", async () => {
+    // Only the client path was ever ownership-checked. A guard could file a
+    // CODE RED against a site they have no connection to — reaching that
+    // client's portal and their guards' phones.
+    const res = await t.fetch("/emergency/trigger", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({
+        checkpointId: w.bravoCheckpoint,
+        category: "Fire Outbreak",
+        note: "misattributed",
+      }),
+    });
+    // The emergency must NOT be suppressed — a panic button that can be
+    // refused is worse than one that is occasionally misfiled.
+    expect(res.status).toBe(201);
+    const [event] = await t.run((ctx) => ctx.db.query("emergencyEvents").collect());
+    // ...but it is filed where the guard actually is, not where they claimed.
+    expect(String(event.clientId)).toBe(String(w.alphaClient));
+    expect(String(event.siteId)).toBe(String(w.alphaSite));
+    expect(event.checkpointId ?? null).toBeNull();
+  });
+
+  test("a guard's own checkpoint is still honoured", async () => {
+    const res = await t.fetch("/emergency/trigger", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({ checkpointId: w.alphaCheckpoint, category: "Theft" }),
+    });
+    expect(res.status).toBe(201);
+    const [event] = await t.run((ctx) => ctx.db.query("emergencyEvents").collect());
+    expect(String(event.checkpointId)).toBe(String(w.alphaCheckpoint));
+    expect(String(event.clientId)).toBe(String(w.alphaClient));
+  });
+});
+
+describe("F-ROUND2 — the clock-in geofence flag told the truth", () => {
+  test("an unmappable site records gpsValid=false, not true", async () => {
+    // Alpha's site carries no coordinates in the fixture and its checkpoint
+    // has none either, so nothing can be measured. This used to return
+    // gpsValid: true — a flag reading "verified" with no verification behind
+    // it, which is worse than no flag at all.
+    await t.mutation(internal.shifts.clockIn, {
+      userId: w.alphaGuard,
+      latitude: 6.6018,
+      longitude: 3.3515,
+    });
+    const [shift] = await t.run((ctx) => ctx.db.query("shifts").collect());
+    expect(shift.clockInGpsValid).toBe(false);
+  });
+
+  test("a guard covering several sites is measured against the right one", async () => {
+    // Give Alpha's site real coordinates, then post the guard to a second,
+    // distant site FIRST so the by_userId index returns the wrong one first.
+    const farSite = await t.run(async (ctx) => {
+      await ctx.db.patch(w.alphaSite, {
+        latitude: 6.6018, longitude: 3.3515, radiusMeters: 150,
+      });
+      const far = await ctx.db.insert("sites", {
+        name: "Far Site", location: "Abuja", clientId: w.alphaClient,
+        latitude: 9.0765, longitude: 7.3986, radiusMeters: 150,
+        active: true, createdAt: Date.now(),
+      });
+      await ctx.db.insert("userSiteAssignments", {
+        userId: w.alphaGuard, siteId: far,
+        clientId: w.alphaClient, createdAt: Date.now() - 1000,
+      });
+      return far;
+    });
+    // Standing at the Ikeja site, ~700km from the Abuja one.
+    await t.mutation(internal.shifts.clockIn, {
+      userId: w.alphaGuard,
+      latitude: 6.6018,
+      longitude: 3.3515,
+    });
+    const [shift] = await t.run((ctx) => ctx.db.query("shifts").collect());
+    expect(shift.clockInGpsValid).toBe(true);
+    // And the shift is attributed to where they actually are, which scans and
+    // emergency fallback both depend on.
+    expect(String(shift.siteId)).toBe(String(w.alphaSite));
+    expect(String(shift.siteId)).not.toBe(String(farSite));
   });
 });

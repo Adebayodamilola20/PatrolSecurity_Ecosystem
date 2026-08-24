@@ -138,8 +138,33 @@ export function validateEnv() {
   getConvexUrl();
 }
 
+/**
+ * Which deployment this is.
+ *
+ * Convex sets CONVEX_DEPLOYMENT to `<type>:<name>` — `prod:harmless-pigeon-186`,
+ * `dev:resilient-buffalo-226` — never to a bare word. Comparing the whole value
+ * against "production" and "dev", as this did, produced three flags that were
+ * false everywhere including the environments they name.
+ *
+ * Nothing read them, so nothing was broken by it. The hazard was the next
+ * person to write `if (DEPLOYMENT.isProduction)` around a guard and get silence
+ * instead of enforcement. Parse the prefix, and treat an unrecognised value as
+ * production: an environment we cannot identify is the wrong one to relax in.
+ */
+function deploymentType(): string {
+  const raw = process.env.CONVEX_DEPLOYMENT?.trim() ?? "";
+  const [type] = raw.split(":");
+  return (type || "").toLowerCase();
+}
+
+const DEPLOYMENT_TYPE = deploymentType();
+
 export const DEPLOYMENT = {
-  isDevelopment: process.env.CONVEX_DEPLOYMENT === "dev",
-  isProduction: process.env.CONVEX_DEPLOYMENT === "production",
-  isPreview: process.env.CONVEX_DEPLOYMENT === "preview",
+  isDevelopment: DEPLOYMENT_TYPE === "dev" || DEPLOYMENT_TYPE === "local",
+  isPreview: DEPLOYMENT_TYPE === "preview",
+  isProduction:
+    DEPLOYMENT_TYPE === "prod" ||
+    DEPLOYMENT_TYPE === "production" ||
+    // Fail safe: unknown or unset means assume production.
+    !["dev", "local", "preview"].includes(DEPLOYMENT_TYPE),
 };

@@ -17,6 +17,8 @@ import {
 } from "./lib/photoRefs";
 import { getApiBaseUrl } from "./env";
 import { reportException } from "./lib/sentry";
+import { scopeFor, scopeArgs } from "./lib/scope";
+import { parseScanRefusal } from "./scans";
 
 const _uid = (s: string): Id<"users"> => s as Id<"users">;
 const _cid = (s: string | null | undefined): Id<"clients"> | undefined => (s ?? undefined) as Id<"clients"> | undefined;
@@ -857,12 +859,157 @@ async function servePdf(
   });
 }
 
+/**
+ * The caller's IP, as far as it can be trusted.
+ *
+ * X-Forwarded-For is a list and the client controls the front of it. A proxy
+ * *appends* the peer it actually received the connection from, so the last
+ * entry is the only one written by infrastructure rather than by the caller.
+ *
+ * Reading the raw header — which is what this did — made the value
+ * attacker-chosen, and two things followed. The login limiter keys on it, so a
+ * fresh header per request bought a fresh attempt budget every time and both
+ * the per-email and per-IP caps became decorative. And every audit row, every
+ * session record and every session-reuse alert stored whatever the caller put
+ * there, so the one trail you would follow after a break-in was writable by the
+ * person you would be following.
+ *
+ * Anything that is not a plausible IP literal is discarded rather than passed
+ * along: the caller then falls back to a single shared bucket, which throttles,
+ * rather than to a unique key, which does not.
+ */
+/**
+ * The one password policy, applied wherever a password is set.
+ *
+ * It used to live only in /auth/change-password. Creating a user enforced
+ * nothing at all and fell back to a literal "123456" when the body carried no
+ * password, so the weakest credential in the system was the one handed to every
+ * new guard — and nothing ever made them change it. An admin reset enforced a
+ * length and no more.
+ *
+ * Returns null when acceptable, or the reason to send back.
+ */
+function passwordPolicyError(password: string): string | null {
+  if (password.length < 8) return "Password must be at least 8 characters";
+  if (!/[a-z]/.test(password)) return "Password must contain at least one lowercase letter";
+  if (!/[A-Z]/.test(password)) return "Password must contain at least one uppercase letter";
+  if (!/\d/.test(password)) return "Password must contain at least one digit";
+  return null;
+}
+
+/**
+ * Strips direct contact details before an operational snapshot is sent to the
+ * third-party model.
+ *
+ * The assistant answers most questions locally from this snapshot and never
+ * leaves the deployment. Only the catch-all intent posts it to NVIDIA, and it
+ * was posting the lot: guard names alongside their personal phone numbers and
+ * email addresses, plus site names and incident text, for whichever tenant the
+ * caller could see. Nobody consented to that and no client contract mentions
+ * it.
+ *
+ * Names stay — the answers are useless without them — but a staff member's
+ * personal contact details have no bearing on "who is on duty at Ikeja" and are
+ * removed. Questions that genuinely need them are handled by the local
+ * guard_details intent, which never calls out.
+ */
+const EXTERNAL_MODEL_REDACTED_FIELDS = new Set(["phone", "email"]);
+
+function redactForExternalModel(node: any): any {
+  if (Array.isArray(node)) return node.map(redactForExternalModel);
+  if (!node || typeof node !== "object") return node;
+  const out: Record<string, any> = {};
+  for (const [key, value] of Object.entries(node)) {
+    if (EXTERNAL_MODEL_REDACTED_FIELDS.has(key)) continue;
+    out[key] = redactForExternalModel(value);
+  }
+  return out;
+}
+
+/**
+ * A device timestamp off the wire, as epoch milliseconds.
+ *
+ * Accepts both an ISO string and a number because the app has sent both over
+ * its life. Returns undefined for anything unparseable, which makes the caller
+ * fall back to the arrival time rather than to NaN.
+ */
+function parseCapturedAt(raw: unknown): number | undefined {
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string" && raw.trim()) {
+    const parsed = Date.parse(raw);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+/**
+ * A real bcrypt hash of a value nobody knows, compared against when the email
+ * is not on file so that a failed login costs the same either way. bcrypt's
+ * work factor is the whole point of the delay, so the comparison has to be
+ * genuine rather than a sleep.
+ */
+const DUMMY_PASSWORD_HASH =
+  "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
+
+/**
+ * Turns an authorization refusal thrown by a mutation into a 403.
+ *
+ * Several mutations enforce scope themselves — deliberately, because an
+ * internal mutation is a second door into the same row and the route in front
+ * of it today is not the only caller it will ever have. Their refusals are
+ * plain Errors, so without this they surface as a 500: the caller is told the
+ * server broke rather than that they were refused, and the log fills with
+ * fake faults that hide real ones.
+ *
+ * Returns a Response for a refusal, or null to let the caller rethrow.
+ */
+const AUTHZ_REFUSALS = [
+  "not posted to that location",
+  "not yours to acknowledge",
+  "not yours to complete",
+  "was not addressed to you",
+  "belongs to another",
+  "Access denied",
+  "does not belong to your account",
+];
+
+function authorizationRefusal(err: unknown): Response | null {
+  if (!(err instanceof Error)) return null;
+  const message = err.message.replace(/^Uncaught Error:\s*/, "").split("\n")[0].trim();
+  return AUTHZ_REFUSALS.some((needle) => message.includes(needle))
+    ? forbidden(message)
+    : null;
+}
+
+const IPV4_SHAPE = /^\d{1,3}(\.\d{1,3}){3}$/;
+const IPV6_SHAPE = /^[0-9a-f:]{2,45}$/i;
+
 function requestIp(request: Request) {
-  return (
+  const header =
     request.headers.get("x-forwarded-for") ??
     request.headers.get("x-real-ip") ??
-    undefined
+    "";
+  // Bounded before splitting: an unbounded header must not become an unbounded
+  // bucket key or an unbounded audit field.
+  const hops = header.slice(0, 512).split(",");
+  // Count back from the end. The last entry was written by whatever proxy we
+  // sit behind; anything further left was supplied by the caller. How many
+  // hops to skip depends on the deployment, so it is configurable — and note
+  // that if nothing in front of us appends at all, no value here can be
+  // trusted. That is why the failed-login cap in /auth/login is keyless rather
+  // than IP-keyed: it holds even when this returns an attacker's choice.
+  const trustedHops = Math.max(
+    1,
+    Math.floor(Number(process.env.TRUSTED_PROXY_HOPS) || 1),
   );
+  const candidate = hops[hops.length - trustedHops]?.trim() ?? "";
+  if (!candidate) return undefined;
+  // Strip an IPv6 bracket/port form such as [::1]:443 before validating.
+  const bare = candidate.replace(/^\[/, "").replace(/\](:\d+)?$/, "");
+  if (IPV4_SHAPE.test(bare)) {
+    return bare.split(".").every((part) => Number(part) <= 255) ? bare : undefined;
+  }
+  return IPV6_SHAPE.test(bare) ? bare : undefined;
 }
 
 // Request protection gate. Runs global load shedding + the per-actor rate limit
@@ -1071,7 +1218,7 @@ http.route({
             content: JSON.stringify({
               question,
               intent,
-              verifiedOperationalSnapshot: snapshot,
+              verifiedOperationalSnapshot: redactForExternalModel(snapshot),
             }),
           },
         ]);
@@ -1217,7 +1364,7 @@ http.route({
           },
           {
             role: "user",
-            content: JSON.stringify({ question, intent, verifiedOperationalSnapshot: snapshot }),
+            content: JSON.stringify({ question, intent, verifiedOperationalSnapshot: redactForExternalModel(snapshot) }),
           },
         ]);
         assistantUnavailable = !!result.unavailable;
@@ -1322,19 +1469,33 @@ http.route({
     if (hasUsers) {
       return json({ seeded: false, reason: "users already exist" })
     }
-    const passwordHash = await bcrypt.hash("123456", 10)
+    // The bootstrap password is supplied by whoever holds the seed secret and
+    // must meet the same policy as any other. It used to be a hardcoded
+    // "123456" echoed back in the response — three known-credential accounts,
+    // one of them an admin, created by a single POST. The gates in front of
+    // this route made that unlikely rather than impossible, and "unlikely" is
+    // not the standard for an endpoint that mints an administrator.
+    const body = await parseJson(request)
+    const seedPassword = String(body?.password ?? "")
+    if (!seedPassword) {
+      return badRequest("A bootstrap password is required in the request body")
+    }
+    const seedPasswordError = passwordPolicyError(seedPassword)
+    if (seedPasswordError) return badRequest(seedPasswordError)
+    const passwordHash = await bcrypt.hash(seedPassword, 10)
     const result = await ctx.runMutation(internal.dev.seedDefaults, {
       adminPasswordHash: passwordHash,
       clientPasswordHash: passwordHash,
       guardPasswordHash: passwordHash,
     })
+    // The password is never echoed back; the caller chose it and already has it.
     return json({
       ...result,
-      credentials: {
-        admin: "admin@securecorp.com / 123456",
-        client: "client@securecorp.com / 123456",
-        guard: "guard@securecorp.com / 123456",
-      },
+      accounts: [
+        "admin@securecorp.com",
+        "client@securecorp.com",
+        "guard@securecorp.com",
+      ],
     })
   }),
 })
@@ -1373,19 +1534,53 @@ http.route({
     // single address a fresh budget for every email it invents. The IP-only
     // bucket is what actually caps the spray.
     const ip = requestIp(request) ?? "noip";
+
+    // A deployment-wide cap on FAILED logins, checked before anything else.
+    //
+    // Both buckets below are keyed on the caller's address, and that address
+    // comes from X-Forwarded-For, which is only trustworthy if a proxy in front
+    // of this deployment appends the real peer. Where it does not, an attacker
+    // rotates the header and every IP-keyed bucket hands out a fresh budget.
+    // This one has no key, so there is nothing to rotate, and it only counts
+    // failures — a whole company signing in at shift change never touches it.
+    const sprayed = await ctx.runQuery(internal.lib.rateLimiter.peek, {
+      action: "loginFail",
+      actorId: "global",
+    });
+    if (sprayed.exceeded) {
+      return tooManyRequests(
+        "Too many failed sign-in attempts. Please try again shortly.",
+        sprayed.retryAfterMs,
+      );
+    }
+
     const ipLimited = await enforceLimit(ctx, "loginIp", ip);
     if (ipLimited) return ipLimited;
     const loginLimited = await enforceLimit(ctx, "login", `${email}|${ip}`);
     if (loginLimited) return loginLimited;
 
+    // One helper so no failure path can forget to count itself.
+    const rejectCredentials = async () => {
+      await ctx.runMutation(internal.lib.rateLimiter.bump, {
+        action: "loginFail",
+        actorId: "global",
+      });
+      return unauthorized("Invalid credentials");
+    };
+
     const user = await ctx.runQuery(internal.users.findByEmail, { email });
     if (!user || !user.active) {
-      return unauthorized("Invalid credentials");
+      // Still pay for a hash comparison on an unknown address. Returning early
+      // made a missing account answer in a fraction of the time a real one
+      // takes, which turns "Invalid credentials" into a way to enumerate who
+      // actually has an account here.
+      await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
+      return await rejectCredentials();
     }
 
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
-      return unauthorized("Invalid credentials");
+      return await rejectCredentials();
     }
     if (clientType === "mobile" && user.role !== "guard") {
       return forbidden("Mobile access is restricted to guard accounts");
@@ -1445,18 +1640,8 @@ http.route({
     if (!currentPassword || !newPassword) {
       return badRequest("Current password and new password are required");
     }
-    if (newPassword.length < 8) {
-      return badRequest("New password must be at least 8 characters");
-    }
-    if (!/(?=.*[a-z])/.test(newPassword)) {
-      return badRequest("Password must contain at least one lowercase letter");
-    }
-    if (!/(?=.*[A-Z])/.test(newPassword)) {
-      return badRequest("Password must contain at least one uppercase letter");
-    }
-    if (!/(?=.*\d)/.test(newPassword)) {
-      return badRequest("Password must contain at least one digit");
-    }
+    const policyError = passwordPolicyError(newPassword);
+    if (policyError) return badRequest(policyError);
     const stored = await ctx.runQuery(internal.users.findByEmail, { email: user.email });
     if (!stored) return notFound("User not found");
     const valid = await bcrypt.compare(currentPassword, stored.passwordHash);
@@ -1701,7 +1886,7 @@ http.route({
       await recordAudit(ctx, user, "emergency.triggered", {
         targetType: "emergency", targetId: event.id as unknown as string,
         details: `Client emergency at ${event.siteLabel}: ${event.note || event.message}`,
-        ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+        ipAddress: requestIp(request),
       });
       return json(event, { status: 201 });
     } catch (err) {
@@ -1819,9 +2004,13 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
-    return json(await ctx.runQuery(internal.checkpoints.listForApi, {
-      clientId: user.role === "admin" ? undefined : (_cid(user.clientId)),
-    }));
+    // [tenant-isolation] This row carries the QR code value, the geofence and
+    // the patrol schedule. Scoped through lib/scope.ts rather than the old
+    // `admin ? undefined : user.clientId`, which handed every customer's
+    // timetable to any guard because guards carry no clientId.
+    const scope = scopeFor(user);
+    if (scope.kind === "none") return json([]);
+    return json(await ctx.runQuery(internal.checkpoints.listForApi, scopeArgs(scope)));
   }),
 });
 
@@ -2062,13 +2251,34 @@ http.route({
         gpsLatitude: typeof body?.gpsLatitude === "number" ? body.gpsLatitude : undefined,
         gpsLongitude: typeof body?.gpsLongitude === "number" ? body.gpsLongitude : undefined,
         notes: typeof body?.notes === "string" ? body.notes : undefined,
+        // When the phone says it took the scan. Present on every scan the app
+        // sends, and load-bearing for one held in the offline queue — without
+        // it a scan is credited to the moment it was uploaded. Untrusted: the
+        // mutation clamps it to what the shift makes possible.
+        capturedAt: parseCapturedAt(body?.capturedAt),
+        gpsMocked: body?.gpsMocked === true,
       });
     } catch (err) {
+      // A deliberate refusal — off duty, off the geofence, no fix, a mock
+      // location provider, a duplicate, out of order.
+      //
+      // The audit row is written here rather than inside the mutation. The
+      // mutation is a single transaction and the refusal has to abort it, so an
+      // audit row written before the throw was rolled back with everything
+      // else: every scan.rejected entry this system produced was discarded at
+      // the moment it mattered. This action is not transactional, so the record
+      // survives.
+      const refusal = parseScanRefusal(err);
+      if (refusal) {
+        await ctx.runMutation(internal.scans.recordRejection, {
+          officerId: _uid(user.convexId),
+          checkpointId,
+          details: refusal.details,
+        });
+        return forbidden(refusal.message);
+      }
       if (err instanceof Error && err.message.includes("not assigned to this checkpoint")) {
         return forbidden("Officer is not assigned to this checkpoint's site");
-      }
-      if (err instanceof Error && err.message.includes("must clock in")) {
-        return forbidden("You must clock in before you can scan a location.");
       }
       throw err;
     }
@@ -2288,7 +2498,8 @@ http.route({
         accuracy: typeof body?.accuracy === "number" ? body.accuracy : undefined,
         speed: typeof body?.speed === "number" ? body.speed : undefined,
         heading: typeof body?.heading === "number" ? body.heading : undefined,
-        capturedAt: body?.capturedAt ? Date.parse(String(body.capturedAt)) : undefined,
+        capturedAt: parseCapturedAt(body?.capturedAt),
+        mocked: body?.mocked === true,
       }),
       { status: 201 },
     );
@@ -2319,27 +2530,34 @@ http.route({
       if (claimed instanceof Response) return claimed;
       photoStorageIds.push(claimed.storageId);
     }
-    const id = await ctx.runMutation(internal.incidents.create, {
-      officerId: _uid(user.convexId),
-      checkpointId,
-      category,
-      title,
-      description: typeof body?.description === "string" ? body.description : undefined,
-      photoStorageIds,
-      severity:
-        body?.severity === "low" ||
-        body?.severity === "medium" ||
-        body?.severity === "high" ||
-        body?.severity === "critical"
-          ? body.severity
-          : undefined,
-    });
+    let id;
+    try {
+      id = await ctx.runMutation(internal.incidents.create, {
+        officerId: _uid(user.convexId),
+        checkpointId,
+        category,
+        title,
+        description: typeof body?.description === "string" ? body.description : undefined,
+        photoStorageIds,
+        severity:
+          body?.severity === "low" ||
+          body?.severity === "medium" ||
+          body?.severity === "high" ||
+          body?.severity === "critical"
+            ? body.severity
+            : undefined,
+      });
+    } catch (err) {
+      const refused = authorizationRefusal(err);
+      if (refused) return refused;
+      throw err;
+    }
     await attachPhotos(ctx, user, photoStorageIds, "incidents", String(id));
     await recordAudit(ctx, user, "incident.created", {
       targetType: "incident",
       targetId: id as string,
       details: `Incident created: ${category}`,
-      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+      ipAddress: requestIp(request),
     });
     return json({ id }, { status: 201 });
   }),
@@ -2380,7 +2598,7 @@ http.route({
       targetType: "report",
       targetId: id as string,
       details: "Submitted daily activity report",
-      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+      ipAddress: requestIp(request),
     });
     return json({ id }, { status: 201 });
   }),
@@ -2435,7 +2653,7 @@ http.route({
       targetType: "report",
       targetId: id as string,
       details: `Submitted maintenance report: ${title}`,
-      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+      ipAddress: requestIp(request),
     });
     return json({ id }, { status: 201 });
   }),
@@ -2492,7 +2710,7 @@ http.route({
       targetType: "emergency_event",
       targetId: event.id as string,
       details: `Emergency triggered at ${location}${category ? ` (${category})` : ""}`,
-      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+      ipAddress: requestIp(request),
     });
     let delivery: {
       status: string;
@@ -2620,7 +2838,7 @@ http.route({
       targetType: "pass_on_log",
       targetId: result.id as unknown as string,
       details: `Created pass-on-log: ${title}`,
-      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+      ipAddress: requestIp(request),
     });
       return json(result, { status: 201 });
     } catch (err) {
@@ -2667,14 +2885,20 @@ http.route({
     const passOnLogId = await ctx.runQuery(internal.passOnLogs.resolveId, { id });
     if (!passOnLogId) return notFound("Pass-on-log not found");
     const body = await parseJson(request);
-    return json(
-      await ctx.runMutation(internal.passOnLogs.acknowledge, {
-        passOnLogId,
-        userId: _uid(user.convexId),
-        note: typeof body?.note === "string" ? body.note : undefined,
-      }),
-      { status: 201 },
-    );
+    try {
+      return json(
+        await ctx.runMutation(internal.passOnLogs.acknowledge, {
+          passOnLogId,
+          userId: _uid(user.convexId),
+          note: typeof body?.note === "string" ? body.note : undefined,
+        }),
+        { status: 201 },
+      );
+    } catch (err) {
+      const refused = authorizationRefusal(err);
+      if (refused) return refused;
+      throw err;
+    }
   }),
 });
 
@@ -2729,7 +2953,7 @@ http.route({
       targetType: "post_order",
       targetId: orderId,
       details: `Deleted post order ${id}`,
-      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+      ipAddress: requestIp(request),
     });
     return json(result);
   }),
@@ -2747,13 +2971,19 @@ http.route({
     const orderId = await ctx.runQuery(internal.postOrders.resolveId, { id });
     if (!orderId) return notFound("Post order not found");
     if (action === "acknowledge") {
-      return json(
-        await ctx.runMutation(internal.postOrders.acknowledge, {
-          orderId,
-          userId: _uid(user.convexId),
-        }),
-        { status: 201 },
-      );
+      try {
+        return json(
+          await ctx.runMutation(internal.postOrders.acknowledge, {
+            orderId,
+            userId: _uid(user.convexId),
+          }),
+          { status: 201 },
+        );
+      } catch (err) {
+        const refused = authorizationRefusal(err);
+        if (refused) return refused;
+        throw err;
+      }
     }
     if (action === "complete") {
       const body = await parseJson(request);
@@ -2763,14 +2993,21 @@ http.route({
         if (claimed instanceof Response) return claimed;
         proofPhotoStorageId = claimed.storageId;
       }
-      const completion = await ctx.runMutation(internal.postOrders.complete, {
-        orderId,
-        userId: _uid(user.convexId),
-        proofNote: typeof body?.proofNote === "string" ? body.proofNote : undefined,
-        gpsLatitude: typeof body?.gpsLatitude === "number" ? body.gpsLatitude : undefined,
-        gpsLongitude: typeof body?.gpsLongitude === "number" ? body.gpsLongitude : undefined,
-        proofPhotoStorageId,
-      });
+      let completion;
+      try {
+        completion = await ctx.runMutation(internal.postOrders.complete, {
+          orderId,
+          userId: _uid(user.convexId),
+          proofNote: typeof body?.proofNote === "string" ? body.proofNote : undefined,
+          gpsLatitude: typeof body?.gpsLatitude === "number" ? body.gpsLatitude : undefined,
+          gpsLongitude: typeof body?.gpsLongitude === "number" ? body.gpsLongitude : undefined,
+          proofPhotoStorageId,
+        });
+      } catch (err) {
+        const refused = authorizationRefusal(err);
+        if (refused) return refused;
+        throw err;
+      }
       if (proofPhotoStorageId) {
         await attachPhotos(
           ctx,
@@ -2848,7 +3085,7 @@ http.route({
       targetType: "handover",
       targetId: result.id as unknown as string,
       details: `Created handover at ${body?.siteLabel ?? "unknown site"}`,
-      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+      ipAddress: requestIp(request),
     });
     return json(result, { status: 201 });
   }),
@@ -3038,6 +3275,12 @@ http.route({ path: "/auth/me", method: "GET", handler: httpAction(async (ctx, re
 http.route({ path: "/scans/recent", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  // [tenant-isolation] The control room's live feed: the newest scans across
+  // whatever the caller can see, deliberately not filtered by officer. That is
+  // a staff view. A guard reading it saw the last fifty scans in the system,
+  // every customer included. The phone has /scans for its own history and
+  // never calls this route.
+  if (user.role === "guard") return forbidden("Supervisor access required");
   return json(await ctx.runQuery(internal.scans.getRecent, {
     limit: 50,
     clientId: user.role === "admin" ? undefined : (_cid(user.clientId)),
@@ -3052,9 +3295,23 @@ http.route({ pathPrefix: "/scans/", method: "GET", handler: httpAction(async (ct
   const scanId = await ctx.runQuery(internal.scans.resolveId, { id });
   if (!scanId) return notFound("Scan not found");
   const detail = await ctx.runQuery(internal.scans.getDetail, { scanId });
-  // Tenant-bound users only see scans belonging to their own account.
-  if (detail && user.clientId && detail.clientId && detail.clientId !== user.clientId) {
+  if (!detail) return notFound("Scan not found");
+  // [tenant-isolation] This check used to be `user.clientId && ...`, so it was
+  // skipped entirely for anyone without a clientId — every guard — and any
+  // scan in the system was readable by id. Scope decides now, and a row the
+  // caller may not see is reported missing rather than refused, so the route
+  // cannot be used to probe which ids exist.
+  const scope = scopeFor(user);
+  if (scope.kind === "none") return notFound("Scan not found");
+  if (scope.kind === "client" && String(detail.clientId ?? "") !== String(scope.clientId)) {
     return notFound("Scan not found");
+  }
+  if (scope.kind === "sites") {
+    const own = String(detail.officerId ?? "") === String(user.convexId);
+    const inScope =
+      (detail.siteId && scope.siteIds.some((id) => String(id) === String(detail.siteId))) ||
+      (detail.clientId && scope.clientIds.some((id) => String(id) === String(detail.clientId)));
+    if (!own && !inScope) return notFound("Scan not found");
   }
   return json(detail);
 })});
@@ -3144,6 +3401,14 @@ http.route({ pathPrefix: "/checkpoints/", method: "DELETE", handler: httpAction(
 http.route({ path: "/reports", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  // [tenant-isolation] The same `admin ? param : user.clientId` pattern that
+  // leaked /checkpoints and /incidents — a guard carries no clientId, so the
+  // filter vanished and listAll returned every tenant's report submissions,
+  // with signed photo URLs attached. Staff-only: the control room files and
+  // reads these, the portal has /client/reports, and the phone only ever POSTs
+  // to /reports/daily-activity and /reports/maintenance.
+  const roleErr = requireRole(user, ["admin", "supervisor"]);
+  if (roleErr) return roleErr;
   const url = new URL(request.url);
   const startRaw = url.searchParams.get("startDate");
   const endRaw = url.searchParams.get("endDate");
@@ -3319,7 +3584,15 @@ http.route({ path: "/users", method: "POST", handler: httpAction(async (ctx, req
   const roleErr = requireRole(user, ["admin"]);
   if (roleErr) return roleErr;
   const body = await parseJson(request);
-  const passwordHash = await bcrypt.hash(String(body?.password ?? "123456"), 10);
+  // A password is required and must meet the same bar as a self-service change.
+  // The old default — a literal "123456" whenever the body omitted one — meant
+  // the account handed to every new guard was the weakest credential in the
+  // system, and nothing ever forced it to be replaced.
+  const password = String(body?.password ?? "");
+  if (!password) return badRequest("A password is required to create a user");
+  const passwordError = passwordPolicyError(password);
+  if (passwordError) return badRequest(passwordError);
+  const passwordHash = await bcrypt.hash(password, 10);
   const clientId: Id<"clients"> | undefined =
     typeof body?.clientId === "string" && body.clientId.trim()
       ? (body.clientId.trim() as Id<"clients">)
@@ -3366,7 +3639,7 @@ http.route({ pathPrefix: "/users/", method: "PUT", handler: httpAction(async (ct
     await recordAudit(ctx, user, "user.updated", {
       targetType: "user", targetId: userId as string,
       details: `Updated profile for ${result.name}`,
-      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+      ipAddress: requestIp(request),
     });
     return json(result);
   } catch (err) {
@@ -3386,15 +3659,14 @@ http.route({ path: "/users/reset-password", method: "POST", handler: httpAction(
   const userId = await ctx.runQuery(internal.users.resolveId, { id: String(body?.userId ?? "") });
   if (!userId) return notFound("User not found");
   const newPassword = String(body?.newPassword ?? "");
-  if (newPassword.length < 8) {
-    return badRequest("New password must be at least 8 characters");
-  }
+  const resetPolicyError = passwordPolicyError(newPassword);
+  if (resetPolicyError) return badRequest(resetPolicyError);
   const passwordHash = await bcrypt.hash(newPassword, 10);
   const result = await ctx.runMutation(internal.users.adminResetPassword, { userId, passwordHash });
   await recordAudit(ctx, user, "user.password_reset_by_admin", {
     targetType: "user", targetId: userId as string,
     details: `Reset the password for ${result.name}; ${result.sessionsRevoked} session(s) revoked`,
-    ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+    ipAddress: requestIp(request),
   });
   return json({ message: "Password reset", sessionsRevoked: result.sessionsRevoked });
 })});
@@ -3482,7 +3754,7 @@ http.route({ pathPrefix: "/users/", method: "DELETE", handler: httpAction(async 
       `(${impact.scans} scan(s), ${impact.shifts} shift(s), ${impact.incidents} incident(s)); ` +
       `${result.sessionsRevoked} session(s) revoked, ${result.assignmentsRemoved} posting(s) removed, ` +
       `${result.shiftsClosed} open shift(s) closed`,
-    ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+    ipAddress: requestIp(request),
   });
   return json({ message: `${result.name} deleted`, ...result });
 })});
@@ -3490,6 +3762,11 @@ http.route({ pathPrefix: "/users/", method: "DELETE", handler: httpAction(async 
 http.route({ path: "/shifts/missing-clockins", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  // [tenant-isolation] Who has not turned up today — a staffing roster, and a
+  // supervisor's view by nature. It is keyed on people rather than locations,
+  // so there is no honest way to narrow it to one guard's posts: the answer is
+  // that a guard does not get it. The phone never calls this.
+  if (user.role === "guard") return forbidden("Supervisor access required");
   return json(await ctx.runQuery(internal.shifts.missingClockins, {
     clientId: user.role === "admin" ? undefined : (_cid(user.clientId)),
   }));
@@ -3499,11 +3776,17 @@ http.route({ path: "/incidents", method: "GET", handler: httpAction(async (ctx, 
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
   const url = new URL(request.url);
+  // [tenant-isolation] Unscoped, this returned every customer's incidents —
+  // and, because the payload goes through jsonWithPhotos, minted signed URLs
+  // for their evidence photos too. The /photos/ owner re-check refused the
+  // bytes, but the incident text should never have been readable either.
+  const scope = scopeFor(user);
+  if (scope.kind === "none") return json([]);
   return await jsonWithPhotos(user, await ctx.runQuery(internal.incidents.listForApi, {
+    ...scopeArgs(scope),
     status: url.searchParams.get("status") ?? undefined,
     severity: url.searchParams.get("severity") ?? undefined,
     officerId: (url.searchParams.get("officerId") ?? undefined) as Id<"users"> | undefined,
-    clientId: user.role === "admin" ? undefined : (_cid(user.clientId)),
   }));
 })});
 
@@ -3537,9 +3820,13 @@ http.route({ pathPrefix: "/incidents/", method: "PATCH", handler: httpAction(asy
 http.route({ path: "/incidents/missed-patrols", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
-  return json(await ctx.runQuery(internal.incidents.missedPatrols, {
-    clientId: user.role === "admin" ? undefined : (_cid(user.clientId)),
-  }));
+  // [tenant-isolation] Which locations are overdue a patrol — i.e. which
+  // properties are currently unwatched. Staff only, and scoped even then.
+  const scope = scopeFor(user);
+  if (scope.kind === "none" || scope.kind === "sites") {
+    return forbidden("Supervisor access required");
+  }
+  return json(await ctx.runQuery(internal.incidents.missedPatrols, scopeArgs(scope)));
 })});
 
 http.route({ path: "/timesheets", method: "GET", handler: httpAction(async (ctx, request) => {
@@ -3629,6 +3916,10 @@ http.route({ path: "/timesheets/summary", method: "GET", handler: httpAction(asy
 http.route({ path: "/post-orders/completions", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  // [tenant-isolation] An audit of who completed which standing order, with
+  // proof photos. A supervisory view; the phone uses /post-orders for the
+  // guard's own list and never calls this.
+  if (user.role === "guard") return forbidden("Supervisor access required");
   return await jsonWithPhotos(user, await ctx.runQuery(internal.postOrders.listCompletions, {
     clientId: user.role === "admin" ? undefined : (_cid(user.clientId)),
   }));
@@ -3679,7 +3970,7 @@ http.route({ path: "/post-orders", method: "POST", handler: httpAction(async (ct
     targetType: "post_order",
       targetId: result.id as unknown as string,
       details: `Created post order: ${result.title}`,
-    ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+    ipAddress: requestIp(request),
   });
     return json(result, { status: 201 });
   } catch (err) {
@@ -3736,7 +4027,7 @@ http.route({ pathPrefix: "/post-orders/", method: "PUT", handler: httpAction(asy
       targetType: "post_order",
       targetId: orderId,
       details: `Updated post order fields: ${Object.keys(fields).join(", ")}`,
-      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+      ipAddress: requestIp(request),
     });
     return json(result);
   } catch (err) {
@@ -3767,7 +4058,7 @@ http.route({ pathPrefix: "/post-orders/completions/", method: "PATCH", handler: 
     targetType: "post_order_completion",
     targetId: completionId,
     details: `Reviewed completion as ${body?.reviewStatus ?? "approved"}`,
-    ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+    ipAddress: requestIp(request),
   });
   return json(result);
 })});
@@ -3775,8 +4066,14 @@ http.route({ pathPrefix: "/post-orders/completions/", method: "PATCH", handler: 
 http.route({ path: "/handovers", method: "GET", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  // [tenant-isolation] A hand-off names the outgoing and incoming officer and
+  // what was left outstanding. Guards see their own locations' hand-offs, plus
+  // any they are personally party to.
+  const scope = scopeFor(user);
+  if (scope.kind === "none") return json([]);
   return await jsonWithPhotos(user, await ctx.runQuery(internal.handovers.listAll, {
-    clientId: user.role === "admin" ? undefined : (_cid(user.clientId)),
+    ...scopeArgs(scope),
+    participantId: scope.kind === "sites" ? _uid(user.convexId) : undefined,
   }));
 })});
 
@@ -3803,7 +4100,8 @@ http.route({ path: "/clients", method: "POST", handler: httpAction(async (ctx, r
   const password = String(body?.password ?? "");
   if (!name) return badRequest("Company name is required");
   if (!email) return badRequest("Email is required");
-  if (password.length < 8) return badRequest("Password must be at least 8 characters");
+  const portalPasswordError = passwordPolicyError(password);
+  if (portalPasswordError) return badRequest(portalPasswordError);
   let result;
   try {
     result = await ctx.runMutation(internal.clients.createWithLogin, {
@@ -3822,7 +4120,7 @@ http.route({ path: "/clients", method: "POST", handler: httpAction(async (ctx, r
     targetType: "client",
       targetId: result.id as unknown as string,
       details: `Created client account with portal login: ${name}`,
-    ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+    ipAddress: requestIp(request),
   });
   return json(result, { status: 201 });
 })});
@@ -3950,7 +4248,7 @@ http.route({ path: "/observations", method: "POST", handler: httpAction(async (c
       targetType: "observation",
       targetId: result.id as unknown as string,
       details: `Observation: ${result.message.slice(0, 120)}`,
-      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+      ipAddress: requestIp(request),
     });
     return json(result, { status: 201 });
   } catch (err) {
@@ -4021,7 +4319,7 @@ http.route({ pathPrefix: "/clients/", method: "DELETE", handler: httpAction(asyn
   await recordAudit(ctx, user, "client.deleted", {
     targetType: "client", targetId: clientId as string,
     details: `Deleted client ${result.name}: ${result.sitesRemoved} location(s), ${result.checkpointsRemoved} QR code(s), ${result.portalLoginsRemoved} portal login(s)`,
-    ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+    ipAddress: requestIp(request),
   });
   return json(result);
 })});
@@ -4172,7 +4470,7 @@ http.route({ pathPrefix: "/sites/", method: "DELETE", handler: httpAction(async 
       `Deleted location "${result.name}" — patrol history kept (${impact.scans} scan(s)); ` +
       `${result.checkpointsRemoved} QR code(s) removed, ${result.assignmentsRemoved} posting(s) removed, ` +
       `${result.postOrdersDeactivated} post order(s) deactivated`,
-    ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+    ipAddress: requestIp(request),
   });
   return json({ message: `${result.name} deleted`, ...result });
 })});
@@ -4182,14 +4480,18 @@ http.route({ path: "/sites", method: "GET", handler: httpAction(async (ctx, requ
   if (!user) return unauthorized();
   const url = new URL(request.url);
   const queryClientId = url.searchParams.get("clientId");
-  // Tenant-bound users can never widen their scope via the query param;
-  // unscoped staff (admin/supervisor) may filter by client with it.
-  const effectiveClientId = user.clientId
-    ? _cid(user.clientId)
-    : queryClientId || undefined;
-  return json(await ctx.runQuery(internal.sites.list, {
-    clientId: effectiveClientId as Id<"clients"> | undefined,
-  }));
+  // [tenant-isolation] The `?clientId=` filter is a convenience for unscoped
+  // staff and nothing more. It used to be reachable by anyone whose own
+  // clientId was empty — which is every guard — so a guard could name another
+  // customer and read their locations back. Scope decides first; the parameter
+  // may only narrow an already-unscoped view.
+  const scope = scopeFor(user);
+  if (scope.kind === "none") return json([]);
+  const args = scopeArgs(scope);
+  if (scope.kind === "all" && queryClientId) {
+    args.clientId = queryClientId as Id<"clients">;
+  }
+  return json(await ctx.runQuery(internal.sites.list, args));
 })});
 
 http.route({ path: "/sites", method: "POST", handler: httpAction(async (ctx, request) => {
@@ -4226,7 +4528,7 @@ http.route({ path: "/sites", method: "POST", handler: httpAction(async (ctx, req
     targetType: "site",
       targetId: result.id as unknown as string,
       details: `Created site: ${body?.name}`,
-    ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+    ipAddress: requestIp(request),
   });
   return json(result, { status: 201 });
 })});
@@ -4314,7 +4616,7 @@ http.route({ pathPrefix: "/sites/", method: "PUT", handler: httpAction(async (ct
       targetId: String(site.id),
       siteId: String(siteId),
       details: `Updated site ${site.name}${geofenceMoved ? " [geofence moved]" : ""}: ${changes.join("; ")}`,
-      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+      ipAddress: requestIp(request),
     });
   }
   return json(updated);
@@ -4338,6 +4640,12 @@ http.route({
     // (main_account) submit nothing from the field and get no upload capability.
     const roleErr = requireRole(user, ["guard", "supervisor", "admin"]);
     if (roleErr) return roleErr;
+    // Each call hands out a URL that accepts arbitrary bytes with no further
+    // authentication, and nothing capped how many a caller could ask for. The
+    // orphan sweeper cleans up unclaimed blobs a day later, which bounds the
+    // mess but not the bill.
+    const uploadLimited = await enforceLimit(ctx, "upload", user.convexId);
+    if (uploadLimited) return uploadLimited;
     return json({ uploadUrl: await ctx.storage.generateUploadUrl() });
   }),
 });
@@ -4350,6 +4658,10 @@ http.route({
     if (!user) return unauthorized();
     const roleErr = requireRole(user, ["guard", "supervisor", "admin"]);
     if (roleErr) return roleErr;
+    // Claiming reads the whole blob back to inspect it, so it is more expensive
+    // than the URL handout and needs the same cap.
+    const claimLimited = await enforceLimit(ctx, "upload", user.convexId);
+    if (claimLimited) return claimLimited;
     const body = await parseJson(request);
     const kind = PHOTO_KINDS.includes(body?.kind) ? (body.kind as PhotoKind) : null;
     if (!kind) {
@@ -4439,6 +4751,24 @@ http.route({
     const claims = await verifyPhotoToken(token);
     if (!claims) return unauthorized();
     if (claims.sid !== storageId) return forbidden("Token does not cover this file");
+
+    // Defence in depth, matching the /photos/ route. An export is a whole
+    // client's patrol history in a single file, so it should not rest on the
+    // token alone: re-check the record's owner here as well, and a file we
+    // hold no ownership record for is refused rather than served.
+    const owner = await ctx.runQuery(internal.exports.ownerByStorageId, {
+      storageId,
+    });
+    if (owner) {
+      const isStaff = claims.role === "admin" || claims.role === "supervisor";
+      const sameTenant =
+        !!claims.cid && !!owner.clientId && String(owner.clientId) === String(claims.cid);
+      const isRequester =
+        !!claims.uid && String(owner.requestedBy) === String(claims.uid);
+      if (!isStaff && !sameTenant && !isRequester) {
+        return forbidden("File belongs to another organization");
+      }
+    }
 
     const blob = await ctx.storage.get(storageId as Id<"_storage">);
     if (!blob) return notFound("File not found");

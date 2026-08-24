@@ -539,6 +539,54 @@ export const listForUser = internalQuery({
   },
 });
 
+/**
+ * May this user act on this post order at all?
+ *
+ * Both `acknowledge` and `complete` took an orderId and wrote, with no check of
+ * any kind. The completion row is stamped with the order's clientId and siteId,
+ * so an unchecked write lands a "this standing order was carried out" record —
+ * with a proof note, a photo and GPS — inside another company's compliance
+ * history, signed by a guard who has never worked for them. That is a forged
+ * record in the one place a security operator cannot afford one.
+ *
+ * Staff stay unscoped, as everywhere else. A guard must be posted to the
+ * order's location, or named on the order, or be working under the tenant when
+ * the order carries no location of its own.
+ */
+async function mayActOnOrder(
+  ctx: any,
+  order: Doc<"postOrders">,
+  userId: Id<"users">,
+): Promise<boolean> {
+  const user = await ctx.db.get(userId);
+  if (!user) return false;
+  if (user.role === "admin" || user.role === "supervisor") return true;
+  if (user.role === "main_account") {
+    return !!user.clientId && order.clientId === user.clientId;
+  }
+  // Named on the order, whatever the scope says.
+  if (order.assignedUserId && order.assignedUserId === userId) return true;
+  if (order.assignedUserIds?.some((id) => id === userId)) return true;
+  if (order.supervisorUserIds?.some((id) => id === userId)) return true;
+
+  const assignments = await ctx.db
+    .query("userSiteAssignments")
+    .withIndex("by_userId", (q: any) => q.eq("userId", userId))
+    .collect();
+  if (order.siteId) {
+    return assignments.some((a: any) => a.siteId === order.siteId);
+  }
+  if (order.clientId) {
+    for (const assignment of assignments) {
+      if (assignment.clientId === order.clientId) return true;
+      const site = await ctx.db.get(assignment.siteId);
+      if (site?.clientId === order.clientId) return true;
+    }
+  }
+  // No location and no tenant: nothing ties it to this guard.
+  return false;
+}
+
 export const acknowledge = internalMutation({
   args: {
     orderId: v.id("postOrders"),
@@ -554,6 +602,9 @@ export const acknowledge = internalMutation({
       .first();
     const order = await ctx.db.get(args.orderId);
     if (!order) throw new Error("Post order not found");
+    if (!(await mayActOnOrder(ctx, order, args.userId))) {
+      throw new Error("This post order is not yours to acknowledge");
+    }
     const user = await ctx.db.get(args.userId);
     const id = await ctx.db.insert("postOrderCompletions", {
       clientId: order.clientId,
@@ -622,6 +673,9 @@ export const complete = internalMutation({
       .first();
     const order = await ctx.db.get(args.orderId);
     if (!order) throw new Error("Post order not found");
+    if (!(await mayActOnOrder(ctx, order, args.userId))) {
+      throw new Error("This post order is not yours to complete");
+    }
     const id = await ctx.db.insert("postOrderCompletions", {
       clientId: order.clientId,
       siteId: order.siteId,
