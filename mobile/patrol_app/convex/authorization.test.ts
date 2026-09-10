@@ -2606,3 +2606,116 @@ describe("F-ROUND2 — the clock-in geofence flag told the truth", () => {
     expect(String(shift.siteId)).not.toBe(String(farSite));
   });
 });
+
+/**
+ * F-GEOFENCE — the clock-in fence is enforced, not just recorded.
+ *
+ * Until now a guard could open a shift from their sofa: the distance was
+ * measured, stored, flagged false, and the shift started anyway. With payroll
+ * hanging off these rows that is a paid night that never happened.
+ *
+ * The tests that matter most here are the last two. A fraud control that locks
+ * honest guards out of work on the morning it ships is worse than the fraud.
+ */
+describe("clock-in geofence is enforced", () => {
+  /** Alpha's site, mapped, with the default 150m fence. */
+  const mapAlphaSite = () =>
+    t.run((ctx) =>
+      ctx.db.patch(w.alphaSite, {
+        latitude: 6.6018,
+        longitude: 3.3515,
+        radiusMeters: 150,
+      }),
+    );
+
+  // ~9km from the site: the guard is at home on Lagos Island.
+  const HOME = { latitude: 6.5244, longitude: 3.3792 };
+  // ~200m out — past the 150m fence, inside the 75m GPS grace.
+  const AT_THE_GATE = { latitude: 6.6036, longitude: 3.3515 };
+  // ~330m out — past fence and grace together.
+  const DOWN_THE_ROAD = { latitude: 6.6048, longitude: 3.3515 };
+
+  test("a guard cannot clock in from home", async () => {
+    await mapAlphaSite();
+    await expect(
+      t.mutation(internal.shifts.clockIn, { userId: w.alphaGuard, ...HOME }),
+    ).rejects.toThrow(/CLOCK_IN_REFUSED/);
+    // And nothing was written — no shift means no scans, and no paid night.
+    const shifts = await t.run((ctx) => ctx.db.query("shifts").collect());
+    expect(shifts).toHaveLength(0);
+  });
+
+  test("the refusal reaches the guard as a 403 with the distance in it", async () => {
+    await mapAlphaSite();
+    const res = await t.fetch("/shifts/clock-in", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({ gpsLatitude: HOME.latitude, gpsLongitude: HOME.longitude }),
+    });
+    // Not a 500: the guard is being told no, not hitting a fault.
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.message).toMatch(/Alpha Ikeja Warehouse/);
+    expect(body.message).toMatch(/\d+m from/);
+
+    // The mutation threw to abort the shift, which rolls back anything written
+    // inside it. The attempt still has to survive — a guard trying this nightly
+    // is the pattern the trail exists to show.
+    const audit = await t.run((ctx) => ctx.db.query("auditLogs").collect());
+    expect(audit.some((a) => a.action === "clock_in.refused")).toBe(true);
+  });
+
+  test("standing at the gate with drifting GPS still gets you on duty", async () => {
+    // 200m by the numbers, but that is phone GPS in a built-up area, not a
+    // guard at home. Refusing this is the failure mode that generates angry
+    // calls to the control room at 6am.
+    await mapAlphaSite();
+    await t.mutation(internal.shifts.clockIn, {
+      userId: w.alphaGuard,
+      ...AT_THE_GATE,
+    });
+    const [shift] = await t.run((ctx) => ctx.db.query("shifts").collect());
+    expect(shift.status).toBe("active");
+    // Still honestly flagged as outside the fence, for review.
+    expect(shift.clockInGpsValid).toBe(false);
+  });
+
+  test("past the fence and the grace together is refused", async () => {
+    await mapAlphaSite();
+    await expect(
+      t.mutation(internal.shifts.clockIn, {
+        userId: w.alphaGuard,
+        ...DOWN_THE_ROAD,
+      }),
+    ).rejects.toThrow(/CLOCK_IN_REFUSED/);
+  });
+
+  test("an unmapped site does not lock its guard out of work", async () => {
+    // alphaSite carries no coordinates and its checkpoints carry none either,
+    // so there is no fence to be outside of. Enforcing here would strand every
+    // guard at every unmapped site the day this ships — a fraud control turned
+    // into an outage. Map the site and the gate starts working by itself.
+    await t.mutation(internal.shifts.clockIn, { userId: w.alphaGuard, ...HOME });
+    const [shift] = await t.run((ctx) => ctx.db.query("shifts").collect());
+    expect(shift.status).toBe("active");
+    expect(shift.clockInGpsValid).toBe(false);
+  });
+
+  test("a supervisor is not gated, because supervisors roam", async () => {
+    await mapAlphaSite();
+    await t.run((ctx) =>
+      ctx.db.insert("userSiteAssignments", {
+        userId: w.supervisor,
+        siteId: w.alphaSite,
+        clientId: w.alphaClient,
+        createdAt: Date.now(),
+      }),
+    );
+    // Same coordinates that refuse a guard.
+    await t.mutation(internal.shifts.clockIn, { userId: w.supervisor, ...HOME });
+    const [shift] = await t.run((ctx) => ctx.db.query("shifts").collect());
+    expect(shift.status).toBe("active");
+    // Recorded as outside, so the flag stays reviewable for them too.
+    expect(shift.clockInGpsValid).toBe(false);
+  });
+});

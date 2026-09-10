@@ -19,6 +19,7 @@ import { getApiBaseUrl } from "./env";
 import { reportException } from "./lib/sentry";
 import { scopeFor, scopeArgs } from "./lib/scope";
 import { parseScanRefusal } from "./scans";
+import { parseClockInRefusal } from "./shifts";
 
 const _uid = (s: string): Id<"users"> => s as Id<"users">;
 const _cid = (s: string | null | undefined): Id<"clients"> | undefined => (s ?? undefined) as Id<"clients"> | undefined;
@@ -2429,6 +2430,21 @@ http.route({
     } catch (err) {
       if (err instanceof Error && err.message.includes("Already clocked in")) {
         return errorResponse("Already clocked in — end current shift first", 409);
+      }
+      // Clocking in from outside the site is a refusal, not a fault. The
+      // mutation threw to abort the shift, which rolled back anything it had
+      // written — so the attempt is recorded here, outside that transaction,
+      // where it actually commits. A guard repeatedly trying from home is
+      // precisely what this trail is for.
+      const refused = parseClockInRefusal(err);
+      if (refused) {
+        await recordAudit(ctx, user, "clock_in.refused", { details: refused.details });
+        return errorResponse(refused.message, 403);
+      }
+      // Location off: the guard has something to fix, so answer with what to
+      // do. This previously escaped as an unexplained 500.
+      if (err instanceof Error && err.message.includes("Location is off")) {
+        return errorResponse(err.message, 400);
       }
       throw err;
     }
