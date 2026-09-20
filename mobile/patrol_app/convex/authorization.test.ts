@@ -2701,6 +2701,86 @@ describe("clock-in geofence is enforced", () => {
     expect(shift.clockInGpsValid).toBe(false);
   });
 
+  test("a spoofed fix standing on the site is still refused", async () => {
+    // The bypass that made the distance check theatre. A mock-location app is
+    // a developer setting on Android, no root needed: point it at the site's
+    // published coordinates and the guard is "on site" from their sofa. These
+    // are the exact coordinates that succeed in the test below.
+    await mapAlphaSite();
+    await expect(
+      t.mutation(internal.shifts.clockIn, {
+        userId: w.alphaGuard,
+        latitude: 6.6018,
+        longitude: 3.3515,
+        gpsMocked: true,
+      }),
+    ).rejects.toThrow(/simulated location/i);
+    const shifts = await t.run((ctx) => ctx.db.query("shifts").collect());
+    expect(shifts).toHaveLength(0);
+  });
+
+  test("a spoofer is refused even as a supervisor", async () => {
+    // Supervisors are exempt from the distance rule because they roam. Nobody
+    // roams by running a GPS spoofer, so this one applies to every role.
+    await mapAlphaSite();
+    await expect(
+      t.mutation(internal.shifts.clockIn, {
+        userId: w.supervisor,
+        latitude: 6.6018,
+        longitude: 3.3515,
+        gpsMocked: true,
+      }),
+    ).rejects.toThrow(/simulated location/i);
+  });
+
+  test("the same coordinates without the spoof flag are accepted", async () => {
+    // Proves the refusal above is the flag doing the work, not the location.
+    await mapAlphaSite();
+    await t.mutation(internal.shifts.clockIn, {
+      userId: w.alphaGuard,
+      latitude: 6.6018,
+      longitude: 3.3515,
+    });
+    const [shift] = await t.run((ctx) => ctx.db.query("shifts").collect());
+    expect(shift.clockInGpsValid).toBe(true);
+  });
+
+  test("an app too old to report spoofing is not locked out", async () => {
+    // Guards on the previous build send no gpsMocked at all. Absent has to
+    // read as "unknown, allow" — treating it as mocked would lock out every
+    // guard in the field the moment this deploys.
+    await mapAlphaSite();
+    await t.mutation(internal.shifts.clockIn, {
+      userId: w.alphaGuard,
+      latitude: 6.6018,
+      longitude: 3.3515,
+      gpsMocked: undefined,
+    });
+    const [shift] = await t.run((ctx) => ctx.db.query("shifts").collect());
+    expect(shift.status).toBe("active");
+  });
+
+  test("a garbage fix is told to fix its location, not that it is NaN away", async () => {
+    // typeof NaN === "number", so it reaches the distance maths where every
+    // comparison is false. That fails closed, but "you are NaNm away" is not
+    // something a guard can act on.
+    await mapAlphaSite();
+    await expect(
+      t.mutation(internal.shifts.clockIn, {
+        userId: w.alphaGuard,
+        latitude: Number.NaN,
+        longitude: 3.3515,
+      }),
+    ).rejects.toThrow(/location is off/i);
+    await expect(
+      t.mutation(internal.shifts.clockIn, {
+        userId: w.alphaGuard,
+        latitude: 999,
+        longitude: 3.3515,
+      }),
+    ).rejects.toThrow(/location is off/i);
+  });
+
   test("a supervisor is not gated, because supervisors roam", async () => {
     await mapAlphaSite();
     await t.run((ctx) =>

@@ -371,6 +371,7 @@ export const clockIn = internalMutation({
     userId: v.id("users"),
     latitude: v.optional(v.number()),
     longitude: v.optional(v.number()),
+    gpsMocked: v.optional(v.boolean()),
     siteLabel: v.optional(v.string()),
     clockInPhoto: v.optional(v.string()),
   },
@@ -393,9 +394,43 @@ export const clockIn = internalMutation({
     // real and a map pin that was guesswork — the guard appeared at whichever
     // site they were assigned to rather than where they were standing.
     // Refuse it and say what to do, rather than record a fiction.
-    if (args.latitude == null || args.longitude == null) {
+    // `typeof NaN === "number"`, so a null check alone lets NaN and Infinity
+    // through to the distance maths, where every comparison against them is
+    // false. That fails closed — the guard is refused — but tells them they are
+    // "NaNm away", which is not something anyone can act on. Treat an
+    // unusable fix as no fix at all, which it is.
+    const hasUsableFix =
+      args.latitude != null &&
+      args.longitude != null &&
+      Number.isFinite(args.latitude) &&
+      Number.isFinite(args.longitude) &&
+      Math.abs(args.latitude) <= 90 &&
+      Math.abs(args.longitude) <= 180;
+    if (!hasUsableFix) {
       throw new Error(
         "Location is off. Turn on location for this app, allow it while using the app, then clock in again.",
+      );
+    }
+
+    // A fabricated fix defeats the geofence outright.
+    //
+    // Enforcing distance while trusting the coordinates is theatre: a
+    // mock-location app is a developer setting on Android, needs no root, and
+    // pointing it at the site's published coordinates puts the guard "on site"
+    // from their sofa. The scan path already refuses this — leaving clock-in
+    // open meant the cheap attack simply moved one step earlier, and a shift
+    // opened that way legitimises everything hung off it.
+    //
+    // Refused for every role, unlike the distance check below: supervisors
+    // roam, but nobody has a legitimate reason to run a GPS spoofer. Android
+    // reports this directly; iOS never populates it, so this catches the cheap
+    // attack rather than every possible one. An app too old to send the field
+    // reads as absent, not mocked — refusing on absence would lock out every
+    // guard still on the previous build.
+    if (args.gpsMocked === true) {
+      throw clockInRefusal(
+        "Clock-in submitted with a mock GPS provider active",
+        "This phone is reporting a simulated location. Turn off any mock-location or GPS-spoofing app, then clock in again.",
       );
     }
 

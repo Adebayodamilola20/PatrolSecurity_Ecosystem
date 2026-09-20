@@ -2424,6 +2424,7 @@ http.route({
         userId: _uid(user.convexId),
         latitude: typeof body?.gpsLatitude === "number" ? body.gpsLatitude : undefined,
         longitude: typeof body?.gpsLongitude === "number" ? body.gpsLongitude : undefined,
+        gpsMocked: body?.gpsMocked === true,
         siteLabel: typeof body?.siteLabel === "string" ? body.siteLabel : undefined,
         clockInPhoto: clockInPhotoRef,
       });
