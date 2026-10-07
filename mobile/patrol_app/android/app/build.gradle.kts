@@ -51,6 +51,22 @@ android {
         versionName = flutter.versionName
     }
 
+    // One codebase, one app per security company. Build with
+    // `flutter build apk --flavor tarmac` or `--flavor evergreen`.
+    flavorDimensions += "company"
+    productFlavors {
+        create("evergreen") {
+            dimension = "company"
+            applicationId = "com.patrol.patrol_app"
+            resValue("string", "app_name", "patrol_app")
+        }
+        create("tarmac") {
+            dimension = "company"
+            applicationId = "ng.tarmacsecurity.patrol"
+            resValue("string", "app_name", "Tarmac Security")
+        }
+    }
+
     signingConfigs {
         if (hasReleaseSigning) {
             create("release") {

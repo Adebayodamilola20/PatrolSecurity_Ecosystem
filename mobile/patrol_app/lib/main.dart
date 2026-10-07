@@ -205,7 +205,7 @@ class _PatrolAppState extends State<PatrolApp> with WidgetsBindingObserver {
   Widget _buildApp(bool isDark) {
     return MaterialApp(
       navigatorKey: navigatorKey,
-      title: 'Patrol Command',
+      title: isTarmacApp ? 'Tarmac Security' : 'Patrol Command',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
       darkTheme: AppTheme.darkTheme,
