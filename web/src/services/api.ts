@@ -179,7 +179,10 @@ async function request<T>(
   // Throttled (429) or the server is shedding load (503). Honor Retry-After and
   // transparently retry a few times with backoff before giving up, so a brief
   // spike is invisible to the user instead of a hard error.
-  if ((res.status === 429 || res.status === 503) && retryCount < MAX_RATE_LIMIT_RETRIES) {
+  // A 429 from login is an account lockout, not a passing spike: retrying
+  // only keeps the person staring at a spinner before telling them so.
+  const lockedOut = res.status === 429 && path.startsWith('/auth/login')
+  if ((res.status === 429 || res.status === 503) && !lockedOut && retryCount < MAX_RATE_LIMIT_RETRIES) {
     await sleep(retryDelayMs(res.headers.get('Retry-After'), retryCount))
     return request<T>(path, options, allowRefresh, retryCount + 1)
   }
