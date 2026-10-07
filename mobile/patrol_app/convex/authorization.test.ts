@@ -2606,3 +2606,86 @@ describe("F-ROUND2 — the clock-in geofence flag told the truth", () => {
     expect(String(shift.siteId)).not.toBe(String(farSite));
   });
 });
+
+describe("API responses only open up to our own websites", () => {
+  const ours = "https://patrol-security-ecosystem.vercel.app";
+
+  test("our dashboard can read responses", async () => {
+    const res = await t.fetch("/emergency/settings", {
+      method: "GET",
+      headers: { ...auth(w.tokens.admin), Origin: ours },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("access-control-allow-origin")).toBe(ours);
+  });
+
+  test("a stranger's website is not told it may read them", async () => {
+    const res = await t.fetch("/emergency/settings", {
+      method: "GET",
+      headers: { ...auth(w.tokens.admin), Origin: "https://evil.example" },
+    });
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  test("a lookalike of our domain is not let in", async () => {
+    const res = await t.fetch("/emergency/settings", {
+      method: "GET",
+      headers: { ...auth(w.tokens.admin), Origin: `${ours}.evil.example` },
+    });
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  test("preflight answers our origin and nobody else's", async () => {
+    const good = await t.fetch("/sites", { method: "OPTIONS", headers: { Origin: ours } });
+    expect(good.headers.get("access-control-allow-origin")).toBe(ours);
+    const bad = await t.fetch("/sites", { method: "OPTIONS", headers: { Origin: "https://evil.example" } });
+    expect(bad.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  test("error responses carry the same policy, so our sites still see the message", async () => {
+    const res = await t.fetch("/emergency/settings", {
+      method: "GET",
+      headers: { Origin: ours },
+    });
+    expect(res.status).toBe(401);
+    expect(res.headers.get("access-control-allow-origin")).toBe(ours);
+  });
+
+  test("every response carries the transport security headers", async () => {
+    const res = await t.fetch("/emergency/settings", { method: "GET" });
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("strict-transport-security")).toContain("max-age=");
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+});
+
+describe("address search runs on the server, staff only", () => {
+  const search = (headers: Record<string, string>, body: unknown) =>
+    t.fetch("/places/autocomplete", { method: "POST", headers, body: JSON.stringify(body) });
+
+  test("an anonymous request is rejected", async () => {
+    const res = await search({ "Content-Type": "application/json" }, { query: "Ikeja" });
+    expect(res.status).toBe(401);
+  });
+
+  test("guards and client portal logins cannot spend the Places budget", async () => {
+    expect((await search(auth(w.tokens.alphaGuard), { query: "Ikeja" })).status).toBe(403);
+    // Portal tokens are turned away before the role check even runs.
+    expect((await search(auth(w.tokens.alphaPortal), { query: "Ikeja" })).status).toBe(401);
+  });
+
+  test("with no server key the dashboard is told to use its fallback", async () => {
+    const res = await search(auth(w.tokens.admin), { query: "Ikeja" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ configured: false, suggestions: [] });
+  });
+
+  test("a malformed place id never reaches Google", async () => {
+    const res = await t.fetch("/places/details", {
+      method: "POST",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({ placeId: "../../v1/other?x=" }),
+    });
+    expect(res.status).toBe(400);
+  });
+});

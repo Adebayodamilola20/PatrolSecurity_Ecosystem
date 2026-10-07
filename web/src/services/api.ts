@@ -457,6 +457,19 @@ export const api = {
     remove: (id: string) =>
       request<{ message: string; name: string }>(`/sites/${id}`, { method: 'DELETE' }),
   },
+  // Google Places, proxied by the backend so the key never reaches the browser.
+  places: {
+    autocomplete: (query: string) =>
+      request<{ configured: boolean; suggestions: any[] }>('/places/autocomplete', {
+        method: 'POST',
+        body: JSON.stringify({ query }),
+      }),
+    details: (placeId: string) =>
+      request<{ latitude: string; longitude: string; address: string }>('/places/details', {
+        method: 'POST',
+        body: JSON.stringify({ placeId }),
+      }),
+  },
   passOnLogs: {
     list: () => request<any[]>('/pass-on-logs'),
     create: (data: any) =>

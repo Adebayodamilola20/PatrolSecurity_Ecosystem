@@ -55,6 +55,9 @@ const limits: Record<string, RateLimitConfig> = {
   report: { windowMs: 60 * 1000, maxRequests: 10 },
   emergency: { windowMs: 5 * 60 * 1000, maxRequests: 6 },
   export: { windowMs: 60 * 1000, maxRequests: 5 },
+  // Every call is billed by Google. The picker debounces keystrokes, so a
+  // person typing addresses stays far below this; a script does not.
+  places: { windowMs: 60 * 1000, maxRequests: 60 },
   // Upload URLs and their claims. Generous enough for an incident with five
   // photos plus retries on a bad connection, tight enough that the endpoint
   // cannot be used to mint unauthenticated write URLs in bulk.
