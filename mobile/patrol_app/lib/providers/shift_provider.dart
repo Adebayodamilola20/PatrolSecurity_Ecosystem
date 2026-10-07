@@ -205,6 +205,7 @@ class ShiftProvider extends ChangeNotifier {
       final data = await ApiService.clockIn(
         latitude: location.latitude,
         longitude: location.longitude,
+        mocked: location.isMocked,
       );
       _applyShiftPayload(data);
       await loadStatus(force: true);
