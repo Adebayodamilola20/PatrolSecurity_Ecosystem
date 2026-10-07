@@ -1557,7 +1557,12 @@ http.route({
 
     const ipLimited = await enforceLimit(ctx, "loginIp", ip);
     if (ipLimited) return ipLimited;
-    const loginLimited = await enforceLimit(ctx, "login", `${email}|${ip}`);
+    // Five tries per account per window. Every attempt is charged up front, so
+    // a burst of parallel guesses cannot all slip in before the count catches
+    // up, and a correct password hands its unit back (below): only failures
+    // add up, and a guard signing in and out of one phone never locks it.
+    const accountKey = `${email}|${ip}`;
+    const loginLimited = await enforceLimit(ctx, "login", accountKey);
     if (loginLimited) return loginLimited;
 
     // One helper so no failure path can forget to count itself.
@@ -1583,6 +1588,11 @@ http.route({
     if (!valid) {
       return await rejectCredentials();
     }
+    // The right password: give back the unit this attempt was charged.
+    await ctx.runMutation(internal.lib.rateLimiter.refund, {
+      action: "login",
+      actorId: accountKey,
+    });
     if (clientType === "mobile" && user.role !== "guard") {
       return forbidden("Mobile access is restricted to guard accounts");
     }
