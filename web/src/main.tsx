@@ -1,8 +1,11 @@
 import * as Sentry from '@sentry/react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+import { applyBrand } from './brand'
 import App from './App'
 import { initTheme } from './hooks/useTheme'
+
+applyBrand('Operations Portal')
 
 // Without a DSN the SDK still installs its global handlers and queues events
 // that go nowhere, so stay off entirely rather than pretending to report.

@@ -246,3 +246,92 @@
   .lp-aurora, .lp-float, .lp-pulse-ring { animation: none; }
   .nav-slide-in, .nav-backdrop-in { animation: none; }
 }
+
+/* ── Tarmac Security brand (VITE_BRAND=tarmac) ─────────────────────────────
+ * Taken from tarmacsecurity.ng: a black-and-white crest, black uniforms with
+ * royal blue, Poppins type. Applied only when <html data-brand="tarmac">, so
+ * the Evergreen build is untouched. Red still means emergency and nothing else.
+ */
+html[data-brand="tarmac"] {
+  /* Remap Tailwind's teal/cyan scales to Tarmac royal blue, so screens that
+     use those utilities directly follow the brand without per-file edits. */
+  --color-teal-50: oklch(0.97 0.014 264);
+  --color-teal-100: oklch(0.93 0.032 264);
+  --color-teal-200: oklch(0.87 0.06 264);
+  --color-teal-300: oklch(0.78 0.10 264);
+  --color-teal-400: oklch(0.68 0.15 264);
+  --color-teal-500: oklch(0.58 0.18 264);
+  --color-teal-600: oklch(0.50 0.19 264);
+  --color-teal-700: oklch(0.43 0.17 265);
+  --color-teal-800: oklch(0.36 0.14 266);
+  --color-teal-900: oklch(0.29 0.10 266);
+  --color-teal-950: oklch(0.21 0.07 266);
+  --color-cyan-50: oklch(0.97 0.012 255);
+  --color-cyan-100: oklch(0.94 0.028 255);
+  --color-cyan-200: oklch(0.88 0.055 255);
+  --color-cyan-300: oklch(0.80 0.09 255);
+  --color-cyan-400: oklch(0.70 0.13 255);
+  --color-cyan-500: oklch(0.61 0.16 257);
+  --color-cyan-600: oklch(0.52 0.17 259);
+  --color-cyan-700: oklch(0.45 0.15 261);
+  --color-cyan-800: oklch(0.37 0.12 263);
+  --color-cyan-900: oklch(0.30 0.09 264);
+  --color-cyan-950: oklch(0.22 0.06 265);
+}
+
+html[data-brand="tarmac"]:not(.dark) {
+  --background: oklch(0.982 0.003 265);
+  --foreground: oklch(0.17 0.01 265);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.17 0.01 265);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.17 0.01 265);
+  --primary: oklch(0.45 0.17 264);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.95 0.006 265);
+  --secondary-foreground: oklch(0.2 0.01 265);
+  --muted: oklch(0.96 0.004 265);
+  --muted-foreground: oklch(0.46 0.012 265);
+  --accent: oklch(0.94 0.02 264);
+  --accent-foreground: oklch(0.2 0.01 265);
+  --info: oklch(0.5 0.12 245);
+  --border: oklch(0.9 0.006 265);
+  --input: oklch(0.9 0.006 265);
+  --ring: oklch(0.45 0.17 264);
+  /* The black rail carries the crest. */
+  --sidebar: oklch(0.16 0.006 265);
+  --sidebar-foreground: oklch(0.95 0.004 265);
+  --sidebar-accent: oklch(0.27 0.035 264);
+  --sidebar-border: oklch(0.25 0.008 265);
+}
+
+html[data-brand="tarmac"].dark {
+  --background: oklch(0.15 0.006 265);
+  --foreground: oklch(0.97 0.004 265);
+  --card: oklch(0.19 0.008 265);
+  --card-foreground: oklch(0.97 0.004 265);
+  --popover: oklch(0.21 0.008 265);
+  --popover-foreground: oklch(0.97 0.004 265);
+  --primary: oklch(0.7 0.14 264);
+  --primary-foreground: oklch(0.15 0.02 265);
+  --secondary: oklch(0.25 0.008 265);
+  --secondary-foreground: oklch(0.96 0.004 265);
+  --muted: oklch(0.23 0.006 265);
+  --muted-foreground: oklch(0.7 0.01 265);
+  --accent: oklch(0.27 0.025 264);
+  --accent-foreground: oklch(0.97 0.004 265);
+  --border: oklch(0.28 0.008 265);
+  --input: oklch(0.28 0.008 265);
+  --ring: oklch(0.7 0.14 264);
+  --sidebar: oklch(0.11 0.005 265);
+  --sidebar-foreground: oklch(0.94 0.004 265);
+  --sidebar-accent: oklch(0.25 0.035 264);
+  --sidebar-border: oklch(0.22 0.008 265);
+}
+
+html[data-brand="tarmac"] body {
+  font-family: "Poppins", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+html[data-brand="tarmac"] .brand-serif {
+  font-family: "Playfair Display", Georgia, serif;
+}
