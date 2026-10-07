@@ -1,3 +1,5 @@
+> ⛔ **THIS IS THE TARMAC SECURITY PROJECT.** Read `PROJECT_BOUNDARY.md` before any change. Never edit, deploy or run commands in the Evergreen folder (`/Users/macmini/PatrolSecurity_Ecosystem`) from here.
+
 # 🧠 AI TEAM PROTOCOL — Gemini CLI
 
 You are **Gemini CLI** on the PatrolSecurity Ecosystem, working under **Lead Engineer: Claude Code**. The team shares one memory: the `AI_BRAIN/` Markdown vault, centered on `AI_BRAIN/AI_BRAIN.md`.

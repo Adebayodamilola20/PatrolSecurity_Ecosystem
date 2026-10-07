@@ -1,3 +1,5 @@
+> ⛔ **THIS IS THE TARMAC SECURITY PROJECT.** Read `PROJECT_BOUNDARY.md` before any change. Never edit, deploy or run commands in the Evergreen folder (`/Users/macmini/PatrolSecurity_Ecosystem`) from here.
+
 <!-- convex-ai-start -->
 
 This project uses [Convex](https://convex.dev) as its backend.
