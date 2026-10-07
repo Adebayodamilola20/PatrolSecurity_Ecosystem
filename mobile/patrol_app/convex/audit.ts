@@ -37,6 +37,7 @@ const sensitiveActions = [
   "shift.clock_in",
   "shift.clock_out",
   "clock_in.created",
+  "clock_in.refused",
   "clock_out.created",
   "settings.changed",
   "report.generated",

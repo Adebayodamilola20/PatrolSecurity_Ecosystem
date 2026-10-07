@@ -442,11 +442,16 @@ class ApiService {
   static Future<Map<String, dynamic>> clockIn({
     double? latitude,
     double? longitude,
+    bool mocked = false,
   }) async {
     _ensureHttps();
     final body = <String, dynamic>{};
     if (latitude != null) body['gpsLatitude'] = latitude;
     if (longitude != null) body['gpsLongitude'] = longitude;
+    // Reported, not judged, here: the server refuses a clock-in taken on a
+    // fabricated fix. The app is the thing being spoofed, so it is in no
+    // position to make that call itself.
+    body['gpsMocked'] = mocked;
     final res = await _client
         .post(
           Uri.parse('$baseUrl/shifts/clock-in'),

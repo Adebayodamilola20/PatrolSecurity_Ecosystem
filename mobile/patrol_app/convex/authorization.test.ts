@@ -21,6 +21,7 @@ import { signPatrolToken } from "./lib/jwt";
 import { signPhotoToken } from "./lib/photoRefs";
 import { resolveScannedAt } from "./scans";
 import { getRateLimit } from "./lib/rateLimiter";
+import bcrypt from "bcryptjs";
 import type { Id } from "./_generated/dataModel";
 
 const modules = import.meta.glob("./**/*.*s");
@@ -2157,13 +2158,16 @@ describe("F-HARDENING — X-Forwarded-For cannot be forged", () => {
     // peer, every IP-keyed bucket is rotatable and useless; this one is not.
     // Driven to just under the cap directly so the test does not have to pay
     // for a hundred bcrypt comparisons to make its point.
-    const { maxRequests } = getRateLimit("loginFail");
-    for (let i = 0; i < maxRequests; i++) {
-      await t.mutation(internal.lib.rateLimiter.bump, {
-        action: "loginFail",
-        actorId: "global",
-      });
-    }
+    const { maxRequests, windowMs } = getRateLimit("loginFail");
+    const windowStart = Math.floor(Date.now() / windowMs) * windowMs;
+    await t.run((ctx) =>
+      ctx.db.insert("rateLimits", {
+        bucketKey: `loginFail:global:${windowStart}`,
+        count: maxRequests,
+        windowStart,
+        expiresAt: windowStart + windowMs + 5000,
+      }),
+    );
     // A brand-new address, which would reset both IP-keyed buckets.
     const res = await login({ "x-forwarded-for": "198.51.100.77" });
     expect(res.status).toBe(429);
@@ -2604,5 +2608,339 @@ describe("F-ROUND2 — the clock-in geofence flag told the truth", () => {
     // emergency fallback both depend on.
     expect(String(shift.siteId)).toBe(String(w.alphaSite));
     expect(String(shift.siteId)).not.toBe(String(farSite));
+  });
+});
+
+/**
+ * F-GEOFENCE — the clock-in fence is enforced, not just recorded.
+ *
+ * Until now a guard could open a shift from their sofa: the distance was
+ * measured, stored, flagged false, and the shift started anyway. With payroll
+ * hanging off these rows that is a paid night that never happened.
+ *
+ * The tests that matter most here are the last two. A fraud control that locks
+ * honest guards out of work on the morning it ships is worse than the fraud.
+ */
+describe("clock-in geofence is enforced", () => {
+  /** Alpha's site, mapped, with the default 150m fence. */
+  const mapAlphaSite = () =>
+    t.run((ctx) =>
+      ctx.db.patch(w.alphaSite, {
+        latitude: 6.6018,
+        longitude: 3.3515,
+        radiusMeters: 150,
+      }),
+    );
+
+  // ~9km from the site: the guard is at home on Lagos Island.
+  const HOME = { latitude: 6.5244, longitude: 3.3792 };
+  // ~200m out — past the 150m fence, inside the 75m GPS grace.
+  const AT_THE_GATE = { latitude: 6.6036, longitude: 3.3515 };
+  // ~330m out — past fence and grace together.
+  const DOWN_THE_ROAD = { latitude: 6.6048, longitude: 3.3515 };
+
+  test("a guard cannot clock in from home", async () => {
+    await mapAlphaSite();
+    await expect(
+      t.mutation(internal.shifts.clockIn, { userId: w.alphaGuard, ...HOME }),
+    ).rejects.toThrow(/CLOCK_IN_REFUSED/);
+    // And nothing was written — no shift means no scans, and no paid night.
+    const shifts = await t.run((ctx) => ctx.db.query("shifts").collect());
+    expect(shifts).toHaveLength(0);
+  });
+
+  test("the refusal reaches the guard as a 403 with the distance in it", async () => {
+    await mapAlphaSite();
+    const res = await t.fetch("/shifts/clock-in", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({ gpsLatitude: HOME.latitude, gpsLongitude: HOME.longitude }),
+    });
+    // Not a 500: the guard is being told no, not hitting a fault.
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.message).toMatch(/Alpha Ikeja Warehouse/);
+    expect(body.message).toMatch(/\d+m from/);
+
+    // The mutation threw to abort the shift, which rolls back anything written
+    // inside it. The attempt still has to survive — a guard trying this nightly
+    // is the pattern the trail exists to show.
+    const audit = await t.run((ctx) => ctx.db.query("auditLogs").collect());
+    expect(audit.some((a) => a.action === "clock_in.refused")).toBe(true);
+  });
+
+  test("standing at the gate with drifting GPS still gets you on duty", async () => {
+    // 200m by the numbers, but that is phone GPS in a built-up area, not a
+    // guard at home. Refusing this is the failure mode that generates angry
+    // calls to the control room at 6am.
+    await mapAlphaSite();
+    await t.mutation(internal.shifts.clockIn, {
+      userId: w.alphaGuard,
+      ...AT_THE_GATE,
+    });
+    const [shift] = await t.run((ctx) => ctx.db.query("shifts").collect());
+    expect(shift.status).toBe("active");
+    // Still honestly flagged as outside the fence, for review.
+    expect(shift.clockInGpsValid).toBe(false);
+  });
+
+  test("past the fence and the grace together is refused", async () => {
+    await mapAlphaSite();
+    await expect(
+      t.mutation(internal.shifts.clockIn, {
+        userId: w.alphaGuard,
+        ...DOWN_THE_ROAD,
+      }),
+    ).rejects.toThrow(/CLOCK_IN_REFUSED/);
+  });
+
+  test("an unmapped site does not lock its guard out of work", async () => {
+    // alphaSite carries no coordinates and its checkpoints carry none either,
+    // so there is no fence to be outside of. Enforcing here would strand every
+    // guard at every unmapped site the day this ships — a fraud control turned
+    // into an outage. Map the site and the gate starts working by itself.
+    await t.mutation(internal.shifts.clockIn, { userId: w.alphaGuard, ...HOME });
+    const [shift] = await t.run((ctx) => ctx.db.query("shifts").collect());
+    expect(shift.status).toBe("active");
+    expect(shift.clockInGpsValid).toBe(false);
+  });
+
+  test("a spoofed fix standing on the site is still refused", async () => {
+    // The bypass that made the distance check theatre. A mock-location app is
+    // a developer setting on Android, no root needed: point it at the site's
+    // published coordinates and the guard is "on site" from their sofa. These
+    // are the exact coordinates that succeed in the test below.
+    await mapAlphaSite();
+    await expect(
+      t.mutation(internal.shifts.clockIn, {
+        userId: w.alphaGuard,
+        latitude: 6.6018,
+        longitude: 3.3515,
+        gpsMocked: true,
+      }),
+    ).rejects.toThrow(/simulated location/i);
+    const shifts = await t.run((ctx) => ctx.db.query("shifts").collect());
+    expect(shifts).toHaveLength(0);
+  });
+
+  test("a spoofer is refused even as a supervisor", async () => {
+    // Supervisors are exempt from the distance rule because they roam. Nobody
+    // roams by running a GPS spoofer, so this one applies to every role.
+    await mapAlphaSite();
+    await expect(
+      t.mutation(internal.shifts.clockIn, {
+        userId: w.supervisor,
+        latitude: 6.6018,
+        longitude: 3.3515,
+        gpsMocked: true,
+      }),
+    ).rejects.toThrow(/simulated location/i);
+  });
+
+  test("the same coordinates without the spoof flag are accepted", async () => {
+    // Proves the refusal above is the flag doing the work, not the location.
+    await mapAlphaSite();
+    await t.mutation(internal.shifts.clockIn, {
+      userId: w.alphaGuard,
+      latitude: 6.6018,
+      longitude: 3.3515,
+    });
+    const [shift] = await t.run((ctx) => ctx.db.query("shifts").collect());
+    expect(shift.clockInGpsValid).toBe(true);
+  });
+
+  test("an app too old to report spoofing is not locked out", async () => {
+    // Guards on the previous build send no gpsMocked at all. Absent has to
+    // read as "unknown, allow" — treating it as mocked would lock out every
+    // guard in the field the moment this deploys.
+    await mapAlphaSite();
+    await t.mutation(internal.shifts.clockIn, {
+      userId: w.alphaGuard,
+      latitude: 6.6018,
+      longitude: 3.3515,
+      gpsMocked: undefined,
+    });
+    const [shift] = await t.run((ctx) => ctx.db.query("shifts").collect());
+    expect(shift.status).toBe("active");
+  });
+
+  test("a garbage fix is told to fix its location, not that it is NaN away", async () => {
+    // typeof NaN === "number", so it reaches the distance maths where every
+    // comparison is false. That fails closed, but "you are NaNm away" is not
+    // something a guard can act on.
+    await mapAlphaSite();
+    await expect(
+      t.mutation(internal.shifts.clockIn, {
+        userId: w.alphaGuard,
+        latitude: Number.NaN,
+        longitude: 3.3515,
+      }),
+    ).rejects.toThrow(/location is off/i);
+    await expect(
+      t.mutation(internal.shifts.clockIn, {
+        userId: w.alphaGuard,
+        latitude: 999,
+        longitude: 3.3515,
+      }),
+    ).rejects.toThrow(/location is off/i);
+  });
+
+  test("a supervisor is not gated, because supervisors roam", async () => {
+    await mapAlphaSite();
+    await t.run((ctx) =>
+      ctx.db.insert("userSiteAssignments", {
+        userId: w.supervisor,
+        siteId: w.alphaSite,
+        clientId: w.alphaClient,
+        createdAt: Date.now(),
+      }),
+    );
+    // Same coordinates that refuse a guard.
+    await t.mutation(internal.shifts.clockIn, { userId: w.supervisor, ...HOME });
+    const [shift] = await t.run((ctx) => ctx.db.query("shifts").collect());
+    expect(shift.status).toBe("active");
+    // Recorded as outside, so the flag stays reviewable for them too.
+    expect(shift.clockInGpsValid).toBe(false);
+  });
+});
+
+describe("API responses only open up to our own websites", () => {
+  const ours = "https://patrol-security-ecosystem.vercel.app";
+
+  test("our dashboard can read responses", async () => {
+    const res = await t.fetch("/emergency/settings", {
+      method: "GET",
+      headers: { ...auth(w.tokens.admin), Origin: ours },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("access-control-allow-origin")).toBe(ours);
+  });
+
+  test("a stranger's website is not told it may read them", async () => {
+    const res = await t.fetch("/emergency/settings", {
+      method: "GET",
+      headers: { ...auth(w.tokens.admin), Origin: "https://evil.example" },
+    });
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  test("a lookalike of our domain is not let in", async () => {
+    const res = await t.fetch("/emergency/settings", {
+      method: "GET",
+      headers: { ...auth(w.tokens.admin), Origin: `${ours}.evil.example` },
+    });
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  test("preflight answers our origin and nobody else's", async () => {
+    const good = await t.fetch("/sites", { method: "OPTIONS", headers: { Origin: ours } });
+    expect(good.headers.get("access-control-allow-origin")).toBe(ours);
+    const bad = await t.fetch("/sites", { method: "OPTIONS", headers: { Origin: "https://evil.example" } });
+    expect(bad.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  test("error responses carry the same policy, so our sites still see the message", async () => {
+    const res = await t.fetch("/emergency/settings", {
+      method: "GET",
+      headers: { Origin: ours },
+    });
+    expect(res.status).toBe(401);
+    expect(res.headers.get("access-control-allow-origin")).toBe(ours);
+  });
+
+  test("every response carries the transport security headers", async () => {
+    const res = await t.fetch("/emergency/settings", { method: "GET" });
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("strict-transport-security")).toContain("max-age=");
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+});
+
+describe("address search runs on the server, staff only", () => {
+  const search = (headers: Record<string, string>, body: unknown) =>
+    t.fetch("/places/autocomplete", { method: "POST", headers, body: JSON.stringify(body) });
+
+  test("an anonymous request is rejected", async () => {
+    const res = await search({ "Content-Type": "application/json" }, { query: "Ikeja" });
+    expect(res.status).toBe(401);
+  });
+
+  test("guards and client portal logins cannot spend the Places budget", async () => {
+    expect((await search(auth(w.tokens.alphaGuard), { query: "Ikeja" })).status).toBe(403);
+    // Portal tokens are turned away before the role check even runs.
+    expect((await search(auth(w.tokens.alphaPortal), { query: "Ikeja" })).status).toBe(401);
+  });
+
+  test("with no server key the dashboard is told to use its fallback", async () => {
+    const res = await search(auth(w.tokens.admin), { query: "Ikeja" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ configured: false, suggestions: [] });
+  });
+
+  test("a malformed place id never reaches Google", async () => {
+    const res = await t.fetch("/places/details", {
+      method: "POST",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({ placeId: "../../v1/other?x=" }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("login locks an account after five wrong passwords", () => {
+  const password = "Correct-Horse-1";
+  const email = "lockout.target@example.test";
+
+  beforeEach(async () => {
+    const passwordHash = bcrypt.hashSync(password, 4);
+    await t.run((ctx) =>
+      ctx.db.insert("users", {
+        name: "Lockout Target",
+        email,
+        passwordHash,
+        role: "admin",
+        phone: "+2348000000000",
+        active: true,
+        liveTracking: false,
+        createdAt: Date.now(),
+      }),
+    );
+  });
+
+  const attempt = (pw: string) =>
+    t.fetch("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: pw }),
+    });
+
+  test("the sixth wrong guess is refused, even with the right password", async () => {
+    for (let i = 0; i < 5; i++) {
+      expect((await attempt("wrong")).status).toBe(401);
+    }
+    expect((await attempt("wrong")).status).toBe(429);
+    // Locked means locked: guessing right now does not get in either.
+    expect((await attempt(password)).status).toBe(429);
+  });
+
+  test("signing in successfully does not use up the allowance", async () => {
+    for (let i = 0; i < 8; i++) {
+      expect((await attempt(password)).status).toBe(200);
+    }
+    // Still the full five wrong tries left after all those sign-ins.
+    for (let i = 0; i < 5; i++) {
+      expect((await attempt("wrong")).status).toBe(401);
+    }
+    expect((await attempt("wrong")).status).toBe(429);
+  });
+
+  test("another account is not locked by someone else's failures", async () => {
+    for (let i = 0; i < 6; i++) await attempt("wrong");
+    const other = await t.fetch("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "someone.else@example.test", password: "wrong" }),
+    });
+    expect(other.status).toBe(401);
   });
 });

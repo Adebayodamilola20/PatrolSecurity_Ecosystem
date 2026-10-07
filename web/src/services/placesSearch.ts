@@ -13,11 +13,15 @@
  * Place Details; that costs one extra request per *selection* rather than per
  * keystroke, which is also the cheaper way round.
  *
- * Nominatim stays as a fallback for when no key is configured, so a checkout
- * without VITE_GOOGLE_MAPS_API_KEY still searches instead of silently failing.
+ * The Google calls are made by the backend (/places/*), which holds its own
+ * key. They used to be made from here with the map key, which ships in the
+ * public bundle and so could be lifted and billed against from anywhere.
+ *
+ * Nominatim stays as a fallback for when the backend has no key configured, so
+ * the picker still searches instead of silently failing.
  */
 
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+import { api } from './api'
 
 export interface PlaceSuggestion {
   id: string
@@ -29,57 +33,6 @@ export interface PlaceSuggestion {
   longitude: string
   /** Present only for Google results; absent means lat/lng are already final. */
   placeId?: string
-}
-
-export function hasPlacesKey() {
-  return Boolean(GOOGLE_MAPS_API_KEY)
-}
-
-async function autocompleteWithGoogle(
-  query: string,
-  signal?: AbortSignal,
-): Promise<PlaceSuggestion[]> {
-  const response = await fetch(
-    'https://places.googleapis.com/v1/places:autocomplete',
-    {
-      method: 'POST',
-      signal,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
-      },
-      body: JSON.stringify({
-        input: query,
-        includedRegionCodes: ['ng'],
-        languageCode: 'en',
-      }),
-    },
-  )
-
-  if (!response.ok) throw new Error('Could not search for that address.')
-
-  const data = await response.json()
-  const suggestions = Array.isArray(data?.suggestions) ? data.suggestions : []
-
-  return suggestions
-    .map((entry: any) => entry?.placePrediction)
-    .filter((prediction: any) => prediction?.placeId)
-    .map((prediction: any) => {
-      const structured = prediction.structuredFormat ?? {}
-      const main = String(structured.mainText?.text ?? '').trim()
-      const secondary = String(structured.secondaryText?.text ?? '').trim()
-      const full = String(prediction.text?.text ?? '').trim()
-      return {
-        id: String(prediction.placeId),
-        placeId: String(prediction.placeId),
-        mainText: main || full || 'Selected address',
-        secondaryText: secondary,
-        // The full one-line address is what gets written into the Address field.
-        description: full || [main, secondary].filter(Boolean).join(', '),
-        latitude: '',
-        longitude: '',
-      }
-    })
 }
 
 async function searchWithNominatim(
@@ -115,14 +68,14 @@ export async function searchPlaces(
   const trimmed = query.trim()
   if (!trimmed) return []
 
-  if (GOOGLE_MAPS_API_KEY) {
-    try {
-      return await autocompleteWithGoogle(trimmed, signal)
-    } catch (error) {
-      // A refused key or an unenabled API shouldn't leave the picker dead —
-      // fall through to the free geocoder rather than blocking the whole form.
-      if ((error as Error)?.name === 'AbortError') throw error
-    }
+  try {
+    const result = await api.places.autocomplete(trimmed)
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    if (result.configured) return result.suggestions as PlaceSuggestion[]
+  } catch (error) {
+    // A refused key or an upstream outage shouldn't leave the picker dead —
+    // fall through to the free geocoder rather than blocking the whole form.
+    if ((error as Error)?.name === 'AbortError') throw error
   }
 
   return searchWithNominatim(trimmed, signal)
@@ -145,33 +98,15 @@ export async function resolvePlaceLocation(
     }
   }
 
-  if (!suggestion.placeId || !GOOGLE_MAPS_API_KEY) {
+  if (!suggestion.placeId) {
     throw new Error('Could not pinpoint that address. Try another suggestion.')
   }
 
-  const response = await fetch(
-    `https://places.googleapis.com/v1/places/${encodeURIComponent(suggestion.placeId)}`,
-    {
-      signal,
-      headers: {
-        'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
-        'X-Goog-FieldMask': 'location,formattedAddress',
-      },
-    },
-  )
-
-  if (!response.ok) {
-    throw new Error('Could not pinpoint that address. Try another suggestion.')
-  }
-
-  const data = await response.json()
-  if (typeof data?.location?.latitude !== 'number') {
-    throw new Error('Could not pinpoint that address. Try another suggestion.')
-  }
-
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+  const place = await api.places.details(suggestion.placeId)
   return {
-    latitude: String(data.location.latitude),
-    longitude: String(data.location.longitude),
-    address: String(data.formattedAddress ?? suggestion.description),
+    latitude: place.latitude,
+    longitude: place.longitude,
+    address: place.address || suggestion.description,
   }
 }

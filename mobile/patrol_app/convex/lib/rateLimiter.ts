@@ -34,7 +34,9 @@ type RateLimitConfig = {
 // position pings are frequent (a guard reports every few seconds), scans are
 // bursty, emergencies are rare and must never be throttled into uselessness.
 const limits: Record<string, RateLimitConfig> = {
-  login: { windowMs: 15 * 60 * 1000, maxRequests: 10 },
+  // Per email+IP. Charged per attempt and refunded on a correct password, so in
+  // effect it counts failures: the sixth wrong guess in a window is refused.
+  login: { windowMs: 15 * 60 * 1000, maxRequests: 5 },
   // Keyed by IP alone, on top of the per-email `login` bucket. Without it one
   // address can rotate through unlimited emails, getting a fresh 10-attempt
   // budget for each — which is exactly how credential stuffing is run.
@@ -55,6 +57,9 @@ const limits: Record<string, RateLimitConfig> = {
   report: { windowMs: 60 * 1000, maxRequests: 10 },
   emergency: { windowMs: 5 * 60 * 1000, maxRequests: 6 },
   export: { windowMs: 60 * 1000, maxRequests: 5 },
+  // Every call is billed by Google. The picker debounces keystrokes, so a
+  // person typing addresses stays far below this; a script does not.
+  places: { windowMs: 60 * 1000, maxRequests: 60 },
   // Upload URLs and their claims. Generous enough for an incident with five
   // photos plus retries on a bad connection, tight enough that the endpoint
   // cannot be used to mint unauthenticated write URLs in bulk.
@@ -68,11 +73,15 @@ const limits: Record<string, RateLimitConfig> = {
    * becomes a fresh budget — which is precisely the bypass this exists to
    * survive. This bucket has no key at all, so there is nothing to rotate.
    *
-   * Sized well above a real shift change (a whole company mistyping passwords
-   * at handover is nowhere near this) and far below what credential stuffing
-   * needs. Successful logins never touch it, so ordinary use cannot trip it.
+   * It is also a lever on everyone: tripping it refuses every sign-in in the
+   * deployment, so at 100 a single scanner could lock the whole company out
+   * for fifteen minutes. Production has been checked (2026-10-06) to key the
+   * per-IP buckets on the real peer, rotating X-Forwarded-For did not reset
+   * them, so this is a backstop, not the main control, and it is sized so
+   * that tripping it takes failures from at least twenty addresses each
+   * spending their whole per-IP budget. Successful logins never touch it.
    */
-  loginFail: { windowMs: 15 * 60 * 1000, maxRequests: 100 },
+  loginFail: { windowMs: 15 * 60 * 1000, maxRequests: 1000 },
   write: { windowMs: 60 * 1000, maxRequests: 40 },
 };
 
@@ -264,6 +273,29 @@ export const peek = internalQuery({
       exceeded: count >= config.maxRequests,
       retryAfterMs: Math.max(windowStart + config.windowMs - now, 1000),
     };
+  },
+});
+
+/**
+ * Hands back one unit `guard` charged in the current window. Used where only
+ * failures should count but every attempt has to be charged up front so
+ * concurrent attempts cannot all pass the check at once.
+ */
+export const refund = internalMutation({
+  args: { action: v.string(), actorId: v.string() },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const config = getRateLimit(args.action);
+    const windowStart = Math.floor(now / config.windowMs) * config.windowMs;
+    const row = await ctx.db
+      .query("rateLimits")
+      .withIndex("by_bucketKey", (q) =>
+        q.eq("bucketKey", `${args.action}:${args.actorId}:${windowStart}`),
+      )
+      .unique();
+    if (row && row.count > 0) {
+      await ctx.db.patch(row._id, { count: row.count - 1 });
+    }
   },
 });
 
