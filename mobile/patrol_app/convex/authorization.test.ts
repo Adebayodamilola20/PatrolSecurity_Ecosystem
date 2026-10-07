@@ -21,6 +21,7 @@ import { signPatrolToken } from "./lib/jwt";
 import { signPhotoToken } from "./lib/photoRefs";
 import { resolveScannedAt } from "./scans";
 import { getRateLimit } from "./lib/rateLimiter";
+import bcrypt from "bcryptjs";
 import type { Id } from "./_generated/dataModel";
 
 const modules = import.meta.glob("./**/*.*s");
@@ -2157,13 +2158,16 @@ describe("F-HARDENING — X-Forwarded-For cannot be forged", () => {
     // peer, every IP-keyed bucket is rotatable and useless; this one is not.
     // Driven to just under the cap directly so the test does not have to pay
     // for a hundred bcrypt comparisons to make its point.
-    const { maxRequests } = getRateLimit("loginFail");
-    for (let i = 0; i < maxRequests; i++) {
-      await t.mutation(internal.lib.rateLimiter.bump, {
-        action: "loginFail",
-        actorId: "global",
-      });
-    }
+    const { maxRequests, windowMs } = getRateLimit("loginFail");
+    const windowStart = Math.floor(Date.now() / windowMs) * windowMs;
+    await t.run((ctx) =>
+      ctx.db.insert("rateLimits", {
+        bucketKey: `loginFail:global:${windowStart}`,
+        count: maxRequests,
+        windowStart,
+        expiresAt: windowStart + windowMs + 5000,
+      }),
+    );
     // A brand-new address, which would reset both IP-keyed buckets.
     const res = await login({ "x-forwarded-for": "198.51.100.77" });
     expect(res.status).toBe(429);
@@ -2797,5 +2801,146 @@ describe("clock-in geofence is enforced", () => {
     expect(shift.status).toBe("active");
     // Recorded as outside, so the flag stays reviewable for them too.
     expect(shift.clockInGpsValid).toBe(false);
+  });
+});
+
+describe("API responses only open up to our own websites", () => {
+  const ours = "https://patrol-security-ecosystem.vercel.app";
+
+  test("our dashboard can read responses", async () => {
+    const res = await t.fetch("/emergency/settings", {
+      method: "GET",
+      headers: { ...auth(w.tokens.admin), Origin: ours },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("access-control-allow-origin")).toBe(ours);
+  });
+
+  test("a stranger's website is not told it may read them", async () => {
+    const res = await t.fetch("/emergency/settings", {
+      method: "GET",
+      headers: { ...auth(w.tokens.admin), Origin: "https://evil.example" },
+    });
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  test("a lookalike of our domain is not let in", async () => {
+    const res = await t.fetch("/emergency/settings", {
+      method: "GET",
+      headers: { ...auth(w.tokens.admin), Origin: `${ours}.evil.example` },
+    });
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  test("preflight answers our origin and nobody else's", async () => {
+    const good = await t.fetch("/sites", { method: "OPTIONS", headers: { Origin: ours } });
+    expect(good.headers.get("access-control-allow-origin")).toBe(ours);
+    const bad = await t.fetch("/sites", { method: "OPTIONS", headers: { Origin: "https://evil.example" } });
+    expect(bad.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  test("error responses carry the same policy, so our sites still see the message", async () => {
+    const res = await t.fetch("/emergency/settings", {
+      method: "GET",
+      headers: { Origin: ours },
+    });
+    expect(res.status).toBe(401);
+    expect(res.headers.get("access-control-allow-origin")).toBe(ours);
+  });
+
+  test("every response carries the transport security headers", async () => {
+    const res = await t.fetch("/emergency/settings", { method: "GET" });
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("strict-transport-security")).toContain("max-age=");
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+});
+
+describe("address search runs on the server, staff only", () => {
+  const search = (headers: Record<string, string>, body: unknown) =>
+    t.fetch("/places/autocomplete", { method: "POST", headers, body: JSON.stringify(body) });
+
+  test("an anonymous request is rejected", async () => {
+    const res = await search({ "Content-Type": "application/json" }, { query: "Ikeja" });
+    expect(res.status).toBe(401);
+  });
+
+  test("guards and client portal logins cannot spend the Places budget", async () => {
+    expect((await search(auth(w.tokens.alphaGuard), { query: "Ikeja" })).status).toBe(403);
+    // Portal tokens are turned away before the role check even runs.
+    expect((await search(auth(w.tokens.alphaPortal), { query: "Ikeja" })).status).toBe(401);
+  });
+
+  test("with no server key the dashboard is told to use its fallback", async () => {
+    const res = await search(auth(w.tokens.admin), { query: "Ikeja" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ configured: false, suggestions: [] });
+  });
+
+  test("a malformed place id never reaches Google", async () => {
+    const res = await t.fetch("/places/details", {
+      method: "POST",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({ placeId: "../../v1/other?x=" }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("login locks an account after five wrong passwords", () => {
+  const password = "Correct-Horse-1";
+  const email = "lockout.target@example.test";
+
+  beforeEach(async () => {
+    const passwordHash = bcrypt.hashSync(password, 4);
+    await t.run((ctx) =>
+      ctx.db.insert("users", {
+        name: "Lockout Target",
+        email,
+        passwordHash,
+        role: "admin",
+        phone: "+2348000000000",
+        active: true,
+        liveTracking: false,
+        createdAt: Date.now(),
+      }),
+    );
+  });
+
+  const attempt = (pw: string) =>
+    t.fetch("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: pw }),
+    });
+
+  test("the sixth wrong guess is refused, even with the right password", async () => {
+    for (let i = 0; i < 5; i++) {
+      expect((await attempt("wrong")).status).toBe(401);
+    }
+    expect((await attempt("wrong")).status).toBe(429);
+    // Locked means locked: guessing right now does not get in either.
+    expect((await attempt(password)).status).toBe(429);
+  });
+
+  test("signing in successfully does not use up the allowance", async () => {
+    for (let i = 0; i < 8; i++) {
+      expect((await attempt(password)).status).toBe(200);
+    }
+    // Still the full five wrong tries left after all those sign-ins.
+    for (let i = 0; i < 5; i++) {
+      expect((await attempt("wrong")).status).toBe(401);
+    }
+    expect((await attempt("wrong")).status).toBe(429);
+  });
+
+  test("another account is not locked by someone else's failures", async () => {
+    for (let i = 0; i < 6; i++) await attempt("wrong");
+    const other = await t.fetch("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "someone.else@example.test", password: "wrong" }),
+    });
+    expect(other.status).toBe(401);
   });
 });

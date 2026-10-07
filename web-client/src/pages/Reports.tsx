@@ -169,9 +169,25 @@ export default function Reports() {
           >
             <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
               <p className="truncate text-sm font-medium">{preview.title}</p>
-              <button onClick={closePreview} className="text-muted-foreground hover:text-foreground">
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex shrink-0 items-center gap-3">
+                {/* An escape hatch, because an embedded PDF can fail silently:
+                    the iframe loads, stays blank, and there is nothing on
+                    screen telling the client the document exists. A new tab is
+                    a top-level document and is not subject to this page's
+                    embedding rules, so it renders when the inline view will
+                    not. */}
+                <a
+                  href={preview.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-muted-foreground underline hover:text-foreground"
+                >
+                  Open in new tab
+                </a>
+                <button onClick={closePreview} className="text-muted-foreground hover:text-foreground">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
             <iframe title="Report preview" src={preview.url} className="h-full w-full flex-1 bg-white" />
           </div>

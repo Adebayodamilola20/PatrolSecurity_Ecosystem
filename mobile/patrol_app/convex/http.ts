@@ -1,7 +1,7 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
-import { json, methodNotAllowed, parseJson } from "./lib/http";
+import { applyResponsePolicy, json, methodNotAllowed, parseJson } from "./lib/http";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import bcrypt from "bcryptjs";
@@ -20,6 +20,7 @@ import { reportException } from "./lib/sentry";
 import { scopeFor, scopeArgs } from "./lib/scope";
 import { parseScanRefusal } from "./scans";
 import { parseClockInRefusal } from "./shifts";
+import { autocompletePlaces, hasPlacesKey, isPlaceId, placeLocation } from "./lib/places";
 
 const _uid = (s: string): Id<"users"> => s as Id<"users">;
 const _cid = (s: string | null | undefined): Id<"clients"> | undefined => (s ?? undefined) as Id<"clients"> | undefined;
@@ -133,7 +134,7 @@ http.route = ((spec: Parameters<typeof registerRoute>[0]) => {
     ...spec,
     handler: httpAction(async (ctx, request) => {
       try {
-        return await rawHandler(ctx, request);
+        return applyResponsePolicy(request, await rawHandler(ctx, request));
       } catch (err) {
         // Report, then rethrow untouched: Convex still logs it and still
         // returns its own 500, so behaviour is identical with or without a
@@ -1557,7 +1558,12 @@ http.route({
 
     const ipLimited = await enforceLimit(ctx, "loginIp", ip);
     if (ipLimited) return ipLimited;
-    const loginLimited = await enforceLimit(ctx, "login", `${email}|${ip}`);
+    // Five tries per account per window. Every attempt is charged up front, so
+    // a burst of parallel guesses cannot all slip in before the count catches
+    // up, and a correct password hands its unit back (below): only failures
+    // add up, and a guard signing in and out of one phone never locks it.
+    const accountKey = `${email}|${ip}`;
+    const loginLimited = await enforceLimit(ctx, "login", accountKey);
     if (loginLimited) return loginLimited;
 
     // One helper so no failure path can forget to count itself.
@@ -1583,6 +1589,11 @@ http.route({
     if (!valid) {
       return await rejectCredentials();
     }
+    // The right password: give back the unit this attempt was charged.
+    await ctx.runMutation(internal.lib.rateLimiter.refund, {
+      action: "login",
+      actorId: accountKey,
+    });
     if (clientType === "mobile" && user.role !== "guard") {
       return forbidden("Mobile access is restricted to guard accounts");
     }
@@ -4490,6 +4501,53 @@ http.route({ pathPrefix: "/sites/", method: "DELETE", handler: httpAction(async 
     ipAddress: requestIp(request),
   });
   return json({ message: `${result.name} deleted`, ...result });
+})});
+
+// Address lookup for the dashboard's location and checkpoint pickers, proxied
+// so the Places key stays server-side (see lib/places.ts). `configured: false`
+// tells the dashboard to use its free fallback geocoder instead.
+http.route({ path: "/places/autocomplete", method: "POST", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  const roleErr = requireRole(user, ["admin", "supervisor"]);
+  if (roleErr) return roleErr;
+  const limited = await enforceLimit(ctx, "places", user.convexId);
+  if (limited) return limited;
+
+  const body = await parseJson(request);
+  const query = String(body?.query ?? "").trim().slice(0, 200);
+  if (!query) return json({ configured: hasPlacesKey(), suggestions: [] });
+
+  try {
+    const suggestions = await autocompletePlaces(query);
+    if (suggestions === null) return json({ configured: false, suggestions: [] });
+    return json({ configured: true, suggestions });
+  } catch (err) {
+    console.error("places autocomplete:", err);
+    return errorResponse("Could not search for that address.", 502);
+  }
+})});
+
+http.route({ path: "/places/details", method: "POST", handler: httpAction(async (ctx, request) => {
+  const user = await requireAuth(ctx, request);
+  if (!user) return unauthorized();
+  const roleErr = requireRole(user, ["admin", "supervisor"]);
+  if (roleErr) return roleErr;
+  const limited = await enforceLimit(ctx, "places", user.convexId);
+  if (limited) return limited;
+
+  const body = await parseJson(request);
+  const placeId = String(body?.placeId ?? "");
+  if (!isPlaceId(placeId)) return badRequest("A valid placeId is required");
+
+  try {
+    const place = await placeLocation(placeId);
+    if (place === null) return errorResponse("Address lookup is not configured.", 503);
+    return json(place);
+  } catch (err) {
+    console.error("places details:", err);
+    return errorResponse("Could not pinpoint that address. Try another suggestion.", 502);
+  }
 })});
 
 http.route({ path: "/sites", method: "GET", handler: httpAction(async (ctx, request) => {

@@ -40,7 +40,9 @@ export function loadGoogleMaps() {
 
     const script = document.createElement('script')
     script.src =
-      `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=places`
+      // No `libraries=places`: address search goes through the backend, so
+      // this key needs the Maps JavaScript API and nothing else.
+      `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}`
     script.async = true
     script.defer = true
     script.dataset.googleMapsLoader = 'true'
