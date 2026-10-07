@@ -21,6 +21,7 @@ import { signPatrolToken } from "./lib/jwt";
 import { signPhotoToken } from "./lib/photoRefs";
 import { resolveScannedAt } from "./scans";
 import { getRateLimit } from "./lib/rateLimiter";
+import bcrypt from "bcryptjs";
 import type { Id } from "./_generated/dataModel";
 
 const modules = import.meta.glob("./**/*.*s");
@@ -2157,13 +2158,16 @@ describe("F-HARDENING — X-Forwarded-For cannot be forged", () => {
     // peer, every IP-keyed bucket is rotatable and useless; this one is not.
     // Driven to just under the cap directly so the test does not have to pay
     // for a hundred bcrypt comparisons to make its point.
-    const { maxRequests } = getRateLimit("loginFail");
-    for (let i = 0; i < maxRequests; i++) {
-      await t.mutation(internal.lib.rateLimiter.bump, {
-        action: "loginFail",
-        actorId: "global",
-      });
-    }
+    const { maxRequests, windowMs } = getRateLimit("loginFail");
+    const windowStart = Math.floor(Date.now() / windowMs) * windowMs;
+    await t.run((ctx) =>
+      ctx.db.insert("rateLimits", {
+        bucketKey: `loginFail:global:${windowStart}`,
+        count: maxRequests,
+        windowStart,
+        expiresAt: windowStart + windowMs + 5000,
+      }),
+    );
     // A brand-new address, which would reset both IP-keyed buckets.
     const res = await login({ "x-forwarded-for": "198.51.100.77" });
     expect(res.status).toBe(429);
@@ -2687,5 +2691,63 @@ describe("address search runs on the server, staff only", () => {
       body: JSON.stringify({ placeId: "../../v1/other?x=" }),
     });
     expect(res.status).toBe(400);
+  });
+});
+
+describe("login locks an account after five wrong passwords", () => {
+  const password = "Correct-Horse-1";
+  const email = "lockout.target@example.test";
+
+  beforeEach(async () => {
+    const passwordHash = bcrypt.hashSync(password, 4);
+    await t.run((ctx) =>
+      ctx.db.insert("users", {
+        name: "Lockout Target",
+        email,
+        passwordHash,
+        role: "admin",
+        phone: "+2348000000000",
+        active: true,
+        liveTracking: false,
+        createdAt: Date.now(),
+      }),
+    );
+  });
+
+  const attempt = (pw: string) =>
+    t.fetch("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: pw }),
+    });
+
+  test("the sixth wrong guess is refused, even with the right password", async () => {
+    for (let i = 0; i < 5; i++) {
+      expect((await attempt("wrong")).status).toBe(401);
+    }
+    expect((await attempt("wrong")).status).toBe(429);
+    // Locked means locked: guessing right now does not get in either.
+    expect((await attempt(password)).status).toBe(429);
+  });
+
+  test("signing in successfully does not use up the allowance", async () => {
+    for (let i = 0; i < 8; i++) {
+      expect((await attempt(password)).status).toBe(200);
+    }
+    // Still the full five wrong tries left after all those sign-ins.
+    for (let i = 0; i < 5; i++) {
+      expect((await attempt("wrong")).status).toBe(401);
+    }
+    expect((await attempt("wrong")).status).toBe(429);
+  });
+
+  test("another account is not locked by someone else's failures", async () => {
+    for (let i = 0; i < 6; i++) await attempt("wrong");
+    const other = await t.fetch("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "someone.else@example.test", password: "wrong" }),
+    });
+    expect(other.status).toBe(401);
   });
 });
