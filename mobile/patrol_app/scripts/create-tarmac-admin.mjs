@@ -35,12 +35,16 @@ const askHidden = (q) =>
 const name = (await ask("Admin full name: ")).trim();
 const email = (await ask("Admin email: ")).trim().toLowerCase();
 const phone = (await ask("Admin phone (e.g. 08031234567): ")).trim();
-const password = await askHidden("Password (min 8 characters, hidden): ");
+const password = await askHidden("Password (8+ chars, upper + lower case + number, hidden): ");
 const confirm = await askHidden("Repeat password: ");
 rl.close();
 
 if (!name || !email.includes("@")) { console.error("Name and a valid email are required."); process.exit(1); }
-if (password.length < 8) { console.error("Password must be at least 8 characters."); process.exit(1); }
+// Same rule as the backend's passwordPolicyError (convex/http.ts).
+if (password.length < 8 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password)) {
+  console.error("Password must be at least 8 characters with a lowercase letter, an uppercase letter and a number.");
+  process.exit(1);
+}
 if (password !== confirm) { console.error("Passwords do not match."); process.exit(1); }
 
 const passwordHash = await bcrypt.hash(password, 10);
