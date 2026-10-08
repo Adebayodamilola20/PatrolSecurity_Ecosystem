@@ -37,7 +37,7 @@
 
 ## Tarmac-specific decisions
 
-- **Temporary exception (2026-10-08, owner's decision):** Tarmac's admin site uses Evergreen's Google Maps *browser* key (`VITE_GOOGLE_MAPS_API_KEY`) until Tarmac gets its own. The key holds no data. Replace it with a Tarmac key later; do not copy any other secret.
+- **Google Maps:** Tarmac has its own browser key (Google Cloud project "Tarmac Security"), set as `VITE_GOOGLE_MAPS_API_KEY` on Vercel `tarmac-admin`. Never use Evergreen's.
 - **No SMS on Tarmac.** The Tarmac deployment has no `TERMII_*` settings; SMS is skipped automatically (`isSmsConfigured()` in `convex/env.ts`). Do not add Termii keys to Tarmac.
 - **Own design.** Tarmac gets its own visual identity, not the Evergreen look.
 - **Finance features** (payment sharing via Monnify, invoices, payroll) are Tarmac-only and must be switched on by setting, never by default for Evergreen.
