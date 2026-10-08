@@ -7,6 +7,22 @@ import { initTheme } from './hooks/useTheme'
 
 applyBrand('Operations Portal')
 
+// After a new deployment, a tab still running the old build asks for code
+// files that no longer exist (the server answers with the HTML page, hence
+// "'text/html' is not a valid JavaScript MIME type"). Reload once to pick up
+// the new build instead of showing an error. The session guard stops a loop
+// if the reload doesn't help.
+window.addEventListener('vite:preloadError', (event) => {
+  const key = 'reloaded-for-new-build'
+  if (sessionStorage.getItem(key)) return
+  sessionStorage.setItem(key, '1')
+  event.preventDefault()
+  window.location.reload()
+})
+window.addEventListener('load', () => {
+  setTimeout(() => sessionStorage.removeItem('reloaded-for-new-build'), 10000)
+})
+
 // Without a DSN the SDK still installs its global handlers and queues events
 // that go nowhere, so stay off entirely rather than pretending to report.
 const sentryDsn = import.meta.env.VITE_SENTRY_DSN
