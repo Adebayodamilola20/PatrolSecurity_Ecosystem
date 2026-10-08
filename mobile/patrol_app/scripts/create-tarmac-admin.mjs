@@ -17,27 +17,40 @@ if (!deployment.endsWith(TARMAC_DEPLOYMENT)) {
 
 const rl = createInterface({ input: process.stdin, output: process.stdout });
 const ask = (q) => new Promise((res) => rl.question(q, res));
+
+// Hidden input without readline (readline's masking does not show the prompt
+// in every terminal). Typed characters are not echoed.
 const askHidden = (q) =>
   new Promise((res) => {
     process.stdout.write(q);
-    const onData = (ch) => {
-      if ([10, 13, 4].includes(ch[0])) process.stdin.off("data", onData);
+    const stdin = process.stdin;
+    let value = "";
+    stdin.setRawMode(true);
+    stdin.resume();
+    const onData = (buf) => {
+      for (const ch of buf.toString("utf8")) {
+        if (ch === "\r" || ch === "\n" || ch === "\u0004") {
+          stdin.setRawMode(false);
+          stdin.pause();
+          stdin.off("data", onData);
+          process.stdout.write("\n");
+          res(value);
+          return;
+        }
+        if (ch === "\u0003") process.exit(1); // Ctrl+C
+        if (ch === "\u007f" || ch === "\b") value = value.slice(0, -1);
+        else value += ch;
+      }
     };
-    rl._writeToOutput = () => {};
-    process.stdin.on("data", onData);
-    rl.question("", (answer) => {
-      rl._writeToOutput = (s) => process.stdout.write(s);
-      process.stdout.write("\n");
-      res(answer);
-    });
+    stdin.on("data", onData);
   });
 
 const name = (await ask("Admin full name: ")).trim();
 const email = (await ask("Admin email: ")).trim().toLowerCase();
 const phone = (await ask("Admin phone (e.g. 08031234567): ")).trim();
-const password = await askHidden("Password (8+ chars, upper + lower case + number, hidden): ");
-const confirm = await askHidden("Repeat password: ");
 rl.close();
+const password = await askHidden("Password (8+ chars, upper + lower case + number, typing is hidden): ");
+const confirm = await askHidden("Repeat password: ");
 
 if (!name || !email.includes("@")) { console.error("Name and a valid email are required."); process.exit(1); }
 // Same rule as the backend's passwordPolicyError (convex/http.ts).
