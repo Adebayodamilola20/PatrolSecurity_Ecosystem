@@ -15,6 +15,7 @@ import '../utils/access_control.dart';
 import '../utils/routes.dart';
 import '../utils/sign_out.dart';
 import '../utils/theme.dart';
+import '../utils/brand.dart';
 import '../utils/constants.dart' show isTarmacApp;
 import '../widgets/duty_prompts.dart';
 
@@ -189,10 +190,7 @@ class _HomeScreenState extends State<HomeScreen> {
             return AlertDialog(
               title: Row(
                 children: [
-                  Icon(
-                    Icons.receipt_long_outlined,
-                    color: AppTheme.primary,
-                  ),
+                  Icon(Icons.receipt_long_outlined, color: AppTheme.primary),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -270,10 +268,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         log['instruction'] ??
                             log['description'] ??
                             'No details',
-                        style: TextStyle(
-                          color: AppTheme.text,
-                          height: 1.5,
-                        ),
+                        style: TextStyle(color: AppTheme.text, height: 1.5),
                       ),
                       if ((log['createdAt'] ?? '').isNotEmpty) ...[
                         const SizedBox(height: 12),
@@ -356,6 +351,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _openScannerOrExplain(BuildContext context) {
     if (!canSubmitPatrol(context.read<AuthProvider>().user)) {
+      if (isTarmacApp) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Your account cannot scan checkpoints.'),
+          ),
+        );
+        return;
+      }
       Navigator.pushNamed(context, AppRoutes.patrol);
       return;
     }
@@ -458,11 +461,13 @@ class _HomeScreenState extends State<HomeScreen> {
         title: 'View Schedule',
         route: AppRoutes.schedule,
       ),
-      _MenuItem(
-        icon: Icons.route_outlined,
-        title: 'Patrol Tour',
-        route: AppRoutes.patrol,
-      ),
+      // Tarmac: patrol starts from the home duty card (clock in, then scan).
+      if (!isTarmacApp)
+        _MenuItem(
+          icon: Icons.route_outlined,
+          title: 'Patrol Tour',
+          route: AppRoutes.patrol,
+        ),
     ];
 
     final afterReports = [
@@ -767,7 +772,10 @@ class _DashboardTab extends StatelessWidget {
                       padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
                       child: Text(
                         'Select the type of emergency',
-                        style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppTheme.textSecondary,
+                        ),
                       ),
                     ),
                     Expanded(
@@ -991,7 +999,15 @@ class _DashboardTab extends StatelessWidget {
     final canPatrol = canSubmitPatrol(auth.user);
 
     if (isTarmacApp) {
-      return _buildTarmacDashboard(context, auth, duty, scan, shift, role, canPatrol);
+      return _buildTarmacDashboard(
+        context,
+        auth,
+        duty,
+        scan,
+        shift,
+        role,
+        canPatrol,
+      );
     }
 
     return RefreshIndicator(
@@ -1125,9 +1141,7 @@ class _DashboardTab extends StatelessWidget {
             loading: shift.loading,
             gpsValid: shift.clockInGpsValid,
             distanceMeters: shift.clockInDistanceMeters,
-            onTap: shift.loading
-                ? null
-                : () => handleDutyToggle(context),
+            onTap: shift.loading ? null : () => handleDutyToggle(context),
           ),
           const SizedBox(height: 24),
           const _SectionLabel(
@@ -1298,8 +1312,9 @@ class _DashboardTab extends StatelessWidget {
                   foregroundImage: auth.user?.photoUrl != null
                       ? NetworkImage(auth.user!.photoUrl!)
                       : null,
-                  onForegroundImageError:
-                      auth.user?.photoUrl != null ? (_, __) {} : null,
+                  onForegroundImageError: auth.user?.photoUrl != null
+                      ? (_, __) {}
+                      : null,
                   child: Text(
                     initials.isEmpty ? '?' : initials,
                     style: const TextStyle(
@@ -1348,7 +1363,9 @@ class _DashboardTab extends StatelessWidget {
             scansToday: scan.todayScans,
             postOrders: duty.orders.length,
             canPatrol: canPatrol,
-            onClockToggle: shift.loading ? null : () => handleDutyToggle(context),
+            onClockToggle: shift.loading
+                ? null
+                : () => handleDutyToggle(context),
             onScan: () => context
                 .findAncestorStateOfType<_HomeScreenState>()
                 ?._openScannerOrExplain(context),
@@ -1398,7 +1415,8 @@ class _DashboardTab extends StatelessWidget {
                   icon: Icons.location_on_outlined,
                   title: 'Checkpoints',
                   subtitle: 'QR points on your site',
-                  onTap: () => Navigator.pushNamed(context, AppRoutes.checkpoints),
+                  onTap: () =>
+                      Navigator.pushNamed(context, AppRoutes.checkpoints),
                 ),
                 _TarmacShortcut(
                   icon: Icons.history,
@@ -1425,7 +1443,8 @@ class _DashboardTab extends StatelessWidget {
               ),
               if (scan.scans.isNotEmpty)
                 TextButton(
-                  onPressed: () => Navigator.pushNamed(context, AppRoutes.history),
+                  onPressed: () =>
+                      Navigator.pushNamed(context, AppRoutes.history),
                   child: Text(
                     'View all',
                     style: TextStyle(
@@ -2215,7 +2234,6 @@ class _QuickAction extends StatelessWidget {
   }
 }
 
-
 /// Tarmac's duty card: where the guard stands and the one thing to do next.
 class _TarmacDutyCard extends StatelessWidget {
   const _TarmacDutyCard({
@@ -2247,11 +2265,7 @@ class _TarmacDutyCard extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(22),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF0B1220), Color(0xFF1E3A8A)],
-        ),
+        color: Brand.tarmacBlue,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2259,7 +2273,10 @@ class _TarmacDutyCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(20),
@@ -2272,7 +2289,9 @@ class _TarmacDutyCard extends StatelessWidget {
                       height: 7,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: onDuty ? const Color(0xFF34D399) : Colors.white54,
+                        color: onDuty
+                            ? const Color(0xFF34D399)
+                            : Colors.white54,
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -2309,7 +2328,10 @@ class _TarmacDutyCard extends StatelessWidget {
                 : (siteLabel ?? '').isNotEmpty
                 ? 'Clock in when you arrive at $site.'
                 : 'No site assigned yet. Ask your supervisor to post you to a site.',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13),
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.7),
+              fontSize: 13,
+            ),
           ),
           const SizedBox(height: 16),
           Row(
@@ -2320,51 +2342,71 @@ class _TarmacDutyCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 18),
-          SizedBox(
-            width: double.infinity,
-            height: 50,
-            child: FilledButton.icon(
-              onPressed: loading
-                  ? null
-                  : onDuty
-                  ? (canPatrol ? onScan : null)
-                  : onClockToggle,
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: const Color(0xFF0B1220),
-                disabledBackgroundColor: Colors.white24,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-              icon: loading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Icon(onDuty ? Icons.qr_code_scanner_rounded : Icons.login_rounded),
-              label: Text(
-                onDuty ? 'Scan a checkpoint' : 'Clock in',
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-              ),
-            ),
-          ),
-          if (onDuty) ...[
-            const SizedBox(height: 6),
-            Center(
-              child: TextButton(
-                onPressed: loading ? null : onClockToggle,
-                child: Text(
-                  'Clock out',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.8),
-                    fontWeight: FontWeight.w700,
+          // Both actions always visible: scanning before clock-in explains
+          // that the shift has to start first instead of hiding the button.
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 50,
+                  child: FilledButton.icon(
+                    onPressed: canPatrol ? onScan : null,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Brand.tarmacBlue,
+                      disabledBackgroundColor: Colors.white24,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    icon: const Icon(Icons.qr_code_scanner_rounded),
+                    label: const Text(
+                      'Scan',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+              const SizedBox(width: 10),
+              Expanded(
+                child: SizedBox(
+                  height: 50,
+                  child: OutlinedButton.icon(
+                    onPressed: loading ? null : onClockToggle,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Colors.white70, width: 1.4),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    icon: loading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Icon(
+                            onDuty ? Icons.logout_rounded : Icons.login_rounded,
+                          ),
+                    label: Text(
+                      onDuty ? 'Clock out' : 'Clock in',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -2392,7 +2434,10 @@ class _TarmacMiniStat extends StatelessWidget {
         ),
         Text(
           label,
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 12),
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.65),
+            fontSize: 12,
+          ),
         ),
       ],
     );
@@ -2444,7 +2489,10 @@ class _TarmacShortcut extends StatelessWidget {
                   const SizedBox(height: 1),
                   Text(
                     subtitle,
-                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 12.5),
+                    style: TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 12.5,
+                    ),
                   ),
                 ],
               ),

@@ -14,9 +14,12 @@ class Brand {
   static String get taglineCaps =>
       isTarmacApp ? 'GUARD OPERATIONS' : 'SECURITY OPERATIONS';
 
-  /// Splash background: Tarmac black into royal blue; Evergreen green.
+  /// Tarmac's single brand colour. Tarmac surfaces use it flat, no gradients.
+  static const Color tarmacBlue = Color(0xFF1E3A8A);
+
+  /// Splash background: flat Tarmac blue; Evergreen keeps its green gradient.
   static List<Color> get splashGradient => isTarmacApp
-      ? const [Color(0xFF05070C), Color(0xFF1E3A8A)]
+      ? const [tarmacBlue, tarmacBlue]
       : const [Color(0xFF064E3B), Color(0xFF0F766E)];
 
   /// Pick the Tarmac colour on Tarmac builds, otherwise the original.

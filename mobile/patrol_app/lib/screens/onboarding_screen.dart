@@ -503,7 +503,7 @@ class _RouteScene extends StatelessWidget {
               height: 145,
               padding: const EdgeInsets.all(17),
               decoration: BoxDecoration(
-                color: const Color(0xFF203B43),
+                color: Brand.accent(const Color(0xFF203B43), Brand.tarmacBlue),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
               ),
@@ -744,7 +744,7 @@ class _TeamScene extends StatelessWidget {
             width: 102,
             height: 102,
             decoration: BoxDecoration(
-              color: const Color(0xFF203B43),
+              color: Brand.accent(const Color(0xFF203B43), Brand.tarmacBlue),
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
             ),
@@ -844,7 +844,7 @@ class _PersonTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFF203B43),
+        color: Brand.accent(const Color(0xFF203B43), Brand.tarmacBlue),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),

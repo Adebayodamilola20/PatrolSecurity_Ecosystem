@@ -5,6 +5,8 @@ import '../providers/auth_provider.dart';
 import '../providers/scan_provider.dart';
 import '../utils/routes.dart';
 import '../utils/sign_out.dart';
+import '../utils/brand.dart';
+import '../utils/constants.dart' show isTarmacApp;
 import '../utils/theme.dart';
 
 class ProfileScreen extends StatelessWidget {
@@ -39,6 +41,7 @@ class ProfileScreen extends StatelessWidget {
             role: role,
             initials: _initials(name),
             active: user?.active ?? true,
+            photoUrl: user?.photoUrl,
           ),
           const SizedBox(height: 20),
           const _ProfileSectionHeading(
@@ -148,12 +151,26 @@ class _ProfileHero extends StatelessWidget {
     required this.role,
     required this.initials,
     required this.active,
+    this.photoUrl,
   });
 
   final String name;
   final String role;
   final String initials;
   final bool active;
+  final String? photoUrl;
+
+  Widget _initialsText() => Center(
+    child: Text(
+      initials,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 25,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 0.5,
+      ),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -161,11 +178,15 @@ class _ProfileHero extends StatelessWidget {
       padding: const EdgeInsets.all(20),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF123C40), Color(0xFF0B6F5C)],
-        ),
+        // Tarmac: one flat brand colour. Evergreen keeps its gradient.
+        color: isTarmacApp ? Brand.tarmacBlue : null,
+        gradient: isTarmacApp
+            ? null
+            : const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF123C40), Color(0xFF0B6F5C)],
+              ),
         borderRadius: BorderRadius.circular(26),
         boxShadow: [
           BoxShadow(
@@ -177,43 +198,55 @@ class _ProfileHero extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          Positioned(
-            top: -68,
-            right: -36,
-            child: Container(
-              width: 180,
-              height: 180,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppTheme.primary.withValues(alpha: 0.14),
+          if (!isTarmacApp)
+            Positioned(
+              top: -68,
+              right: -36,
+              child: Container(
+                width: 180,
+                height: 180,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppTheme.primary.withValues(alpha: 0.14),
+                ),
               ),
             ),
-          ),
           Row(
             children: [
-              Container(
-                width: 76,
-                height: 76,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.26),
-                    width: 1.5,
+              if (isTarmacApp)
+                // Round photo set by the admin, initials until there is one.
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withValues(alpha: 0.15),
+                    border: Border.all(color: Colors.white, width: 3),
                   ),
-                ),
-                child: Center(
-                  child: Text(
-                    initials,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 25,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.5,
+                  child: ClipOval(
+                    child: photoUrl != null
+                        ? Image.network(
+                            photoUrl!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => _initialsText(),
+                          )
+                        : _initialsText(),
+                  ),
+                )
+              else
+                Container(
+                  width: 76,
+                  height: 76,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.26),
+                      width: 1.5,
                     ),
                   ),
+                  child: _initialsText(),
                 ),
-              ),
               const SizedBox(width: 15),
               Expanded(
                 child: Column(
@@ -241,7 +274,10 @@ class _ProfileHero extends StatelessWidget {
                           label: active ? 'ACTIVE' : 'INACTIVE',
                           icon: Icons.circle,
                           accent: active
-                              ? const Color(0xFF8DF5B7)
+                              ? Brand.accent(
+                                  const Color(0xFF8DF5B7),
+                                  Colors.white,
+                                )
                               : const Color(0xFFFFD38D),
                         ),
                       ],

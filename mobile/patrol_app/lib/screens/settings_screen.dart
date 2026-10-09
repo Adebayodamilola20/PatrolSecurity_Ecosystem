@@ -328,13 +328,14 @@ class _ProfileHeader extends StatelessWidget {
         stretchModes: const [StretchMode.zoomBackground],
         background: Container(
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: isTarmacApp
-                  ? const [Color(0xFF05070C), Color(0xFF1E3A8A), Color(0xFF2F5BD3)]
-                  : const [Color(0xFF059669), Color(0xFF10B981), Color(0xFF34D399)],
-            ),
+            color: isTarmacApp ? Brand.tarmacBlue : null,
+            gradient: isTarmacApp
+                ? null
+                : const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF059669), Color(0xFF10B981), Color(0xFF34D399)],
+                  ),
           ),
           child: SafeArea(
             bottom: false,
@@ -462,19 +463,13 @@ class _ProfileHeader extends StatelessWidget {
     return SliverAppBar(
       expandedHeight: 236,
       pinned: true,
-      backgroundColor: const Color(0xFF0B1220),
+      backgroundColor: Brand.tarmacBlue,
       foregroundColor: Colors.white,
-      surfaceTintColor: const Color(0xFF0B1220),
+      surfaceTintColor: Brand.tarmacBlue,
       title: const Text('Profile'),
       flexibleSpace: FlexibleSpaceBar(
         background: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF0B1220), Color(0xFF1E3A8A)],
-            ),
-          ),
+          decoration: const BoxDecoration(color: Brand.tarmacBlue),
           child: SafeArea(
             bottom: false,
             child: Padding(
@@ -489,7 +484,7 @@ class _ProfileHeader extends StatelessWidget {
                         height: 78,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: const Color(0xFF2F5BD3),
+                          color: Colors.white.withValues(alpha: 0.15),
                           border: Border.all(color: Colors.white, width: 3),
                         ),
                         child: ClipOval(
