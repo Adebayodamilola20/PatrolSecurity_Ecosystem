@@ -1,1 +1,16 @@
+# Safety net for the whole repo. Each company folder has its own .gitignore
+# too; these catch leftovers outside them (e.g. after the folder split).
 .DS_Store
+node_modules/
+.env
+.env.local
+.env.*.local
+**/build/
+**/dist/
+.dart_tool/
+.vercel/
+*.jks
+*.keystore
+key.properties
+google-services.json
+GoogleService-Info.plist
