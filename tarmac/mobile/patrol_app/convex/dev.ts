@@ -1,0 +1,336 @@
+import { internalMutation, internalQuery } from "./_generated/server";
+import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
+
+export const hasUsers = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const users = await ctx.db.query("users").first();
+    return !!users;
+  },
+});
+
+export const seedDefaults = internalMutation({
+  args: {
+    adminPasswordHash: v.string(),
+    clientPasswordHash: v.string(),
+    guardPasswordHash: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existingUser = await ctx.db.query("users").first();
+    if (existingUser) {
+      return { seeded: false, reason: "users already exist" };
+    }
+
+    const now = Date.now();
+    const clientId = await ctx.db.insert("clients", {
+      legacyId: crypto.randomUUID(),
+      name: "SecureCorp Nigeria",
+      email: "client@securecorp.com",
+      phone: "+234 800 000 0001",
+      active: true,
+      createdAt: now,
+    });
+    const site1Id = await ctx.db.insert("sites", {
+      legacyId: crypto.randomUUID(),
+      clientId,
+      name: "Lagos HQ",
+      location: "Lagos, Nigeria",
+      active: true,
+      createdAt: now,
+    });
+    await ctx.db.insert("sites", {
+      legacyId: crypto.randomUUID(),
+      clientId,
+      name: "Abuja Branch",
+      location: "Abuja, Nigeria",
+      active: true,
+      createdAt: now,
+    });
+
+    await ctx.db.insert("users", {
+      legacyId: crypto.randomUUID(),
+      name: "Company Admin",
+      email: "admin@securecorp.com",
+      passwordHash: args.adminPasswordHash,
+      role: "admin",
+      phone: "+234 800 000 0000",
+      active: true,
+      liveTracking: true,
+      createdAt: now,
+    });
+    await ctx.db.insert("users", {
+      legacyId: crypto.randomUUID(),
+      name: "Client Admin",
+      email: "client@securecorp.com",
+      passwordHash: args.clientPasswordHash,
+      role: "main_account",
+      phone: "+234 800 000 0001",
+      active: true,
+      clientId,
+      liveTracking: true,
+      createdAt: now,
+    });
+    const guardId = await ctx.db.insert("users", {
+      legacyId: crypto.randomUUID(),
+      name: "Field Guard",
+      email: "guard@securecorp.com",
+      passwordHash: args.guardPasswordHash,
+      role: "guard",
+      phone: "+234 800 000 0002",
+      active: true,
+      clientId,
+      liveTracking: true,
+      createdAt: now,
+    });
+    await ctx.db.insert("userSiteAssignments", {
+      legacyId: crypto.randomUUID(),
+      clientId,
+      userId: guardId,
+      siteId: site1Id,
+      createdAt: now,
+    });
+    await ctx.db.insert("checkpoints", {
+      legacyId: crypto.randomUUID(),
+      clientId,
+      siteId: site1Id,
+      name: "Shoprite Mall",
+      code: "SHOPRITE-001",
+      latitude: 6.5244,
+      longitude: 3.3792,
+      radiusMeters: 10,
+      expectedIntervalMinutes: 30,
+      scheduledTimeIn: "",
+      scheduledTimeOut: "",
+      active: true,
+      createdAt: now,
+    });
+    const checkpointId = await ctx.db
+      .query("checkpoints")
+      .withIndex("by_code", (q) => q.eq("code", "SHOPRITE-001"))
+      .unique();
+    if (checkpointId) {
+      await ctx.db.insert("postOrders", {
+        legacyId: crypto.randomUUID(),
+        title: "Perimeter Lock Check",
+        summary: "Verify all gate locks before shift close.",
+        instructions: "Inspect the perimeter gates and confirm each lock is secured.",
+        checkpointId: checkpointId._id,
+        assignedUserId: guardId,
+        assignedRole: "guard",
+        priority: "normal",
+        active: true,
+        requiresAcknowledgement: true,
+        requiresPhotoProof: true,
+        createdBy: guardId,
+        createdAt: now,
+      });
+      await ctx.db.insert("passOnLogs", {
+        legacyId: crypto.randomUUID(),
+        title: "Generator Watch",
+        instruction: "Monitor the backup generator noise level during rounds.",
+        priority: "normal",
+        siteLabel: "Lagos HQ",
+        checkpointId: checkpointId._id,
+        requiresAcknowledgement: true,
+        createdBy: guardId,
+        active: true,
+        createdAt: now,
+      });
+    }
+    return { seeded: true }
+  },
+})
+
+export const resetAllPasswords = internalMutation({
+  args: { passwordHash: v.string() },
+  handler: async (ctx, args) => {
+    const users = await ctx.db.query("users").collect();
+    for (const user of users) {
+      await ctx.db.patch(user._id, { passwordHash: args.passwordHash });
+    }
+    return { updated: users.length };
+  },
+});
+
+export const assignGuardToFirstSite = internalMutation({
+  args: {
+    email: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .unique();
+    if (!user) return { assigned: false, reason: "user not found" };
+    const existing = await ctx.db
+      .query("userSiteAssignments")
+      .withIndex("by_userId", (q) => q.eq("userId", user._id))
+      .first();
+    if (existing) return { assigned: false, reason: "already assigned" };
+    const site = await ctx.db.query("sites").first();
+    if (!site) return { assigned: false, reason: "no sites exist" };
+    await ctx.db.insert("userSiteAssignments", {
+      legacyId: crypto.randomUUID(),
+      clientId: site.clientId,
+      userId: user._id,
+      siteId: site._id,
+      createdAt: Date.now(),
+    });
+    return { assigned: true, siteName: site.name, userEmail: args.email };
+  },
+});
+
+export const addMissingSeedUsers = internalMutation({
+  args: { passwordHash: v.string() },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.query("users").collect();
+    const existingEmails = new Set(existing.map((u) => u.email));
+    const hash = args.passwordHash;
+    const now = Date.now();
+    const added = [];
+
+    if (!existingEmails.has("client@securecorp.com")) {
+      const clients = await ctx.db.query("clients").collect();
+      let clientId: Id<"clients"> | undefined;
+      if (clients.length === 0) {
+        clientId = await ctx.db.insert("clients", {
+          legacyId: crypto.randomUUID(),
+          name: "SecureCorp Nigeria",
+          email: "client@securecorp.com",
+          phone: "+234 800 000 0001",
+          active: true,
+          createdAt: now,
+        });
+      } else {
+        clientId = clients[0]._id;
+      }
+      await ctx.db.insert("users", {
+        legacyId: crypto.randomUUID(),
+        name: "Client Admin",
+        email: "client@securecorp.com",
+        passwordHash: hash,
+        role: "main_account",
+        phone: "+234 800 000 0001",
+        active: true,
+        clientId,
+        liveTracking: true,
+        createdAt: now,
+      });
+      added.push("client@securecorp.com (main_account)");
+    }
+    if (!existingEmails.has("guard@securecorp.com")) {
+      const clients = await ctx.db.query("clients").collect();
+      await ctx.db.insert("users", {
+        legacyId: crypto.randomUUID(),
+        name: "Field Guard",
+        email: "guard@securecorp.com",
+        passwordHash: hash,
+        role: "guard",
+        phone: "+234 800 000 0002",
+        active: true,
+        clientId: clients.length > 0 ? clients[0]._id : undefined,
+        liveTracking: true,
+        createdAt: now,
+      });
+      added.push("guard@securecorp.com (guard)");
+    }
+
+    return {
+      added,
+      users: (await ctx.db.query("users").collect()).map((u) => ({
+        email: u.email,
+        role: u.role,
+      })),
+    };
+  },
+});
+
+// SECURITY: Destructive operations removed from production deployment
+// DO NOT expose destructive operations as public mutations
+
+export const assignUserToSite = internalMutation({
+  args: { userId: v.id("users"), siteId: v.id("sites") },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("userSiteAssignments", {
+      legacyId: crypto.randomUUID(), userId: args.userId, siteId: args.siteId, createdAt: Date.now(),
+    });
+    return { assigned: true };
+  },
+});
+
+export const ensureDemoContent = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const guard = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", "guard@securecorp.com"))
+      .unique();
+    const checkpoint = await ctx.db
+      .query("checkpoints")
+      .withIndex("by_code", (q) => q.eq("code", "SHOPRITE-001"))
+      .unique();
+    if (!guard || !checkpoint) {
+      return { created: false, reason: "demo users/checkpoint missing" };
+    }
+
+    if (checkpoint.siteId) {
+      const assignment = await ctx.db
+        .query("userSiteAssignments")
+        .withIndex("by_userId_siteId", (q) =>
+          q.eq("userId", guard._id).eq("siteId", checkpoint.siteId!),
+        )
+        .first();
+      if (!assignment) {
+        await ctx.db.insert("userSiteAssignments", {
+          legacyId: crypto.randomUUID(),
+          clientId: guard.clientId,
+          userId: guard._id,
+          siteId: checkpoint.siteId,
+          createdAt: Date.now(),
+        });
+      }
+    }
+
+    const existingOrder = (
+      await ctx.db.query("postOrders").collect()
+    ).find((order) => order.title === "Perimeter Lock Check");
+    if (!existingOrder) {
+      await ctx.db.insert("postOrders", {
+        legacyId: crypto.randomUUID(),
+        title: "Perimeter Lock Check",
+        summary: "Verify all gate locks before shift close.",
+        instructions: "Inspect the perimeter gates and confirm each lock is secured.",
+        checkpointId: checkpoint._id,
+        assignedUserId: guard._id,
+        assignedRole: "guard",
+        priority: "normal",
+        active: true,
+        requiresAcknowledgement: true,
+        requiresPhotoProof: true,
+        createdBy: guard._id,
+        createdAt: Date.now(),
+      });
+    }
+
+    const existingLog = (
+      await ctx.db.query("passOnLogs").collect()
+    ).find((log) => log.title === "Generator Watch");
+    if (!existingLog) {
+      await ctx.db.insert("passOnLogs", {
+        legacyId: crypto.randomUUID(),
+        title: "Generator Watch",
+        instruction: "Monitor the backup generator noise level during rounds.",
+        priority: "normal",
+        siteLabel: "Lagos HQ",
+        checkpointId: checkpoint._id,
+        requiresAcknowledgement: true,
+        createdBy: guard._id,
+        active: true,
+        createdAt: Date.now(),
+      });
+    }
+
+    return { created: true };
+  },
+});

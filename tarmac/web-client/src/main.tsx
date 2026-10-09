@@ -1,0 +1,69 @@
+import * as Sentry from '@sentry/react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import { applyBrand } from './brand'
+import App from './App'
+import { initTheme } from './hooks/useTheme'
+
+applyBrand('Client Portal')
+
+// After a new deployment, a tab still running the old build asks for code
+// files that no longer exist (the server answers with the HTML page, hence
+// "'text/html' is not a valid JavaScript MIME type"). Reload once to pick up
+// the new build instead of showing an error. The session guard stops a loop
+// if the reload doesn't help.
+window.addEventListener('vite:preloadError', (event) => {
+  const key = 'reloaded-for-new-build'
+  if (sessionStorage.getItem(key)) return
+  sessionStorage.setItem(key, '1')
+  event.preventDefault()
+  window.location.reload()
+})
+window.addEventListener('load', () => {
+  setTimeout(() => sessionStorage.removeItem('reloaded-for-new-build'), 10000)
+})
+
+// Without a DSN the SDK still installs its global handlers and queues events
+// that go nowhere, so stay off entirely rather than pretending to report.
+const sentryDsn = import.meta.env.VITE_SENTRY_DSN
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
+    // Preview and production deploy the same bundle, so without this every
+    // environment lands in one bucket and prod alerts drown in preview noise.
+    environment: import.meta.env.VITE_SENTRY_ENVIRONMENT ?? import.meta.env.MODE,
+    release: import.meta.env.VITE_SENTRY_RELEASE,
+    integrations: [
+      Sentry.browserTracingIntegration(),
+      // This portal is what a client logs into to see their own sites, guards
+      // and incident photos. Replay records the DOM, so it is masked at the
+      // source: we keep the click and navigation flow needed to reproduce a
+      // bug, and none of the data behind it.
+      Sentry.replayIntegration({
+        maskAllText: true,
+        maskAllInputs: true,
+        blockAllMedia: true,
+      }),
+    ],
+    // 100% tracing burns the 5k/month quota in days for no extra insight.
+    tracesSampleRate: 0.1,
+    replaysSessionSampleRate: 0,
+    replaysOnErrorSampleRate: 1.0,
+    sendDefaultPii: false,
+    beforeSend(event) {
+      // Tokens ride in query strings on a few endpoints (signed photo URLs),
+      // and a URL is attached to almost every event.
+      const scrub = (url?: string) =>
+        url?.replace(/([?&](token|access_token|refresh|key|sig)=)[^&]*/gi, '$1[redacted]')
+      if (event.request?.url) event.request.url = scrub(event.request.url)!
+      for (const crumb of event.breadcrumbs ?? []) {
+        if (typeof crumb.data?.url === 'string') crumb.data.url = scrub(crumb.data.url)
+      }
+      return event
+    },
+  })
+}
+
+initTheme()
+
+createRoot(document.getElementById('root')!).render(<App />)

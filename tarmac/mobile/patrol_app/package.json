@@ -1,0 +1,24 @@
+{
+  "name": "patrol-app-convex",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "convex:dev": "convex dev",
+    "convex:deploy": "convex deploy",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p convex/tsconfig.json"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "convex": "^1.25.4",
+    "jose": "^6.0.11",
+    "pdf-lib": "^1.17.1"
+  },
+  "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
+    "convex-test": "^0.0.55",
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.10"
+  }
+}
