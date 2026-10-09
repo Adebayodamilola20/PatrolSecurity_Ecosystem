@@ -28,6 +28,7 @@ function isRecentlySent(key: string): boolean {
 }
 
 import {
+  isEmailConfigured,
   getResendApiKey,
   getResendFromEmail,
   getTermiiApiKey,
@@ -392,3 +393,52 @@ export const sendMissedPatrolAlert = internalAction({
     };
   },
 });
+
+/**
+ * Late-scan alert email, sent once when the alert is raised. Email only: the
+ * Tarmac deployment has no SMS. Returns a short status for the dashboard.
+ */
+export const sendLateScanAlert = internalAction({
+  args: {
+    checkpointName: v.string(),
+    siteName: v.string(),
+    scheduledTime: v.string(),
+    detectedAt: v.string(),
+    guardNames: v.array(v.string()),
+    emailRecipients: v.array(v.string()),
+  },
+  handler: async (_ctx, args): Promise<string> => {
+    if (!isEmailConfigured()) return "email_not_configured";
+    if (args.emailRecipients.length === 0) return "no_recipients";
+    const guards = args.guardNames.join(", ") || "No guard posted";
+    const subject = `Not scanned: ${args.checkpointName} (due ${args.scheduledTime})`;
+    const text = [
+      `${args.checkpointName} at ${args.siteName} was due to be scanned at ${args.scheduledTime} WAT and has not been scanned.`,
+      `Posted: ${guards}`,
+      `Flagged at: ${args.detectedAt}`,
+      "The dashboard Alerts page shows how late it is until the scan arrives.",
+    ].join("\n");
+    const html = `
+      <div>
+        <h2>Not scanned on time</h2>
+        <p><strong>${escapeHtml(args.checkpointName)}</strong> at ${escapeHtml(args.siteName)} was due at <strong>${escapeHtml(args.scheduledTime)} WAT</strong> and has not been scanned.</p>
+        <p><strong>Posted:</strong> ${escapeHtml(guards)}</p>
+        <p><strong>Flagged at:</strong> ${escapeHtml(args.detectedAt)}</p>
+        <p>The dashboard Alerts page shows how late it is until the scan arrives.</p>
+      </div>
+    `;
+    const results = await Promise.all(
+      args.emailRecipients.map((recipient) =>
+        sendEmail({ recipient, subject, html, text }).catch(() => ({ success: false })),
+      ),
+    );
+    const sent = results.filter((r) => r.success).length;
+    return sent === results.length ? "sent" : sent > 0 ? "partially_sent" : "failed";
+  },
+});
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
+  );
+}

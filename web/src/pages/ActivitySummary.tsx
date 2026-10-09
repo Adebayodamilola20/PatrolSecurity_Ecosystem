@@ -20,6 +20,7 @@ const ACTIVITY_TYPES = [
   { value: 'visitor_check_out', label: 'Visitor Check-Out' },
   { value: 'truck_check_in', label: 'Truck Check-In' },
   { value: 'truck_check_out', label: 'Truck Check-Out' },
+  { value: 'late_scan', label: 'Late / Not Scanned' },
 ]
 
 export default function ActivitySummary() {

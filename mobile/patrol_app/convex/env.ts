@@ -30,6 +30,19 @@ export function getTermiiSenderId() {
  * SMS is optional per deployment. A company that does not use SMS (e.g. Tarmac)
  * simply has no TERMII_API_KEY, and every SMS is skipped instead of failing.
  */
+/** Email goes out only once Resend is set up; until then alerts stay on the dashboard. */
+export function isEmailConfigured() {
+  return Boolean(optionalEnv("RESEND_API_KEY") && optionalEnv("RESEND_FROM_EMAIL"));
+}
+
+/**
+ * Late-scan alerts (checkpoint not scanned by its start time). Tarmac turns
+ * this on with LATE_SCAN_ALERTS=on; deployments without it are unaffected.
+ */
+export function isLateScanAlertsEnabled() {
+  return optionalEnv("LATE_SCAN_ALERTS").toLowerCase() === "on";
+}
+
 export function isSmsConfigured() {
   return Boolean(optionalEnv("TERMII_API_KEY") && optionalEnv("TERMII_SENDER_ID"));
 }

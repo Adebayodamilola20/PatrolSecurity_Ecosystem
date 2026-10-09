@@ -21,6 +21,20 @@ function normalizeApiBase(rawUrl: string | undefined) {
   }
 }
 
+export interface LateScan {
+  id: string
+  checkpointName: string
+  siteName: string
+  serviceDate: string
+  scheduledTime: string
+  guardNames: string[]
+  status: 'open' | 'resolved' | 'missed'
+  lateMinutes: number | null
+  scannedAtWat: string | null
+  scannedByName: string | null
+  notificationStatus: string
+}
+
 export const API_BASE = normalizeApiBase(import.meta.env.VITE_API_URL)
 
 // VITE_API_URL lives in .env.local, which is gitignored and so never arrives
@@ -404,6 +418,12 @@ export const api = {
     updateStatus: (id: string, status: string) =>
       request<any>(`/incidents/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
     missedPatrols: () => request<any[]>('/incidents/missed-patrols'),
+  },
+  // Checkpoints not scanned by their start time (Nigerian time). Open ones
+  // carry a live lateMinutes; closed ones the final figure.
+  lateScans: {
+    list: (params?: { status?: 'open' | 'resolved' | 'missed'; date?: string }) =>
+      request<LateScan[]>(`/late-scans?${new URLSearchParams(params || {})}`),
   },
   missedPatrols: {
     list: (params?: Record<string, string>) =>

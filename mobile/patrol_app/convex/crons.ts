@@ -10,6 +10,16 @@ crons.interval(
   {},
 );
 
+// Late-scan alerts: checkpoints not scanned by their start time (WAT). Runs
+// every minute so one minute late is caught; does nothing unless
+// LATE_SCAN_ALERTS=on is set on the deployment.
+crons.interval(
+  "late scan alerts",
+  { minutes: 1 },
+  internal.lateScans.check,
+  {},
+);
+
 // Rate-limit / load-shedding counter rows expire within seconds-to-minutes of
 // their window closing. Sweep them off the hot path so the by_bucketKey lookups
 // every protected request makes stay fast and the table doesn't grow unbounded.

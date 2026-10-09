@@ -60,6 +60,7 @@ const activityType = v.union(
   v.literal("visitor_check_out"),
   v.literal("truck_check_in"),
   v.literal("truck_check_out"),
+  v.literal("late_scan"),
 );
 
 export default defineSchema({
@@ -331,6 +332,33 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_detectedAt", ["detectedAt"])
     .index("by_checkpointId_status", ["checkpointId", "status"]),
+
+  // One row per checkpoint per day (Nigerian date) when its start time passed
+  // without a scan. Lateness is computed live from scheduledAt while open, so
+  // the row is written once, not every minute.
+  lateScanAlerts: defineTable({
+    checkpointId: v.id("checkpoints"),
+    siteId: v.optional(v.id("sites")),
+    clientId: v.optional(v.id("clients")),
+    checkpointName: v.string(),
+    siteName: v.string(),
+    serviceDate: v.string(), // YYYY-MM-DD, WAT
+    scheduledTime: v.string(), // "09:00"
+    scheduledAt: v.number(),
+    detectedAt: v.number(),
+    guardIds: v.array(v.id("users")),
+    guardNames: v.array(v.string()),
+    // open: still not scanned. resolved: scanned late. missed: the day ended
+    // with no scan at all.
+    status: v.union(v.literal("open"), v.literal("resolved"), v.literal("missed")),
+    scannedAt: v.optional(v.number()),
+    scannedBy: v.optional(v.id("users")),
+    lateMinutes: v.optional(v.number()),
+    notificationStatus: v.string(),
+  })
+    .index("by_checkpointId_serviceDate", ["checkpointId", "serviceDate"])
+    .index("by_status", ["status"])
+    .index("by_serviceDate", ["serviceDate"]),
 
   officerPositions: defineTable({
     legacyId: v.optional(v.string()),

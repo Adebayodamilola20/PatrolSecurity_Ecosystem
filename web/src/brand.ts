@@ -46,4 +46,6 @@ export const features = {
   handovers: !isTarmac,
   // Admin-uploaded personnel pictures (needs the Tarmac backend's "profile" photo kind).
   profilePhotos: isTarmac,
+  // "Not scanned by start time" alerts (needs LATE_SCAN_ALERTS=on on the backend).
+  lateScanAlerts: isTarmac,
 }

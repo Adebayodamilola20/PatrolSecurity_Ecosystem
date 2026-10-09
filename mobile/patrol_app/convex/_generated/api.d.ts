@@ -25,6 +25,7 @@ import type * as health from "../health.js";
 import type * as http from "../http.js";
 import type * as importer from "../importer.js";
 import type * as incidents from "../incidents.js";
+import type * as lateScans from "../lateScans.js";
 import type * as lib_anonymize from "../lib/anonymize.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_authHelpers from "../lib/authHelpers.js";
@@ -87,6 +88,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   importer: typeof importer;
   incidents: typeof incidents;
+  lateScans: typeof lateScans;
   "lib/anonymize": typeof lib_anonymize;
   "lib/auth": typeof lib_auth;
   "lib/authHelpers": typeof lib_authHelpers;

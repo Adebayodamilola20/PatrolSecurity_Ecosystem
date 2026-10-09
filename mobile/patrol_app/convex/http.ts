@@ -43,6 +43,7 @@ const ACTIVITY_TYPES = [
   "visitor_check_out",
   "truck_check_in",
   "truck_check_out",
+  "late_scan",
 ] as const;
 
 const INCIDENT_CATEGORIES = [
@@ -2219,6 +2220,30 @@ http.route({
       return forbidden("Supervisor access required");
     }
     return json(await ctx.runAction(internal.missedPatrolScheduler.checkAndNotify, {}));
+  }),
+});
+
+// Checkpoints not scanned by their start time (see lateScans.ts).
+http.route({
+  path: "/late-scans",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    if (user.role === "guard") {
+      return forbidden("Supervisor access required");
+    }
+    const url = new URL(request.url);
+    const status = url.searchParams.get("status");
+    const date = url.searchParams.get("date");
+    return json(
+      await ctx.runQuery(internal.lateScans.list, {
+        status: status === "open" || status === "resolved" || status === "missed" ? status : undefined,
+        serviceDate: date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : undefined,
+        clientId: user.role === "admin" ? undefined : (_cid(user.clientId)),
+        limit: Number(url.searchParams.get("limit") ?? 100),
+      }),
+    );
   }),
 });
 

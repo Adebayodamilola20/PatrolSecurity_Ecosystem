@@ -11,6 +11,7 @@ import type { Checkpoint } from '../types'
 import { CardSkeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
 import { PageHeader } from '../components/ui/PageHeader'
+import { features } from '../brand'
 
 function escapeHtmlForPrint(text: string): string {
   return text
@@ -736,6 +737,9 @@ export default function Checkpoints() {
                   <label className="text-xs text-muted-foreground">Scheduled Time In</label>
                   <input type="time" value={form.scheduledTimeIn} onChange={e => setForm(f => ({ ...f, scheduledTimeIn: e.target.value }))}
                     className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+                  {features.lateScanAlerts && (
+                    <p className="mt-1 text-[11px] text-muted-foreground">Nigerian time. Flagged if not scanned by 1 minute past.</p>
+                  )}
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground">Scheduled Time Out</label>

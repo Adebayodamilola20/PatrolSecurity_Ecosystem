@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { AlertTriangle, AlertCircle, Info, Clock, ShieldAlert, User2, MapPin, MessageSquare, RefreshCw, Mail, Search, ChevronDown, Camera, ExternalLink } from 'lucide-react'
-import { api } from '../services/api'
+import { api, type LateScan } from '../services/api'
+import { features } from '../brand'
 import { CardSkeleton } from '../components/ui/Skeleton'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useAlertStore } from '../stores/useAlertStore'
@@ -30,13 +31,14 @@ export default function Alerts() {
   const userRole = useAuthStore((s) => s.user?.role)
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [missedPatrols, setMissedPatrols] = useState<MissedPatrol[]>([])
+  const [lateScans, setLateScans] = useState<LateScan[]>([])
   const [loading, setLoading] = useState(true)
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [severityFilter, setSeverityFilter] = useState<'all' | 'critical' | 'high' | 'medium' | 'low'>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'investigating' | 'resolved'>('all')
-  const [typeFilter, setTypeFilter] = useState<'all' | 'incidents' | 'missed'>('all')
+  const [typeFilter, setTypeFilter] = useState<'all' | 'incidents' | 'missed' | 'late'>('all')
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const setOpenIncidentCount = useAlertStore((s) => s.setOpenIncidentCount)
@@ -77,6 +79,11 @@ export default function Alerts() {
         api.observations.list().catch(() => []),
         api.emergency.active().catch(() => []),
       ])
+      if (features.lateScanAlerts) {
+        // Today in Nigerian time (UTC+1): open ones and today's late arrivals.
+        const today = new Date(Date.now() + 3_600_000).toISOString().slice(0, 10)
+        setLateScans(await api.lateScans.list({ date: today }).catch(() => []))
+      }
       setIncidents(incidentRows)
       setMissedPatrols(missedRows)
       setObservations(observationRows)
@@ -134,6 +141,23 @@ export default function Alerts() {
     const matchStatus = statusFilter === 'all' || statusFilter === 'open'
     return matchSearch && matchType && matchSeverity && matchStatus
   })
+
+  const filteredLate = lateScans
+    .filter((ls) => {
+      const matchSearch =
+        !q ||
+        ls.checkpointName.toLowerCase().includes(q) ||
+        ls.siteName.toLowerCase().includes(q) ||
+        ls.guardNames.some((n) => n.toLowerCase().includes(q))
+      const matchType = typeFilter === 'all' || typeFilter === 'late'
+      const matchStatus =
+        statusFilter === 'all' ||
+        (statusFilter === 'open' && ls.status === 'open') ||
+        (statusFilter === 'resolved' && ls.status !== 'open')
+      return matchSearch && matchType && severityFilter === 'all' && matchStatus
+    })
+    // Still-unscanned first, then the longest late.
+    .sort((a, b) => Number(b.status === 'open') - Number(a.status === 'open') || (b.lateMinutes ?? 0) - (a.lateMinutes ?? 0))
 
   return (
     <div className="space-y-5">
@@ -364,6 +388,7 @@ export default function Alerts() {
           <option value="all">All types</option>
           <option value="incidents">Incidents</option>
           <option value="missed">Missed patrols</option>
+          {features.lateScanAlerts && <option value="late">Late / not scanned</option>}
         </select>
         <select
           value={severityFilter}
@@ -402,8 +427,44 @@ export default function Alerts() {
           <CardSkeleton />
           <CardSkeleton />
         </div>
-      ) : (filteredMissed.length > 0 || filteredIncidents.length > 0) ? (
+      ) : (filteredLate.length > 0 || filteredMissed.length > 0 || filteredIncidents.length > 0) ? (
         <div className="space-y-3">
+          {filteredLate.map((ls) => {
+            const open = ls.status === 'open'
+            const title = open
+              ? `Not scanned — ${ls.checkpointName}`
+              : ls.status === 'missed'
+                ? `Not scanned all day — ${ls.checkpointName}`
+                : `Scanned late — ${ls.checkpointName}`
+            const detail = open
+              ? `Due ${ls.scheduledTime}. Not scanned since ${ls.scheduledTime} — ${ls.lateMinutes} min late.`
+              : ls.status === 'missed'
+                ? `Due ${ls.scheduledTime}. No scan was received that day.`
+                : `Due ${ls.scheduledTime}. Scanned at ${ls.scannedAtWat}${ls.scannedByName ? ` by ${ls.scannedByName}` : ''} — ${ls.lateMinutes} min late.`
+            return (
+              <div key={ls.id} className={`rounded-xl border bg-card p-4 flex items-start gap-3 ${open ? 'border-destructive/40' : 'border-border'}`}>
+                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${open ? 'bg-destructive/15 text-destructive' : 'bg-warning/15 text-warning'}`}>
+                  <Clock className="h-5 w-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-medium">{title}</div>
+                    {ls.lateMinutes != null && (
+                      <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase ${open ? 'bg-destructive/15 text-destructive' : 'bg-warning/15 text-warning'}`}>
+                        {ls.lateMinutes} min late
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-1 text-sm text-muted-foreground">{detail}</div>
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {ls.siteName}</span>
+                    <span className="flex items-center gap-1"><User2 className="h-3 w-3" /> {ls.guardNames.join(', ') || 'No guard posted'}</span>
+                    <span className="flex items-center gap-1"><Mail className="h-3 w-3" /> {ls.notificationStatus.replaceAll('_', ' ')}</span>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
           {filteredMissed.map((mp, i) => {
             const Icon = ShieldAlert
             const type = mp.type || (mp.lastScanAt || mp.lastScan ? 'overdue' : 'never_scanned')
@@ -558,7 +619,7 @@ export default function Alerts() {
         </div>
       ) : (
         <div className="rounded-xl border border-border bg-card p-8 text-center text-muted-foreground">
-          {incidents.length > 0 || missedPatrols.length > 0
+          {incidents.length > 0 || missedPatrols.length > 0 || lateScans.length > 0
             ? 'No alerts match your filters.'
             : 'No alerts at this time'}
         </div>

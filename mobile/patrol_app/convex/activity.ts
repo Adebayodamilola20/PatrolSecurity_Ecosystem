@@ -15,6 +15,7 @@ const activityType = v.union(
   v.literal("visitor_check_out"),
   v.literal("truck_check_in"),
   v.literal("truck_check_out"),
+  v.literal("late_scan"),
 );
 
 export const record = internalMutation({
