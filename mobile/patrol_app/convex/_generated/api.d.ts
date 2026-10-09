@@ -35,6 +35,7 @@ import type * as lib_httpAuth from "../lib/httpAuth.js";
 import type * as lib_jwt from "../lib/jwt.js";
 import type * as lib_phone from "../lib/phone.js";
 import type * as lib_photoRefs from "../lib/photoRefs.js";
+import type * as lib_places from "../lib/places.js";
 import type * as lib_rateLimiter from "../lib/rateLimiter.js";
 import type * as lib_reportTemplates from "../lib/reportTemplates.js";
 import type * as lib_scope from "../lib/scope.js";
@@ -96,6 +97,7 @@ declare const fullApi: ApiFromModules<{
   "lib/jwt": typeof lib_jwt;
   "lib/phone": typeof lib_phone;
   "lib/photoRefs": typeof lib_photoRefs;
+  "lib/places": typeof lib_places;
   "lib/rateLimiter": typeof lib_rateLimiter;
   "lib/reportTemplates": typeof lib_reportTemplates;
   "lib/scope": typeof lib_scope;

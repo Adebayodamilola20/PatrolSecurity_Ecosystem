@@ -60,6 +60,8 @@ export const getSafeProfile = internalQuery({
       clientId: user.clientId,
       clientName: client?.name ?? null,
       liveTracking: user.liveTracking,
+      // Storage ref; the HTTP layer swaps it for a signed URL.
+      photoUrl: user.photoStorageId ?? null,
       siteIds: assignments.map((assignment) => assignment.siteId),
       clientIds: [...clientIds],
     };
@@ -145,6 +147,7 @@ export const listAll = internalQuery({
         clientName: client?.name ?? null,
         assignedSiteNames,
         liveTracking: u.liveTracking,
+        photoUrl: u.photoStorageId ?? null,
         createdAt: new Date(u.createdAt).toISOString(),
         onDuty: !!activeShift,
         liveLatitude: livePosition?.latitude ?? null,
@@ -182,6 +185,7 @@ export const create = internalMutation({
     liveTracking: v.boolean(),
     createdAt: v.number(),
     legacyId: v.optional(v.string()),
+    photoStorageId: v.optional(v.id("_storage")),
   },
   handler: async (ctx, args) => {
     const id = await ctx.db.insert("users", args);
@@ -415,6 +419,7 @@ export const getDetail = internalQuery({
       clientId: found.clientId,
       clientName: client?.name ?? null,
       liveTracking: found.liveTracking,
+      photoUrl: found.photoStorageId ?? null,
       createdAt: new Date(found.createdAt).toISOString(),
       onDuty,
       assignedLocations,
@@ -483,6 +488,8 @@ export const updateProfile = internalMutation({
     ),
     active: v.optional(v.boolean()),
     liveTracking: v.optional(v.boolean()),
+    // A new profile photo, or null to remove the current one.
+    photoStorageId: v.optional(v.union(v.id("_storage"), v.null())),
   },
   handler: async (ctx, args) => {
     const { userId, ...fields } = args;
@@ -521,6 +528,22 @@ export const updateProfile = internalMutation({
     if (fields.role) patch.role = fields.role;
     if (fields.active != null) patch.active = fields.active;
     if (fields.liveTracking != null) patch.liveTracking = fields.liveTracking;
+    if (
+      fields.photoStorageId !== undefined &&
+      fields.photoStorageId !== (user.photoStorageId ?? null)
+    ) {
+      // The replaced photo is attached, so the orphan sweeper would never
+      // reclaim it; remove it here.
+      if (user.photoStorageId) {
+        const old = await ctx.db
+          .query("photoAssets")
+          .withIndex("by_storageId", (q) => q.eq("storageId", user.photoStorageId!))
+          .first();
+        if (old) await ctx.db.delete(old._id);
+        await ctx.storage.delete(user.photoStorageId);
+      }
+      patch.photoStorageId = fields.photoStorageId ?? undefined;
+    }
     await ctx.db.patch(userId, patch);
 
     const updated = await ctx.db.get(userId);
@@ -532,6 +555,7 @@ export const updateProfile = internalMutation({
       phone: updated?.phone,
       role: updated?.role,
       active: updated?.active,
+      photoUrl: updated?.photoStorageId ?? null,
     };
   },
 });

@@ -103,6 +103,8 @@ export default defineSchema({
     clientId: v.optional(v.id("clients")),
     liveTracking: v.boolean(),
     createdAt: v.number(),
+    // Profile photo set by an admin (Tarmac personnel pictures).
+    photoStorageId: v.optional(v.id("_storage")),
   })
     .index("by_legacyId", ["legacyId"])
     .index("by_email", ["email"])
@@ -892,6 +894,7 @@ export default defineSchema({
       v.literal("maintenance"),
       v.literal("post_order_proof"),
       v.literal("handover"),
+      v.literal("profile"),
     ),
     contentType: v.string(),
     sizeBytes: v.number(),

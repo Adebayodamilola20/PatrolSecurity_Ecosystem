@@ -44,4 +44,6 @@ export function applyBrand(surfaceTitle: string) {
 /** Features a company has switched off. Tarmac does not use shift handovers. */
 export const features = {
   handovers: !isTarmac,
+  // Admin-uploaded personnel pictures (needs the Tarmac backend's "profile" photo kind).
+  profilePhotos: isTarmac,
 }

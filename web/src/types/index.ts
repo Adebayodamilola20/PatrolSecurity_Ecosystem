@@ -5,6 +5,8 @@ export interface User {
   role: 'admin' | 'main_account' | 'supervisor' | 'guard'
   phone?: string
   active: boolean
+  /** Signed, short-lived URL of the profile picture, or null. */
+  photoUrl?: string | null
   onDuty?: boolean
   lastClockIn?: string | null
   lastClockOut?: string | null

@@ -57,6 +57,19 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Pulls the profile picture (and any admin edits) from the server.
+  /// Best effort: offline or failing, the stored user stays as it is.
+  Future<void> refreshProfile() async {
+    if (_user == null) return;
+    try {
+      final data = await ApiService.getMe();
+      final fresh = data['user'];
+      if (fresh is! Map<String, dynamic>) return;
+      _user = User.fromJson({..._user!.toJson(), ...fresh, 'id': _user!.id});
+      notifyListeners();
+    } catch (_) {}
+  }
+
   Future<void> logout() async {
     await ApiService.logout();
     await _storage.delete(key: _userStorageKey);

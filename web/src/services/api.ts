@@ -280,6 +280,22 @@ export const api = {
     // plain link would 401; callers get a Blob to hand to the browser.
     pdf: (id: string) => requestBlob(`/reports/${id}/pdf`),
   },
+  uploads: {
+    // Direct-to-storage upload, then the server inspects and claims it.
+    // Returns the storageId to put on the record.
+    photo: async (file: File, kind: 'profile') => {
+      const { uploadUrl } = await request<{ uploadUrl: string }>('/uploads/url', { method: 'POST' })
+      const put = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': file.type || 'image/jpeg' },
+        body: file,
+      })
+      if (!put.ok) throw new Error(`Photo upload failed (${put.status})`)
+      const { storageId } = await put.json()
+      await request('/uploads/claim', { method: 'POST', body: JSON.stringify({ storageId, kind }) })
+      return storageId as string
+    },
+  },
   users: {
     list: () => request<any[]>('/users'),
     get: (id: string) => request<any>(`/users/${id}`),

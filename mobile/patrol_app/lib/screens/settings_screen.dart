@@ -33,6 +33,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _loadSettings();
+    if (isTarmacApp) context.read<AuthProvider>().refreshProfile();
   }
 
   Future<void> _loadSettings() async {
@@ -64,6 +65,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             userName: user?.name,
             userRole: user?.role,
             userEmail: user?.email,
+            photoUrl: user?.photoUrl,
             scanCount: scan.totalScans,
             todayCount: scan.todayScans,
             accuracy: scan.totalScans > 0
@@ -290,6 +292,7 @@ class _ProfileHeader extends StatelessWidget {
   final String? userName;
   final String? userRole;
   final String? userEmail;
+  final String? photoUrl;
   final int scanCount;
   final int todayCount;
   final String accuracy;
@@ -298,6 +301,7 @@ class _ProfileHeader extends StatelessWidget {
     this.userName,
     this.userRole,
     this.userEmail,
+    this.photoUrl,
     required this.scanCount,
     required this.todayCount,
     required this.accuracy,
@@ -443,6 +447,17 @@ class _ProfileHeader extends StatelessWidget {
 
   /// Tarmac profile header: photo circle on the left, details beside it,
   /// and the three numbers on a clean strip underneath.
+  Widget _initialsText(String initials) => Center(
+        child: Text(
+          initials,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 26,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      );
+
   Widget _buildTarmac(String initials, String role) {
     return SliverAppBar(
       expandedHeight: 236,
@@ -477,15 +492,15 @@ class _ProfileHeader extends StatelessWidget {
                           color: const Color(0xFF2F5BD3),
                           border: Border.all(color: Colors.white, width: 3),
                         ),
-                        child: Center(
-                          child: Text(
-                            initials,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 26,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
+                        child: ClipOval(
+                          child: photoUrl != null
+                              ? Image.network(
+                                  photoUrl!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) =>
+                                      _initialsText(initials),
+                                )
+                              : _initialsText(initials),
                         ),
                       ),
                       const SizedBox(width: 16),

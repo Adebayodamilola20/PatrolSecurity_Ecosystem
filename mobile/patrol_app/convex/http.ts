@@ -233,6 +233,7 @@ const PHOTO_KINDS = [
   "maintenance",
   "post_order_proof",
   "handover",
+  "profile",
 ] as const;
 type PhotoKind = (typeof PHOTO_KINDS)[number];
 
@@ -301,6 +302,26 @@ async function attachPhotos(
       recordId,
     });
   }
+}
+
+/**
+ * Checks a profile photo before it is put on a user: it must be an unattached
+ * "profile" upload made by this admin. Returns an error message, or null.
+ */
+async function profilePhotoError(
+  ctx: any,
+  admin: { convexId: string },
+  storageId: string,
+): Promise<string | null> {
+  const asset = await ctx.runQuery(internal.photos.assetByStorageId, {
+    storageId: storageId as Id<"_storage">,
+  });
+  if (!asset) return "Photo was not uploaded";
+  if (asset.kind !== "profile") return "That upload is not a profile photo";
+  if (String(asset.uploadedBy) !== String(admin.convexId)) {
+    return "Photo belongs to another user";
+  }
+  return null;
 }
 
 /** Viewer shape the photo-ref resolver needs. */
@@ -3289,7 +3310,7 @@ http.route({ path: "/auth/me", method: "GET", handler: httpAction(async (ctx, re
   const user = await requireAuth(ctx, request, { allowClientPortal: true });
   if (!user) return unauthorized();
   const profile = await ctx.runQuery(internal.users.getSafeProfile, { userId: _uid(user.convexId) });
-  return json({ user: profile });
+  return json({ user: await withSignedPhotos(user, profile) });
 })});
 
 // Self-service password reset is deliberately not offered. Client logins are
@@ -3601,9 +3622,9 @@ http.route({ path: "/users", method: "GET", handler: httpAction(async (ctx, requ
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
   if (user.role !== "admin") return forbidden("Admin access required");
-  return json(await ctx.runQuery(internal.users.listAll, {
+  return json(await withSignedPhotos(user, await ctx.runQuery(internal.users.listAll, {
     clientId: undefined,
-  }));
+  })));
 })});
 
 http.route({ path: "/users", method: "POST", handler: httpAction(async (ctx, request) => {
@@ -3620,6 +3641,14 @@ http.route({ path: "/users", method: "POST", handler: httpAction(async (ctx, req
   if (!password) return badRequest("A password is required to create a user");
   const passwordError = passwordPolicyError(password);
   if (passwordError) return badRequest(passwordError);
+  const photoStorageId =
+    typeof body?.photoStorageId === "string" && body.photoStorageId.trim()
+      ? body.photoStorageId.trim()
+      : undefined;
+  if (photoStorageId) {
+    const photoError = await profilePhotoError(ctx, user, photoStorageId);
+    if (photoError) return badRequest(photoError);
+  }
   const passwordHash = await bcrypt.hash(password, 10);
   const clientId: Id<"clients"> | undefined =
     typeof body?.clientId === "string" && body.clientId.trim()
@@ -3630,7 +3659,9 @@ http.route({ path: "/users", method: "POST", handler: httpAction(async (ctx, req
     passwordHash, role: (["admin","main_account","supervisor","guard"].includes(String(body?.role)) ? String(body?.role) : "guard") as any, phone: String(body?.phone ?? ""),
     active: body?.active !== false, liveTracking: body?.liveTracking !== false,
     createdAt: Date.now(), clientId,
+    photoStorageId: photoStorageId as Id<"_storage"> | undefined,
   });
+  if (photoStorageId) await attachPhotos(ctx, user, [photoStorageId], "users", id as string);
   await recordAudit(ctx, user, "user.created", {
     targetType: "user", targetId: id as string,
     details: `Created user ${body?.name} with role ${body?.role}`,
@@ -3654,7 +3685,18 @@ http.route({ pathPrefix: "/users/", method: "PUT", handler: httpAction(async (ct
   const role = ["admin", "main_account", "supervisor", "guard"].includes(String(body?.role))
     ? (String(body?.role) as "admin" | "main_account" | "supervisor" | "guard")
     : undefined;
+  // A string sets a new photo, null removes it, absent leaves it alone.
+  let photoStorageId: Id<"_storage"> | null | undefined;
+  if (body?.photoStorageId === null) photoStorageId = null;
+  else if (typeof body?.photoStorageId === "string" && body.photoStorageId.trim()) {
+    photoStorageId = body.photoStorageId.trim() as Id<"_storage">;
+    const photoError = await profilePhotoError(ctx, user, photoStorageId);
+    if (photoError) return badRequest(photoError);
+  }
   try {
+    if (photoStorageId) {
+      await attachPhotos(ctx, user, [photoStorageId], "users", userId as string);
+    }
     const result = await ctx.runMutation(internal.users.updateProfile, {
       userId,
       name: body?.name != null ? String(body.name) : undefined,
@@ -3663,13 +3705,14 @@ http.route({ pathPrefix: "/users/", method: "PUT", handler: httpAction(async (ct
       role,
       active: typeof body?.active === "boolean" ? body.active : undefined,
       liveTracking: typeof body?.liveTracking === "boolean" ? body.liveTracking : undefined,
+      photoStorageId,
     });
     await recordAudit(ctx, user, "user.updated", {
       targetType: "user", targetId: userId as string,
       details: `Updated profile for ${result.name}`,
       ipAddress: requestIp(request),
     });
-    return json(result);
+    return json(await withSignedPhotos(user, result));
   } catch (err) {
     return badRequest(err instanceof Error ? err.message : "Could not update this profile");
   }
@@ -3709,7 +3752,7 @@ http.route({ pathPrefix: "/users/", method: "GET", handler: httpAction(async (ct
   if (user.role.trim().toLowerCase() !== "admin" && _uid(user.convexId) !== userId) {
     return forbidden("Access denied");
   }
-  return json(await ctx.runQuery(internal.users.getDetail, { userId }));
+  return json(await withSignedPhotos(user, await ctx.runQuery(internal.users.getDetail, { userId })));
 })});
 
 // Pre-flight for the delete confirmations: what a delete would remove, and

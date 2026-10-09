@@ -524,6 +524,18 @@ class ApiService {
     }
   }
 
+  /// The signed-in user's profile, including a fresh photo URL.
+  static Future<Map<String, dynamic>> getMe() async {
+    _ensureHttps();
+    final res = await _client
+        .get(Uri.parse('$baseUrl/auth/me'), headers: await _headers())
+        .timeout(_timeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _apiException(res, 'Failed to load profile');
+    }
+    return _decodeBody<Map<String, dynamic>>(res.body);
+  }
+
   static Future<Map<String, dynamic>> getShiftStatus() async {
     _ensureHttps();
     final res = await _client

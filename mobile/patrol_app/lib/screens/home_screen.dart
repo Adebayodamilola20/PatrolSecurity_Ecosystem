@@ -44,6 +44,7 @@ class _HomeScreenState extends State<HomeScreen> {
       context.read<ScanProvider>().loadCheckpoints();
       context.read<ShiftProvider>().loadStatus();
       context.read<DutyProvider>().load();
+      if (isTarmacApp) context.read<AuthProvider>().refreshProfile();
       _checkPassOnLogs();
       _pollEmergencies();
       // Ask for location the moment the guard lands in the app, not at the
@@ -1294,6 +1295,11 @@ class _DashboardTab extends StatelessWidget {
                 CircleAvatar(
                   radius: 24,
                   backgroundColor: AppTheme.primary,
+                  foregroundImage: auth.user?.photoUrl != null
+                      ? NetworkImage(auth.user!.photoUrl!)
+                      : null,
+                  onForegroundImageError:
+                      auth.user?.photoUrl != null ? (_, __) {} : null,
                   child: Text(
                     initials.isEmpty ? '?' : initials,
                     style: const TextStyle(

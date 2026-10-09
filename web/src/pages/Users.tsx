@@ -8,6 +8,8 @@ import type { User } from '../types'
 import { CardSkeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
 import { formatDate } from '../utils/format'
+import { Avatar, PhotoPicker } from '../components/ui/Avatar'
+import { features } from '../brand'
 
 export default function Users() {
   const navigate = useNavigate()
@@ -18,6 +20,7 @@ export default function Users() {
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'guard', phone: '', clientId: '', siteIds: [] as string[] })
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
+  const [photo, setPhoto] = useState<File | null>(null)
   const canManage = useCanManageUsers()
   const isMainAccount = useIsMainAccount()
   const [search, setSearch] = useState('')
@@ -75,8 +78,10 @@ export default function Users() {
       if (payload.siteIds.length === 0) {
         delete payload.siteIds
       }
+      if (photo) payload.photoStorageId = await api.uploads.photo(photo, 'profile')
       await api.users.create(payload)
       setShowForm(false)
+      setPhoto(null)
       setForm({ name: '', email: '', password: '', role: 'guard', phone: '', clientId: '', siteIds: [] })
       load()
     } catch (err: any) {
@@ -123,6 +128,9 @@ export default function Users() {
                 <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                   {formError}
                 </div>
+              )}
+              {features.profilePhotos && (
+                <PhotoPicker name={form.name} file={photo} onChange={setPhoto} onError={setFormError} />
               )}
               <div>
                 <label className="block text-xs text-muted-foreground mb-1">Full Name</label>
@@ -239,7 +247,11 @@ export default function Users() {
               className="rounded-xl border border-border bg-card p-4 text-left hover:bg-accent/30 transition-colors"
             >
               <div className="flex items-start gap-3">
-                <div className="h-12 w-12 rounded-full bg-gradient-to-br from-primary to-info" />
+                {features.profilePhotos ? (
+                  <Avatar name={o.name} src={o.photoUrl} size={48} />
+                ) : (
+                  <div className="h-12 w-12 rounded-full bg-gradient-to-br from-primary to-info" />
+                )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
                     <div className="font-semibold truncate">{o.name}</div>

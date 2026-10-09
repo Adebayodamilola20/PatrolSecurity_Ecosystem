@@ -10,6 +10,7 @@ export const photoKind = v.union(
   v.literal("maintenance"),
   v.literal("post_order_proof"),
   v.literal("handover"),
+  v.literal("profile"),
 );
 
 export const assetByStorageId = internalQuery({

@@ -6,6 +6,8 @@ import { subscribeToScans, subscribeToShiftUpdates } from '../services/websocket
 import { useCanManageUsers } from '../stores/useAuthStore'
 import { Skeleton } from '../components/ui/Skeleton'
 import { formatDate, formatDuration, formatLateStatus } from '../utils/format'
+import { Avatar, PhotoPicker } from '../components/ui/Avatar'
+import { features } from '../brand'
 
 type DeletionImpact = Awaited<ReturnType<typeof api.deletionImpact.user>>
 
@@ -52,6 +54,7 @@ export default function UserDetail() {
   const [editForm, setEditForm] = useState({ name: '', email: '', phone: '', role: 'guard', active: true })
   const [savingEdit, setSavingEdit] = useState(false)
   const [editError, setEditError] = useState('')
+  const [editPhoto, setEditPhoto] = useState<File | null>(null)
   // Password reset is a separate action from editing on purpose: it revokes
   // the account's live sessions, which is not something to do by accident
   // while correcting a phone number.
@@ -76,6 +79,7 @@ export default function UserDetail() {
       active: user.active !== false,
     })
     setEditError('')
+    setEditPhoto(null)
     setShowEdit(true)
   }
 
@@ -85,7 +89,9 @@ export default function UserDetail() {
     setSavingEdit(true)
     setEditError('')
     try {
-      await api.users.update(id, editForm)
+      const changes: any = { ...editForm }
+      if (editPhoto) changes.photoStorageId = await api.uploads.photo(editPhoto, 'profile')
+      await api.users.update(id, changes)
       setShowEdit(false)
       reload()
     } catch (err) {
@@ -284,6 +290,9 @@ export default function UserDetail() {
                 <X className="h-4 w-4" />
               </button>
             </div>
+            {features.profilePhotos && (
+              <PhotoPicker name={editForm.name} currentUrl={user.photoUrl} file={editPhoto} onChange={setEditPhoto} onError={setEditError} />
+            )}
             <label className="block text-xs text-muted-foreground">
               Name
               <input required value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
@@ -377,9 +386,13 @@ export default function UserDetail() {
       <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/15 text-primary">
-              <User2 className="h-7 w-7" />
-            </div>
+            {features.profilePhotos ? (
+              <Avatar name={user.name} src={user.photoUrl} size={72} />
+            ) : (
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/15 text-primary">
+                <User2 className="h-7 w-7" />
+              </div>
+            )}
             <div>
               <h1 className="text-2xl font-semibold">{user.name}</h1>
               <div className="mt-1 text-sm text-muted-foreground capitalize">{user.role}</div>
