@@ -1,3 +1,5 @@
+> ⛔ **THIS IS THE EVERGREEN SECURITY FOLDER** (`evergreen/`). Read `../PROJECT_BOUNDARY.md` before any change. Never edit or deploy `../tarmac/` from here.
+
 <!-- convex-ai-start -->
 
 This project uses [Convex](https://convex.dev) as its backend.

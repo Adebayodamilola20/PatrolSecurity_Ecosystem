@@ -1,4 +1,4 @@
-> ⛔ **THIS IS THE TARMAC SECURITY PROJECT.** Read `PROJECT_BOUNDARY.md` before any change. Never edit, deploy or run commands in the Evergreen folder (`/Users/macmini/PatrolSecurity_Ecosystem`) from here.
+> ⛔ **THIS IS THE TARMAC SECURITY FOLDER** (`tarmac/`). Read `../PROJECT_BOUNDARY.md` and `PROJECT_BOUNDARY.md` before any change. Never edit or deploy `../evergreen/` from here.
 
 <!-- convex-ai-start -->
 

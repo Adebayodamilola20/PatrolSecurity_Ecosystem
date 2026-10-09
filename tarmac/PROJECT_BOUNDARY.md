@@ -8,36 +8,21 @@
 | | |
 |---|---|
 | Company | **Tarmac Security Ltd** (client of Andril) |
-| This folder | `/Users/macmini/PatrolSecurity_Tarmac` |
-| Git branch | `feature/tarmac` |
-| Convex team / project | `Tarmac Security` / `tarmac-security` |
+| This folder | `tarmac/` in the PatrolSecurity_Ecosystem repo (locally `~/PatrolSecurity_Ecosystem/tarmac`) |
+| Git | lives on `main`; branch off `main` for each change, touch only `tarmac/` |
 | Convex **production** (live) | `unique-anteater-230` (Europe/Ireland) — app + websites point here |
 | Convex development (testing) | `gallant-crow-174` |
+| Vercel | `tarmac-admin` (root `tarmac/web`), `tarmac-clients` (root `tarmac/web-client`) |
 
-## Other projects that are OFF-LIMITS from here
-
-| Project | Folder | Backend | Rule |
-|---|---|---|---|
-| **Evergreen** (PatrolSecurity) | `/Users/macmini/PatrolSecurity_Ecosystem` | Convex `resilient-buffalo-226` (dev) / `harmless-pigeon-186` (prod), team "Stephen's team", project `patrol-monitoring` | **Never edit, build, deploy or run commands there while working on Tarmac.** |
-| Duplicate copy | `/Users/macmini/Desktop/PatrolSecurity_Ecosystem` | — | Never touch. |
-| Tarmac planning docs | `/Users/macmini/Projects/tarmac-portal` | none | Docs only. Edit only when asked to update Tarmac documents. |
+The Evergreen company lives in `../evergreen/`. The repo-wide rules are in `../PROJECT_BOUNDARY.md`.
 
 ## Hard rules
 
-1. **Change only the project the user named.** If the user says "Tarmac", every edit, command and deploy happens inside `/Users/macmini/PatrolSecurity_Tarmac`. If the user says "Evergreen", only inside `/Users/macmini/PatrolSecurity_Ecosystem`.
-2. **If the request does not say which project, ask first.** Never guess.
-3. **Never "also fix" the other project.** Even if the same bug exists in Evergreen, report it and wait. Do not apply it there.
-4. **Before any Convex command** (`convex dev`, `convex deploy`, `convex run`, `convex env set`), confirm the deployment it targets:
-   - run it from this folder only;
-   - check `CONVEX_DEPLOYMENT` in this folder's `.env.local` is the **Tarmac** deployment, never `resilient-buffalo-226` or `harmless-pigeon-186`;
-   - if unsure, stop and ask.
-5. **Before any web or app deploy** (Vercel, Play Store, APK), confirm it is the **Tarmac** project and points at the **Tarmac** backend URL.
-6. **Never copy secrets between projects.** Tarmac has its own `PATROL_JWT_SECRET` and `DEV_SEED_SECRET`. Never reuse Evergreen's.
-7. **Never copy data between projects** (users, guards, clients, scans, payments).
-8. **Git:** commit and push only to `feature/tarmac` (or branches made from it). Never push Tarmac work to Evergreen's `main` without the user's explicit OK.
-   - **Never open or merge a pull request from `feature/tarmac` into `main`.** `feature/tarmac` *is* the Tarmac project; it is deployed straight from that branch and never needs main. (PR #13 did this by mistake and was reverted in PR #15; PR #14 was closed.)
-   - **Never merge `main` into `feature/tarmac`.** Main contains the revert of #13, so merging it would delete Tarmac's work. Copy individual Evergreen fixes across with `git cherry-pick` instead.
-9. **Shared code changes** (anything Evergreen would also receive later, e.g. bug fixes in `convex/`) must stay safe for both companies: optional behaviour is controlled by environment settings, not by deleting features.
+1. **Change only this folder** when the user says "Tarmac". Never edit, build, deploy or run commands in `../evergreen/` while working on Tarmac. If the request does not say which company, ask first.
+2. **Never "also fix" Evergreen.** Report it and wait.
+3. **Before any Convex command**, run it from `tarmac/mobile/patrol_app` and check its `.env.local` names a Tarmac deployment (`gallant-crow-174` dev; `--prod` = `unique-anteater-230`). Never `resilient-buffalo-226` or `harmless-pigeon-186` (Evergreen).
+4. **Before any web or app deploy**, confirm it is a Tarmac project pointing at the Tarmac backend.
+5. **Never copy secrets or data** between Tarmac and Evergreen.
 
 ## Tarmac-specific decisions
 
