@@ -5,6 +5,7 @@ import '../providers/auth_provider.dart';
 import '../providers/duty_provider.dart';
 import '../providers/scan_provider.dart';
 import '../providers/shift_provider.dart';
+import '../utils/brand.dart';
 import '../utils/routes.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -76,31 +77,34 @@ class _SplashScreenState extends State<SplashScreen> {
     return Scaffold(
       body: Container(
         width: double.infinity,
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0xFF064E3B), Color(0xFF0F766E)],
+            colors: Brand.splashGradient,
           ),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: const Icon(
-                Icons.shield_outlined,
-                size: 64,
-                color: Colors.white,
+            Brand.mark(
+              size: 112,
+              fallback: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: const Icon(
+                  Icons.shield_outlined,
+                  size: 64,
+                  color: Colors.white,
+                ),
               ),
             ),
             const SizedBox(height: 24),
-            const Text(
-              'Patrol Command',
+            Text(
+              Brand.appName,
               style: TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
@@ -110,7 +114,7 @@ class _SplashScreenState extends State<SplashScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Security Patrol System',
+              Brand.tagline,
               style: TextStyle(
                 fontSize: 14,
                 color: Colors.white.withValues(alpha: 0.7),

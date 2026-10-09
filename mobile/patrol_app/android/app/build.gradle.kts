@@ -5,8 +5,13 @@ plugins {
     id("com.android.application")
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
-    // Firebase: applies google-services.json
-    id("com.google.gms.google-services")
+}
+
+// Firebase config is per company and never shared between them. Apply the
+// plugin only when this checkout has its own google-services.json, so a
+// company without Firebase (Tarmac) still builds.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
 }
 
 val keystoreProperties = Properties().apply {
@@ -49,6 +54,22 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+    }
+
+    // One codebase, one app per security company. Build with
+    // `flutter build apk --flavor tarmac` or `--flavor evergreen`.
+    flavorDimensions += "company"
+    productFlavors {
+        create("evergreen") {
+            dimension = "company"
+            applicationId = "com.patrol.patrol_app"
+            resValue("string", "app_name", "patrol_app")
+        }
+        create("tarmac") {
+            dimension = "company"
+            applicationId = "ng.tarmacsecurity.patrol"
+            resValue("string", "app_name", "Tarmac Security")
+        }
     }
 
     signingConfigs {

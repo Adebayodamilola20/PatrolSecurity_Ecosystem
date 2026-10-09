@@ -181,9 +181,9 @@ export function parseClockInRefusal(
  *   - **No postings.** A guard with no site assignment has no fence by
  *     definition; that is an admin gap to fix in the dashboard, not something
  *     the guard can resolve while standing in the street.
- *   - **Supervisors.** They roam between sites by design, and already hold
- *     cross-site trust everywhere else in this system. Their distance is still
- *     recorded, so the flag remains reviewable.
+ *   - (Evergreen only) **Supervisors.** On Evergreen they roam between sites
+ *     and are exempt. **Tarmac decision (2026-10-08): supervisors are fenced
+ *     exactly like guards**, so that exemption is disabled below.
  *
  * Everything measurable, for an actual guard, is refused past the radius plus
  * CLOCK_IN_GPS_GRACE_METERS.
@@ -192,7 +192,11 @@ function clockInGeofenceRefusal(
   role: string | undefined,
   geofence: ResolvedGeofence,
 ): Error | null {
-  if (role?.trim().toLowerCase() !== "guard") return null;
+  // Tarmac: supervisors are held to the same fence as guards.
+  // Evergreen's original rule exempted every role except "guard":
+  // if (role?.trim().toLowerCase() !== "guard") return null;
+  const fencedRole = role?.trim().toLowerCase();
+  if (fencedRole !== "guard" && fencedRole !== "supervisor") return null;
   if (geofence.gpsValid) return null;
   if (geofence.distanceMeters == null || geofence.radiusMeters == null) return null;
 

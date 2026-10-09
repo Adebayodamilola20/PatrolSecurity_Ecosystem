@@ -1,3 +1,4 @@
+import 'constants.dart' show isTarmacApp;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -97,7 +98,64 @@ class AppTheme {
     onboardingBorder: Color(0xFFD9E4DE),
   );
 
-  static _Palette get _p => isDark ? _dark : _light;
+  // Tarmac Security: black crest, royal blue (from tarmacsecurity.ng).
+  static const _Palette _tarmacLight = _Palette(
+    background: Color(0xFFF6F7FB),
+    card: Colors.white,
+    muted: Color(0xFFEFF1F7),
+    border: Color(0xFFDDE1EC),
+    text: Color(0xFF0F172A),
+    textSecondary: Color(0xFF8A93A8),
+    textFaint: Color(0xFFC6CCDA),
+    primary: Color(0xFF1E40AF),
+    primaryDark: Color(0xFF1E3A8A),
+    onPrimary: Colors.white,
+    primarySurface: Color(0xFFE8EDFC),
+    error: Color(0xFFF43F5E),
+    errorSurface: Color(0xFFFFE4E8),
+    verified: Color(0xFF10B981),
+    verifiedSurface: Color(0xFFD1FAE5),
+    flagged: Color(0xFFF59E0B),
+    flaggedSurface: Color(0xFFFEF3C7),
+    info: Color(0xFF3B82F6),
+    infoSurface: Color(0xFFDBEAFE),
+    onboardingBackground: Color(0xFFF4F5F9),
+    onboardingInk: Color(0xFF0B1220),
+    onboardingMuted: Color(0xFF6B7385),
+    onboardingTrack: Color(0xFFDDE2EE),
+    onboardingBorder: Color(0xFFD8DDE9),
+  );
+
+  static const _Palette _tarmacDark = _Palette(
+    background: Color(0xFF000000),
+    card: Color(0xFF111318),
+    muted: Color(0xFF1A1D24),
+    border: Color(0xFF292D36),
+    text: Color(0xFFF8FAFC),
+    textSecondary: Color(0xFF94A3B8),
+    textFaint: Color(0xFF64748B),
+    primary: Color(0xFF3B6FE0),
+    primaryDark: Color(0xFF7FA2F5),
+    onPrimary: Colors.white,
+    primarySurface: Color(0xFF111E3D),
+    error: Color(0xFFFB7185),
+    errorSurface: Color(0xFF35141C),
+    verified: Color(0xFF34D399),
+    verifiedSurface: Color(0xFF0B2B20),
+    flagged: Color(0xFFFBBF24),
+    flaggedSurface: Color(0xFF33270A),
+    info: Color(0xFF60A5FA),
+    infoSurface: Color(0xFF14263F),
+    onboardingBackground: Color(0xFFF4F5F9),
+    onboardingInk: Color(0xFF0B1220),
+    onboardingMuted: Color(0xFF6B7385),
+    onboardingTrack: Color(0xFFDDE2EE),
+    onboardingBorder: Color(0xFFD8DDE9),
+  );
+
+  static _Palette get _p => isTarmacApp
+      ? (isDark ? _tarmacDark : _tarmacLight)
+      : (isDark ? _dark : _light);
 
   static Color get surface => _p.background;
   static Color get card => _p.card;

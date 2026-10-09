@@ -33,6 +33,7 @@ import {
   getTermiiApiKey,
   getTermiiSenderId,
   getTermiiBaseUrl,
+  isSmsConfigured,
 } from "./env";
 import { normalizePhoneNumber } from "./lib/phone";
 
@@ -96,6 +97,16 @@ async function sendSms({
   recipient: string;
   message: string;
 }): Promise<DeliveryResult> {
+  if (!isSmsConfigured()) {
+    const result: DeliveryResult = {
+      provider: "termii",
+      recipient,
+      success: false,
+      error: "SMS is not enabled on this deployment",
+    };
+    console.log("[SMS_SKIPPED]", JSON.stringify(result));
+    return result;
+  }
   const apiKey = getTermiiApiKey();
   const senderId = getTermiiSenderId();
   const baseUrl = getTermiiBaseUrl();

@@ -26,6 +26,14 @@ export function getTermiiSenderId() {
   return requireEnv("TERMII_SENDER_ID");
 }
 
+/**
+ * SMS is optional per deployment. A company that does not use SMS (e.g. Tarmac)
+ * simply has no TERMII_API_KEY, and every SMS is skipped instead of failing.
+ */
+export function isSmsConfigured() {
+  return Boolean(optionalEnv("TERMII_API_KEY") && optionalEnv("TERMII_SENDER_ID"));
+}
+
 export function getTermiiBaseUrl() {
   // Termii's current host. The old api.ng.termii.com default is stale, and a
   // deployment that inherits it loses SMS silently rather than loudly.
@@ -132,8 +140,10 @@ export function getSentryRelease() {
 export function validateEnv() {
   getResendApiKey();
   getResendFromEmail();
-  getTermiiApiKey();
-  getTermiiSenderId();
+  if (isSmsConfigured()) {
+    getTermiiApiKey();
+    getTermiiSenderId();
+  }
   getJwtSecret();
   getConvexUrl();
 }

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Shield, Eye, EyeOff, Building2 } from 'lucide-react'
 import { useAuthStore } from '../stores/useAuthStore'
+import { brand, isTarmac } from '../brand'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -30,11 +31,19 @@ export default function Login() {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
+          {isTarmac ? (
+            <img src={brand.logo!} alt={`${brand.company} crest`} className="mx-auto mb-4 h-20 w-20 rounded-full shadow-lg" />
+          ) : (
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4 bg-primary shadow-lg shadow-primary/25">
             <Shield className="w-8 h-8 text-primary-foreground" />
           </div>
-          <h1 className="text-2xl font-bold text-foreground">SentryPatrol</h1>
-          <p className="text-sm text-muted-foreground mt-1">Company Security Control Center</p>
+          )}
+          <h1 className={`text-2xl font-bold text-foreground ${isTarmac ? 'brand-serif' : ''}`}>
+            {isTarmac ? brand.name : 'SentryPatrol'}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {isTarmac ? 'Operations Portal' : 'Company Security Control Center'}
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="rounded-xl border border-border bg-card p-6 space-y-4 shadow-xl">
@@ -51,7 +60,7 @@ export default function Login() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@securecorp.com"
+              placeholder={isTarmac ? "you@tarmacsecurity.ng" : "admin@securecorp.com"}
               className="w-full px-3 py-2.5 rounded-lg text-sm bg-background border border-input focus:outline-none focus:ring-2 focus:ring-ring/50 placeholder:text-muted-foreground"
             />
           </div>

@@ -4,6 +4,7 @@ import '../providers/auth_provider.dart';
 import '../providers/duty_provider.dart';
 import '../providers/scan_provider.dart';
 import '../providers/shift_provider.dart';
+import '../utils/brand.dart';
 import '../utils/routes.dart';
 import '../utils/theme.dart';
 
@@ -277,17 +278,20 @@ class _LoginBrand extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Container(
-          width: 38,
-          height: 38,
-          decoration: BoxDecoration(
-            color: AppTheme.primary,
-            borderRadius: BorderRadius.circular(13),
-          ),
-          child: Icon(
-            Icons.shield_rounded,
-            color: AppTheme.text,
-            size: 23,
+        Brand.mark(
+          size: 38,
+          fallback: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: AppTheme.primary,
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: Icon(
+              Icons.shield_rounded,
+              color: AppTheme.text,
+              size: 23,
+            ),
           ),
         ),
         const SizedBox(width: 11),
@@ -295,7 +299,7 @@ class _LoginBrand extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'PATROL COMMAND',
+              Brand.appNameCaps,
               style: TextStyle(
                 color: AppTheme.text,
                 fontSize: 13,
@@ -305,7 +309,7 @@ class _LoginBrand extends StatelessWidget {
             ),
             SizedBox(height: 3),
             Text(
-              'SECURITY OPERATIONS',
+              Brand.taglineCaps,
               style: TextStyle(
                 color: AppTheme.textSecondary,
                 fontSize: 9,
@@ -372,10 +376,13 @@ class _LoginHero extends StatelessWidget {
                     shape: BoxShape.circle,
                     border: Border.all(color: AppTheme.card, width: 5),
                   ),
-                  child: Icon(
-                    Icons.shield_outlined,
-                    color: AppTheme.primaryDark,
-                    size: 48,
+                  child: Brand.mark(
+                    size: 78,
+                    fallback: Icon(
+                      Icons.shield_outlined,
+                      color: AppTheme.primaryDark,
+                      size: 48,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 18),
