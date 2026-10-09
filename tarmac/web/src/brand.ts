@@ -48,4 +48,6 @@ export const features = {
   profilePhotos: isTarmac,
   // "Not scanned by start time" alerts (needs LATE_SCAN_ALERTS=on on the backend).
   lateScanAlerts: isTarmac,
+  // Finance package pages (payments, partners, payroll…), Tarmac only.
+  finance: isTarmac,
 }

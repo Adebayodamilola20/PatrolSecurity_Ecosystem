@@ -10,6 +10,13 @@ declare module 'lucide-react' {
   export const AlertTriangle: LucideIcon
   export const ArrowLeft: LucideIcon
   export const Activity: LucideIcon
+  export const PieChart: LucideIcon
+  export const Banknote: LucideIcon
+  export const IdCard: LucideIcon
+  export const Wallet: LucideIcon
+  export const Receipt: LucideIcon
+  export const Handshake: LucideIcon
+  export const Landmark: LucideIcon
   export const BarChart3: LucideIcon
   export const Bell: LucideIcon
   export const Bot: LucideIcon
