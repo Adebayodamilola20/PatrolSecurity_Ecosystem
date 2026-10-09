@@ -2334,78 +2334,90 @@ class _TarmacDutyCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          Row(
+          Wrap(
+            spacing: 22,
+            runSpacing: 8,
             children: [
               _TarmacMiniStat(value: '$scansToday', label: 'Scans today'),
-              const SizedBox(width: 22),
               _TarmacMiniStat(value: '$postOrders', label: 'Post orders'),
             ],
           ),
           const SizedBox(height: 18),
           // Both actions always visible: scanning before clock-in explains
           // that the shift has to start first instead of hiding the button.
-          Row(
-            children: [
-              Expanded(
-                child: SizedBox(
-                  height: 50,
-                  child: FilledButton.icon(
-                    onPressed: canPatrol ? onScan : null,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: Brand.tarmacBlue,
-                      disabledBackgroundColor: Colors.white24,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    icon: const Icon(Icons.qr_code_scanner_rounded),
-                    label: const Text(
-                      'Scan',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                      ),
+          // Side by side on normal phones; stacked full-width on narrow ones
+          // (cheap Androids around 320px wide) so nothing gets cut off.
+          LayoutBuilder(
+            builder: (context, box) {
+              final scanButton = SizedBox(
+                height: 50,
+                child: FilledButton.icon(
+                  onPressed: canPatrol ? onScan : null,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Brand.tarmacBlue,
+                    disabledBackgroundColor: Colors.white24,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
                     ),
                   ),
+                  icon: const Icon(Icons.qr_code_scanner_rounded),
+                  label: const Text(
+                    'Scan',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: SizedBox(
-                  height: 50,
-                  child: OutlinedButton.icon(
-                    onPressed: loading ? null : onClockToggle,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      side: const BorderSide(color: Colors.white70, width: 1.4),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
+              );
+              final clockButton = SizedBox(
+                height: 50,
+                child: OutlinedButton.icon(
+                  onPressed: loading ? null : onClockToggle,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: Colors.white70, width: 1.4),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
                     ),
-                    icon: loading
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : Icon(
-                            onDuty ? Icons.logout_rounded : Icons.login_rounded,
+                  ),
+                  icon: loading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
                           ),
-                    label: Text(
-                      onDuty ? 'Clock out' : 'Clock in',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                      ),
+                        )
+                      : Icon(
+                          onDuty ? Icons.logout_rounded : Icons.login_rounded,
+                        ),
+                  label: Text(
+                    onDuty ? 'Clock out' : 'Clock in',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
                     ),
                   ),
                 ),
-              ),
-            ],
+              );
+              if (box.maxWidth < 300) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    scanButton,
+                    const SizedBox(height: 10),
+                    clockButton,
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: scanButton),
+                  const SizedBox(width: 10),
+                  Expanded(child: clockButton),
+                ],
+              );
+            },
           ),
         ],
       ),
