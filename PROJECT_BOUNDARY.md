@@ -10,7 +10,9 @@
 | Company | **Tarmac Security Ltd** (client of Andril) |
 | This folder | `/Users/macmini/PatrolSecurity_Tarmac` |
 | Git branch | `feature/tarmac` |
-| Convex team / project | `Tarmac Security` / `tarmac-security` (its own deployment) |
+| Convex team / project | `Tarmac Security` / `tarmac-security` |
+| Convex **production** (live) | `unique-anteater-230` (Europe/Ireland) — app + websites point here |
+| Convex development (testing) | `gallant-crow-174` |
 
 ## Other projects that are OFF-LIMITS from here
 

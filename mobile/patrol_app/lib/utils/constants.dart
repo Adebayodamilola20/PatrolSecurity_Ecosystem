@@ -17,7 +17,7 @@ const String _apiBaseUrlOverride = String.fromEnvironment('API_BASE_URL');
 String get baseUrl {
   if (_apiBaseUrlOverride.isNotEmpty) return _apiBaseUrlOverride;
   return isTarmacApp
-      ? 'https://gallant-crow-174.convex.site/api/v1'
+      ? 'https://unique-anteater-230.eu-west-1.convex.site/api/v1' // Tarmac production
       : 'https://harmless-pigeon-186.convex.site/api/v1';
 }
 const String defaultPassword = '123456';

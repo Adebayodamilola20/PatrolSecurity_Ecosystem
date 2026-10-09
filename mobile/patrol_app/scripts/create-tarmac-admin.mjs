@@ -1,4 +1,5 @@
-// Create the first Tarmac admin login on the TARMAC Convex deployment only.
+// Create the first Tarmac admin login on the TARMAC *production* deployment
+// (unique-anteater-230). Must be run from this Tarmac folder.
 // Usage (from mobile/patrol_app):  node scripts/create-tarmac-admin.mjs
 // The password is typed by you, hashed locally, and never printed or stored.
 import { readFileSync } from "node:fs";
@@ -6,7 +7,10 @@ import { execFileSync } from "node:child_process";
 import { createInterface } from "node:readline";
 import bcrypt from "bcryptjs";
 
+// This folder's linked dev deployment proves it is the Tarmac project; the
+// account itself is created on that project's production deployment.
 const TARMAC_DEPLOYMENT = "gallant-crow-174";
+const TARMAC_PROD = "unique-anteater-230";
 
 const envLocal = readFileSync(new URL("../.env.local", import.meta.url), "utf8");
 const deployment = /CONVEX_DEPLOYMENT=([^\s#]+)/.exec(envLocal)?.[1] ?? "";
@@ -65,5 +69,6 @@ const args = JSON.stringify({
   name, email, phone, passwordHash,
   role: "admin", active: true, liveTracking: false, createdAt: Date.now(),
 });
-execFileSync("npx", ["convex", "run", "users:create", args], { stdio: ["ignore", "inherit", "inherit"] });
+console.log(`Creating on Tarmac production (${TARMAC_PROD})...`);
+execFileSync("npx", ["convex", "run", "--prod", "users:create", args], { stdio: ["ignore", "inherit", "inherit"] });
 console.log(`\nTarmac admin created: ${email}\nLog in at https://tarmac-admin.vercel.app`);
