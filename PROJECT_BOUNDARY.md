@@ -35,6 +35,8 @@
 6. **Never copy secrets between projects.** Tarmac has its own `PATROL_JWT_SECRET` and `DEV_SEED_SECRET`. Never reuse Evergreen's.
 7. **Never copy data between projects** (users, guards, clients, scans, payments).
 8. **Git:** commit and push only to `feature/tarmac` (or branches made from it). Never push Tarmac work to Evergreen's `main` without the user's explicit OK.
+   - **Never open or merge a pull request from `feature/tarmac` into `main`.** `feature/tarmac` *is* the Tarmac project; it is deployed straight from that branch and never needs main. (PR #13 did this by mistake and was reverted in PR #15; PR #14 was closed.)
+   - **Never merge `main` into `feature/tarmac`.** Main contains the revert of #13, so merging it would delete Tarmac's work. Copy individual Evergreen fixes across with `git cherry-pick` instead.
 9. **Shared code changes** (anything Evergreen would also receive later, e.g. bug fixes in `convex/`) must stay safe for both companies: optional behaviour is controlled by environment settings, not by deleting features.
 
 ## Tarmac-specific decisions
