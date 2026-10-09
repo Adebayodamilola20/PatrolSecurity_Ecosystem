@@ -16,7 +16,6 @@ import {
   Smartphone,
 } from 'lucide-react'
 import { useClientAuthStore } from '../stores/useClientAuthStore'
-import { brand, isTarmac } from '../brand'
 
 const TRUST_POINTS = [
   { icon: Radar, label: 'Real-time patrol visibility' },
@@ -62,20 +61,18 @@ export default function Login() {
         className="relative hidden overflow-hidden p-12 text-white lg:flex lg:flex-col lg:justify-between"
         style={{
           background:
-            isTarmac
-              ? 'linear-gradient(150deg, #040507 0%, #0f172a 52%, #1e3a8a 100%)'
-              : 'linear-gradient(150deg, #042f2e 0%, #0d5c56 48%, #0e7490 100%)',
+            'linear-gradient(150deg, #042f2e 0%, #0d5c56 48%, #0e7490 100%)',
         }}
       >
         {/* ambient aurora glows */}
         <div
           className="lp-aurora pointer-events-none absolute -left-24 -top-24 h-96 w-96 rounded-full blur-3xl"
-          style={{ background: isTarmac ? 'radial-gradient(circle, rgba(59,130,246,0.30), transparent 70%)' : 'radial-gradient(circle, rgba(45,212,191,0.35), transparent 70%)' }}
+          style={{ background: 'radial-gradient(circle, rgba(45,212,191,0.35), transparent 70%)' }}
         />
         <div
           className="lp-aurora pointer-events-none absolute -bottom-32 right-0 h-[28rem] w-[28rem] rounded-full blur-3xl"
           style={{
-            background: isTarmac ? 'radial-gradient(circle, rgba(96,165,250,0.22), transparent 70%)' : 'radial-gradient(circle, rgba(34,211,238,0.28), transparent 70%)',
+            background: 'radial-gradient(circle, rgba(34,211,238,0.28), transparent 70%)',
             animationDelay: '-6s',
           }}
         />
@@ -90,16 +87,12 @@ export default function Login() {
         />
 
         {/* brand mark — clickable, because this page has no nav of its own */}
-        <Link to={isTarmac ? '/login' : '/'} className="lp-fade relative flex w-fit items-center gap-2.5 rounded-lg transition-opacity hover:opacity-80">
-          {isTarmac ? (
-            <img src={brand.logo!} alt="" className="h-9 w-9 rounded-full ring-1 ring-white/20" />
-          ) : (
-            <span className="grid h-9 w-9 place-items-center rounded-lg bg-white/10 ring-1 ring-white/20 backdrop-blur">
-              <ShieldCheck className="h-5 w-5 text-teal-300" />
-            </span>
-          )}
+        <Link to="/" className="lp-fade relative flex w-fit items-center gap-2.5 rounded-lg transition-opacity hover:opacity-80">
+          <span className="grid h-9 w-9 place-items-center rounded-lg bg-white/10 ring-1 ring-white/20 backdrop-blur">
+            <ShieldCheck className="h-5 w-5 text-teal-300" />
+          </span>
           <div className="leading-tight">
-            <p className="text-sm font-semibold tracking-tight">{brand.company}</p>
+            <p className="text-sm font-semibold tracking-tight">Evergreen Security</p>
             <p className="text-[11px] text-teal-200/80">Client Portal</p>
           </div>
         </Link>
@@ -109,13 +102,9 @@ export default function Login() {
           {/* floating shield with pulse */}
           <div className="lp-fade-up relative mb-8 h-16 w-16" style={{ animationDelay: '0.05s' }}>
             <span className="lp-pulse-ring absolute inset-0 rounded-2xl bg-teal-400/40" />
-            {isTarmac ? (
-              <img src={brand.logo!} alt="" className="lp-float relative h-16 w-16 rounded-full ring-1 ring-white/25" />
-            ) : (
-              <span className="lp-float relative grid h-16 w-16 place-items-center rounded-2xl bg-white/10 ring-1 ring-white/25 backdrop-blur">
-                <ShieldCheck className="h-8 w-8 text-teal-300" />
-              </span>
-            )}
+            <span className="lp-float relative grid h-16 w-16 place-items-center rounded-2xl bg-white/10 ring-1 ring-white/25 backdrop-blur">
+              <ShieldCheck className="h-8 w-8 text-teal-300" />
+            </span>
           </div>
           <h1
             className="lp-fade-up text-4xl font-semibold leading-[1.1] tracking-tight"
@@ -155,36 +144,22 @@ export default function Login() {
         <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-teal-500/10 blur-[100px]" />
 
         {/* There is no nav on this route, so leaving is a dead end without it. */}
-        {isTarmac ? (
-          <a
-            href={brand.website!}
-            className="relative z-10 inline-flex w-fit items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-slate-900"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to tarmacsecurity.ng
-          </a>
-        ) : (
-          <Link
-            to="/"
-            className="relative z-10 inline-flex w-fit items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-slate-900"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to site
-          </Link>
-        )}
+        <Link
+          to="/"
+          className="relative z-10 inline-flex w-fit items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-slate-900"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to site
+        </Link>
 
         <div className="relative z-10 flex flex-1 items-center justify-center py-8">
           <div className="w-full max-w-[26rem]">
             {/* brand mark — shown on mobile where the panel is hidden */}
             <div className="lp-fade-up mb-6 flex flex-col items-center text-center lg:hidden">
-              {isTarmac ? (
-                <img src={brand.logo!} alt="" className="mb-3 h-12 w-12 rounded-full" />
-              ) : (
-                <span className="mb-3 grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-teal-600 to-cyan-500 shadow-[0_8px_20px_rgba(20,184,166,0.35)]">
-                  <ShieldCheck className="h-6 w-6 text-white" />
-                </span>
-              )}
-              <p className="text-sm font-semibold text-slate-900">{brand.company}</p>
+              <span className="mb-3 grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-teal-600 to-cyan-500 shadow-[0_8px_20px_rgba(20,184,166,0.35)]">
+                <ShieldCheck className="h-6 w-6 text-white" />
+              </span>
+              <p className="text-sm font-semibold text-slate-900">Evergreen Security</p>
               <p className="text-xs text-slate-500">Client Portal</p>
             </div>
 
@@ -280,22 +255,16 @@ export default function Login() {
                   "Forgot password?" link would lead nowhere. Point at a human. */}
               <p className="mt-6 border-t border-slate-100 pt-5 text-center text-xs text-slate-500">
                 Trouble signing in?{' '}
-                {isTarmac ? (
-                  <a href={brand.website!} className="font-medium text-teal-600 transition-colors hover:text-teal-700">
-                    Contact Tarmac Security
-                  </a>
-                ) : (
-                  <Link to="/contact" className="font-medium text-teal-600 transition-colors hover:text-teal-700">
-                    Contact your account manager
-                  </Link>
-                )}
+                <Link to="/contact" className="font-medium text-teal-600 transition-colors hover:text-teal-700">
+                  Contact your account manager
+                </Link>
               </p>
             </div>
 
             {/* Guards land here by mistake often enough to be worth a line. */}
             <p className="lp-fade mt-5 flex items-center justify-center gap-2 text-center text-xs text-slate-400" style={{ animationDelay: '0.4s' }}>
               <Smartphone className="h-3.5 w-3.5 shrink-0" />
-              This portal is for clients. Guards sign in on the {brand.appName}.
+              This portal is for clients. Guards sign in on the Evergreen app.
             </p>
           </div>
         </div>

@@ -8,7 +8,6 @@ import Login from './pages/Login'
 import Overview from './pages/Overview'
 import { useClientAuthStore } from './stores/useClientAuthStore'
 import { useIdleLogout } from './hooks/useIdleLogout'
-import { isTarmac } from './brand'
 
 // Analytics pulls in the charting library; loading it on demand keeps it out
 // of the bundle every other page pays for.
@@ -52,12 +51,6 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Tarmac's portal has no marketing site: the front door is the
-            sign-in page. Evergreen keeps its public site. */}
-        {isTarmac ? (
-          <Route path="/" element={<Navigate to="/login" replace />} />
-        ) : (
-          <>
         {/* Public marketing site — the portal's front door. Its one auth CTA,
             "Sign In", leads to /login below; everything else routes to
             /contact, because clients are onboarded by our staff. */}
@@ -77,9 +70,6 @@ export default function App() {
             element={<ComingSoon title="Documentation" blurb="Setup guides, checkpoint and post-order references, and the API. We're writing them up now." />}
           />
         </Route>
-
-          </>
-        )}
 
         <Route path="/login" element={<Login />} />
 
@@ -113,7 +103,7 @@ export default function App() {
           />
         </Route>
 
-        <Route path="*" element={<Navigate to={isTarmac ? '/login' : '/'} replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   )

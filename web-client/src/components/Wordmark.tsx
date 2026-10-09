@@ -1,5 +1,3 @@
-import { brand, isTarmac } from '../brand'
-
 /**
  * The Evergreen mark.
  *
@@ -20,28 +18,6 @@ export function Wordmark({
   compact?: boolean
   className?: string
 }) {
-  if (isTarmac) {
-    return (
-      <span className={`inline-flex items-center gap-2.5 ${className}`}>
-        <img
-          src={brand.logo!}
-          alt={`${brand.company} crest`}
-          className="h-8 w-8 shrink-0 rounded-full ring-1 ring-white/20"
-        />
-        {!compact && (
-          <span className="min-w-0">
-            <span className="brand-serif block truncate text-[15px] font-bold leading-[1.2] tracking-[0.01em]">
-              Tarmac Security
-            </span>
-            <span className="block truncate text-[11px] font-medium uppercase leading-[1.3] tracking-[0.14em] opacity-60">
-              Client Portal
-            </span>
-          </span>
-        )}
-      </span>
-    )
-  }
-
   return (
     <span className={`inline-flex items-center gap-2.5 ${className}`}>
       <svg
