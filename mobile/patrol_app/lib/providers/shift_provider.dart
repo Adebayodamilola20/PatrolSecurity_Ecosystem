@@ -199,8 +199,11 @@ class ShiftProvider extends ChangeNotifier {
       // clocking on, and tracking runs until they clock off. Declining does
       // not block the shift — it just means the position stops updating once
       // the app is closed.
-      _backgroundTrackingGranted =
-          await LocationService.ensureBackgroundPermission();
+      // Tarmac does not ask for "all the time": the on-duty foreground
+      // service keeps tracking through the shift without it.
+      _backgroundTrackingGranted = isTarmacApp
+          ? true
+          : await LocationService.ensureBackgroundPermission();
 
       final data = await ApiService.clockIn(
         latitude: location.latitude,

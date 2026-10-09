@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:geolocator/geolocator.dart';
+import '../utils/constants.dart' show isTarmacApp;
 
 class SafeLocationResult {
   final double latitude;
@@ -98,10 +99,13 @@ class LocationService {
         accuracy: LocationAccuracy.best,
         distanceFilter: 0,
         forceLocationManager: false,
-        foregroundNotificationConfig: const ForegroundNotificationConfig(
-          notificationTitle: 'Patrol tracking active',
-          notificationText:
-              'Your location is shared with the control room until you clock out.',
+        foregroundNotificationConfig: ForegroundNotificationConfig(
+          notificationTitle: isTarmacApp
+              ? 'On duty — location shared'
+              : 'Patrol tracking active',
+          notificationText: isTarmacApp
+              ? 'Tarmac control room can see your location until you clock out.'
+              : 'Your location is shared with the control room until you clock out.',
           enableWakeLock: true,
           setOngoing: true,
         ),
