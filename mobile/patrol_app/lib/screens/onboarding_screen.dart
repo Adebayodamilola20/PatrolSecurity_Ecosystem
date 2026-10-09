@@ -457,7 +457,7 @@ class _WelcomeScene extends StatelessWidget {
                 ],
               ),
               child: Brand.mark(
-                size: 96,
+                size: 66,
                 fallback: Icon(
                   Icons.shield_rounded,
                   color: AppTheme.onboardingInk,

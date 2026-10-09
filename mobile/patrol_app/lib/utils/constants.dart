@@ -1,7 +1,14 @@
 import 'package:flutter/services.dart' show appFlavor;
 
-/// Which company this app build is for (set by `--flavor`).
-bool get isTarmacApp => appFlavor == 'tarmac';
+/// Which company this app build is for.
+///
+/// Android picks it with `--flavor tarmac|evergreen`. iOS and a plain
+/// `flutter run` have no flavor, and this checkout is Tarmac's (see
+/// PROJECT_BOUNDARY.md), so the default here is Tarmac. Override with
+/// `--dart-define=BRAND=evergreen` if ever needed.
+const String _brandDefine = String.fromEnvironment('BRAND', defaultValue: 'tarmac');
+bool get isTarmacApp =>
+    appFlavor == 'tarmac' || (appFlavor != 'evergreen' && _brandDefine == 'tarmac');
 
 const String _apiBaseUrlOverride = String.fromEnvironment('API_BASE_URL');
 
