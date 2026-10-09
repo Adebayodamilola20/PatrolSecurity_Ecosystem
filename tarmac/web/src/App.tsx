@@ -36,6 +36,20 @@ const AiAssistant = lazy(() => import('./pages/AiAssistant'))
 const Settings = lazy(() => import('./pages/Settings'))
 const UserDetail = lazy(() => import('./pages/UserDetail'))
 const Profile = lazy(() => import('./pages/Profile'))
+const FinancePage = lazy(() => import('./pages/finance/FinancePage'))
+
+// Finance package pages (Tarmac only). Placeholders until each is built.
+const FINANCE_PAGES = [
+  { path: 'branches', eyebrow: 'Finance', title: 'Branches' },
+  { path: 'partners', eyebrow: 'Finance', title: 'Partners' },
+  { path: 'invoices', eyebrow: 'Finance', title: 'Invoices' },
+  { path: 'payments', eyebrow: 'Finance', title: 'Payments' },
+  { path: 'recruitment', eyebrow: 'People', title: 'Recruitment' },
+  { path: 'staff', eyebrow: 'People', title: 'Staff Records' },
+  { path: 'rosters', eyebrow: 'People', title: 'Rosters' },
+  { path: 'payroll', eyebrow: 'Finance', title: 'Payroll' },
+  { path: 'reports', eyebrow: 'Finance', title: 'Finance Reports' },
+]
 
 const roleHomePath: Record<UserRole, string> = {
   admin: '/',
@@ -120,6 +134,9 @@ export default function App() {
           <Route path="/pass-on-logs" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><PassOnLogs /></RoleRoute>} />
           <Route path="/activity-summary" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><ActivitySummary /></RoleRoute>} />
           <Route path="/analytics" element={<RoleRoute allowedRoles={['admin', 'supervisor']}><Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading analytics…</div>}><Analytics /></Suspense></RoleRoute>} />
+          {features.finance && FINANCE_PAGES.map((page) => (
+            <Route key={page.path} path={`/finance/${page.path}`} element={<RoleRoute allowedRoles={['admin']}><FinancePage eyebrow={page.eyebrow} title={page.title} /></RoleRoute>} />
+          ))}
           <Route path="/ai-assistant" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><AiAssistant /></RoleRoute>} />
         </Route>
 

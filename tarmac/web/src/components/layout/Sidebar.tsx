@@ -17,6 +17,15 @@ import {
   Bot,
   Activity,
   BarChart3,
+  Landmark,
+  Handshake,
+  Receipt,
+  Wallet,
+  UserPlus,
+  IdCard,
+  CalendarDays,
+  Banknote,
+  PieChart,
 } from 'lucide-react'
 import { Wordmark } from '../Wordmark'
 import { features } from '../../brand'
@@ -70,6 +79,21 @@ function useNav() {
 
   if (canViewAlerts) {
     items.push({ to: '/alerts', label: 'Alerts', icon: Bell })
+  }
+
+  // Finance package (Tarmac only, admin only). Pages are placeholders for now.
+  if (features.finance && role === 'admin') {
+    items.push(
+      { to: '/finance/branches', label: 'Branches', icon: Landmark },
+      { to: '/finance/partners', label: 'Partners', icon: Handshake },
+      { to: '/finance/invoices', label: 'Invoices', icon: Receipt },
+      { to: '/finance/payments', label: 'Payments', icon: Wallet },
+      { to: '/finance/recruitment', label: 'Recruitment', icon: UserPlus },
+      { to: '/finance/staff', label: 'Staff Records', icon: IdCard },
+      { to: '/finance/rosters', label: 'Rosters', icon: CalendarDays },
+      { to: '/finance/payroll', label: 'Payroll', icon: Banknote },
+      { to: '/finance/reports', label: 'Finance Reports', icon: PieChart },
+    )
   }
 
   if (role === 'admin') {
