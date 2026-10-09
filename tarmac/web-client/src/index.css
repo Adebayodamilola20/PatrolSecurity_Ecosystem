@@ -1,0 +1,337 @@
+/* Marketing site typeface. Must lead the file: @import may not follow rules. */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+}
+
+/* ── Evergreen client portal · design tokens ──────────────────────────────
+ *
+ * Anchored on the Evergreen teal already carried by the marketing site and
+ * the sign-in screen, so a client who arrives from evergreen.com lands
+ * somewhere that looks like the same company.
+ *
+ * Two rules hold everything together:
+ *
+ * 1. Neutrals are not zero-chroma. Every surface carries a trace of the
+ *    brand hue (chroma 0.004–0.02 at hue 185). Pure #888 greys are the
+ *    default every generated interface reaches for, and a wall of them is
+ *    exactly why this screen read as flat and unfinished.
+ *
+ * 2. Red belongs to emergencies and nothing else. No destructive button, no
+ *    validation message, no "overdue" chip may borrow it. A colour that only
+ *    ever means one thing can be trusted across a room at a glance — the
+ *    moment it also means "required field", it stops being an alarm.
+ */
+:root,
+.dark {
+  --radius: 0.625rem;
+  /* Night surfaces, tinted toward the brand rather than flat charcoal. */
+  --background: oklch(0.17 0.012 195);
+  --foreground: oklch(0.97 0.004 195);
+  --card: oklch(0.21 0.014 195);
+  --card-foreground: oklch(0.97 0.004 195);
+  --popover: oklch(0.23 0.014 195);
+  --popover-foreground: oklch(0.97 0.004 195);
+  /* Evergreen teal, lifted for legibility on a dark ground. */
+  --primary: oklch(0.74 0.115 185);
+  --primary-foreground: oklch(0.18 0.02 195);
+  --secondary: oklch(0.27 0.014 195);
+  --secondary-foreground: oklch(0.96 0.004 195);
+  --muted: oklch(0.25 0.012 195);
+  --muted-foreground: oklch(0.70 0.012 195);
+  --accent: oklch(0.29 0.018 195);
+  --accent-foreground: oklch(0.97 0.004 195);
+  --destructive: oklch(0.64 0.20 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.74 0.14 160);
+  --success-foreground: oklch(0.18 0.02 160);
+  --warning: oklch(0.80 0.14 75);
+  --warning-foreground: oklch(0.20 0.02 75);
+  --info: oklch(0.74 0.10 220);
+  --info-foreground: oklch(0.17 0.02 220);
+  --border: oklch(0.29 0.014 195);
+  --input: oklch(0.29 0.014 195);
+  --ring: oklch(0.74 0.115 185);
+  /* The rail sits a shade below the page so the content reads as raised. */
+  --sidebar: oklch(0.14 0.014 195);
+  --sidebar-foreground: oklch(0.93 0.006 195);
+  --sidebar-accent: oklch(0.24 0.02 190);
+  --sidebar-border: oklch(0.24 0.014 195);
+}
+
+.light {
+  --radius: 0.625rem;
+  /* Paper, very slightly warm-cool rather than sterile white. */
+  --background: oklch(0.985 0.004 195);
+  --foreground: oklch(0.22 0.018 200);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.22 0.018 200);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.22 0.018 200);
+  /* Darkened for 4.5:1 against white — the same teal, not a second brand. */
+  --primary: oklch(0.52 0.095 190);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.95 0.008 195);
+  --secondary-foreground: oklch(0.24 0.018 200);
+  --muted: oklch(0.96 0.006 195);
+  --muted-foreground: oklch(0.48 0.014 200);
+  --accent: oklch(0.94 0.014 190);
+  --accent-foreground: oklch(0.24 0.018 200);
+  --destructive: oklch(0.55 0.20 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.53 0.13 160);
+  --success-foreground: oklch(0.99 0 0);
+  --warning: oklch(0.62 0.14 65);
+  --warning-foreground: oklch(0.99 0 0);
+  --info: oklch(0.52 0.11 225);
+  --info-foreground: oklch(0.99 0 0);
+  --border: oklch(0.90 0.008 195);
+  --input: oklch(0.90 0.008 195);
+  --ring: oklch(0.52 0.095 190);
+  --sidebar: oklch(0.965 0.008 195);
+  --sidebar-foreground: oklch(0.24 0.018 200);
+  --sidebar-accent: oklch(0.92 0.02 188);
+  --sidebar-border: oklch(0.90 0.008 195);
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  html, body, #root { height: 100%; }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    /* One family, real weight contrast. The portal ran on the system stack
+       while the marketing site ran Plus Jakarta Sans, so a client crossed
+       from one to the other and landed somewhere that looked like a
+       different company. The font is already downloaded for the marketing
+       pages, so this costs nothing. */
+    font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system,
+      "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Counts, times and distances sit in columns and get compared down the
+     page. Proportional digits make that comparison harder than it needs to
+     be — 11 is visibly narrower than 88 and the eye reads it as smaller. */
+  table, .tabular, time, [data-numeric] {
+    font-variant-numeric: tabular-nums;
+  }
+  /* Prevent text overflow on all devices */
+  h1, h2, h3, h4, h5, h6, p, span, a, button, li, label, input, textarea, select, option, td, th, div {
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+    word-break: break-word;
+    hyphens: auto;
+  }
+  .leaflet-container { background: var(--color-card); }
+  .leaflet-control-attribution { background: rgba(0,0,0,0.5) !important; color: #aaa !important; }
+  .leaflet-control-attribution a { color: #ccc !important; }
+}
+
+@layer utilities {
+  .no-hyphens {
+    hyphens: none;
+  }
+}
+
+/* ---- Marketing site (Evergreen) ----
+   The standalone template set its typeface and black surface on `body`, which
+   here would repaint the whole portal. Both are scoped to the marketing root
+   instead; the portal's tokens and typography are untouched. */
+.evergreen-site {
+  font-family: "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* The portal breaks long words and hyphenates everywhere so guard names and
+   addresses can't overflow a narrow card. Marketing headlines are hand-broken
+   and get mangled by that, so it stops at the marketing root. */
+.evergreen-site,
+.evergreen-site h1, .evergreen-site h2, .evergreen-site h3, .evergreen-site h4,
+.evergreen-site h5, .evergreen-site h6, .evergreen-site p, .evergreen-site span,
+.evergreen-site a, .evergreen-site button, .evergreen-site li, .evergreen-site div {
+  hyphens: none;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+@keyframes float {
+  0%   { transform: translateY(0px); }
+  50%  { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+
+/* ---- Login / auth screen animations ---- */
+@keyframes lp-fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes lp-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes lp-aurora {
+  0%   { transform: translate(-8%, -6%) scale(1); }
+  50%  { transform: translate(8%, 8%) scale(1.25); }
+  100% { transform: translate(-8%, -6%) scale(1); }
+}
+@keyframes lp-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-10px); }
+}
+@keyframes lp-pulse-ring {
+  0%   { transform: scale(0.85); opacity: 0.6; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+
+/* ---- Mobile navigation drawer ---- */
+@keyframes nav-slide-in {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(0); }
+}
+@keyframes nav-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@layer utilities {
+  .lp-fade-up { opacity: 0; animation: lp-fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+  .lp-fade    { opacity: 0; animation: lp-fade 0.9s ease forwards; }
+  .lp-aurora  { animation: lp-aurora 16s ease-in-out infinite; }
+  .lp-float   { animation: lp-float 6s ease-in-out infinite; }
+  .lp-pulse-ring { animation: lp-pulse-ring 2.8s ease-out infinite; }
+  .nav-slide-in { animation: nav-slide-in 0.22s cubic-bezier(0.22, 1, 0.36, 1); }
+  .nav-backdrop-in { animation: nav-backdrop-in 0.22s ease; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-fade-up, .lp-fade { opacity: 1; animation: none; }
+  .lp-aurora, .lp-float, .lp-pulse-ring { animation: none; }
+  .nav-slide-in, .nav-backdrop-in { animation: none; }
+}
+
+/* ── Tarmac Security brand (VITE_BRAND=tarmac) ─────────────────────────────
+ * Taken from tarmacsecurity.ng: a black-and-white crest, black uniforms with
+ * royal blue, Poppins type. Applied only when <html data-brand="tarmac">, so
+ * the Evergreen build is untouched. Red still means emergency and nothing else.
+ */
+html[data-brand="tarmac"] {
+  /* Remap Tailwind's teal/cyan scales to Tarmac royal blue, so screens that
+     use those utilities directly follow the brand without per-file edits. */
+  --color-teal-50: oklch(0.97 0.014 264);
+  --color-teal-100: oklch(0.93 0.032 264);
+  --color-teal-200: oklch(0.87 0.06 264);
+  --color-teal-300: oklch(0.78 0.10 264);
+  --color-teal-400: oklch(0.68 0.15 264);
+  --color-teal-500: oklch(0.58 0.18 264);
+  --color-teal-600: oklch(0.50 0.19 264);
+  --color-teal-700: oklch(0.43 0.17 265);
+  --color-teal-800: oklch(0.36 0.14 266);
+  --color-teal-900: oklch(0.29 0.10 266);
+  --color-teal-950: oklch(0.21 0.07 266);
+  --color-cyan-50: oklch(0.97 0.012 255);
+  --color-cyan-100: oklch(0.94 0.028 255);
+  --color-cyan-200: oklch(0.88 0.055 255);
+  --color-cyan-300: oklch(0.80 0.09 255);
+  --color-cyan-400: oklch(0.70 0.13 255);
+  --color-cyan-500: oklch(0.61 0.16 257);
+  --color-cyan-600: oklch(0.52 0.17 259);
+  --color-cyan-700: oklch(0.45 0.15 261);
+  --color-cyan-800: oklch(0.37 0.12 263);
+  --color-cyan-900: oklch(0.30 0.09 264);
+  --color-cyan-950: oklch(0.22 0.06 265);
+}
+
+html[data-brand="tarmac"]:not(.dark) {
+  --background: oklch(0.982 0.003 265);
+  --foreground: oklch(0.17 0.01 265);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.17 0.01 265);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.17 0.01 265);
+  --primary: oklch(0.45 0.17 264);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.95 0.006 265);
+  --secondary-foreground: oklch(0.2 0.01 265);
+  --muted: oklch(0.96 0.004 265);
+  --muted-foreground: oklch(0.46 0.012 265);
+  --accent: oklch(0.94 0.02 264);
+  --accent-foreground: oklch(0.2 0.01 265);
+  --info: oklch(0.5 0.12 245);
+  --border: oklch(0.9 0.006 265);
+  --input: oklch(0.9 0.006 265);
+  --ring: oklch(0.45 0.17 264);
+  /* The black rail carries the crest. */
+  --sidebar: oklch(0.16 0.006 265);
+  --sidebar-foreground: oklch(0.95 0.004 265);
+  --sidebar-accent: oklch(0.27 0.035 264);
+  --sidebar-border: oklch(0.25 0.008 265);
+}
+
+html[data-brand="tarmac"].dark {
+  --background: oklch(0.15 0.006 265);
+  --foreground: oklch(0.97 0.004 265);
+  --card: oklch(0.19 0.008 265);
+  --card-foreground: oklch(0.97 0.004 265);
+  --popover: oklch(0.21 0.008 265);
+  --popover-foreground: oklch(0.97 0.004 265);
+  --primary: oklch(0.7 0.14 264);
+  --primary-foreground: oklch(0.15 0.02 265);
+  --secondary: oklch(0.25 0.008 265);
+  --secondary-foreground: oklch(0.96 0.004 265);
+  --muted: oklch(0.23 0.006 265);
+  --muted-foreground: oklch(0.7 0.01 265);
+  --accent: oklch(0.27 0.025 264);
+  --accent-foreground: oklch(0.97 0.004 265);
+  --border: oklch(0.28 0.008 265);
+  --input: oklch(0.28 0.008 265);
+  --ring: oklch(0.7 0.14 264);
+  --sidebar: oklch(0.11 0.005 265);
+  --sidebar-foreground: oklch(0.94 0.004 265);
+  --sidebar-accent: oklch(0.25 0.035 264);
+  --sidebar-border: oklch(0.22 0.008 265);
+}
+
+html[data-brand="tarmac"] body {
+  font-family: "Poppins", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+html[data-brand="tarmac"] .brand-serif {
+  font-family: "Playfair Display", Georgia, serif;
+}
