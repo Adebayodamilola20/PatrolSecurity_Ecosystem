@@ -343,21 +343,25 @@ export default function UserDetail() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Set a new password for {user.name} and tell it to them directly. Existing passwords
-              cannot be read back — they are stored hashed, so a forgotten one is replaced, never
-              revealed.
-            </p>
-            <label className="block text-xs text-muted-foreground">
-              New password
-              <input required minLength={8} value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="At least 8 characters"
-                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground" />
-            </label>
-            <div className="rounded-lg bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
-              This signs them out everywhere. If they are mid-shift on the app they will have to log
-              back in with the new password.
-            </div>
+            {!resetDone && (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Set a new password for {user.name} and tell it to them directly. Existing passwords
+                  cannot be read back — they are stored hashed, so a forgotten one is replaced, never
+                  revealed.
+                </p>
+                <label className="block text-xs text-muted-foreground">
+                  New password
+                  <input required minLength={8} value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="At least 8 characters"
+                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground" />
+                </label>
+                <div className="rounded-lg bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
+                  This signs them out everywhere. If they are mid-shift on the app they will have to log
+                  back in with the new password.
+                </div>
+              </>
+            )}
             {resetError && (
               <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">{resetError}</div>
             )}
@@ -365,10 +369,18 @@ export default function UserDetail() {
               <div className="rounded-lg border border-success/20 bg-success/10 px-3 py-2 text-sm text-success">{resetDone}</div>
             )}
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setShowReset(false)} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent">Close</button>
-              <button disabled={resetting} type="submit" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60">
-                {resetting ? 'Saving…' : 'Set password'}
-              </button>
+              {resetDone ? (
+                <button type="button" onClick={() => setShowReset(false)} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
+                  Done
+                </button>
+              ) : (
+                <>
+                  <button type="button" onClick={() => setShowReset(false)} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent">Cancel</button>
+                  <button disabled={resetting} type="submit" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60">
+                    {resetting ? 'Saving…' : 'Set password'}
+                  </button>
+                </>
+              )}
             </div>
           </form>
         </div>
