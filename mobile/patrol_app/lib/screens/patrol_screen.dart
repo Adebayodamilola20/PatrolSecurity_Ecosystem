@@ -9,6 +9,7 @@ import '../services/api_service.dart';
 import '../services/location_service.dart';
 import '../utils/routes.dart';
 import '../utils/theme.dart';
+import '../utils/constants.dart' show isTarmacApp;
 
 class PatrolScreen extends StatefulWidget {
   const PatrolScreen({super.key});
@@ -291,7 +292,9 @@ class _PatrolScreenState extends State<PatrolScreen> {
               icon: const Icon(Icons.history),
               label: const Text('Previous Scans'),
             ),
-            const SizedBox(height: 10),
+            // Tarmac: the emergency button lives on the home screen only.
+            if (!isTarmacApp) const SizedBox(height: 10),
+            if (!isTarmacApp)
             FilledButton.icon(
               onPressed: _sendingEmergency ? null : _showEmergencySheet,
               icon: _sendingEmergency

@@ -34,9 +34,18 @@ class _ReportsScreenState extends State<ReportsScreen> {
   DateTime _exportDate = AppTime.todayInLagos();
   List<ExportFile> _dailyExports = [];
 
+  // Tarmac: reports are a list of types, each opening its own page, instead of
+  // sliding tabs. Maintenance (4) and Pass-On Log (5) are switched off there.
+  static const _tarmacHidden = {4, 5};
+  int? _selectedReport;
+
   @override
   void initState() {
     super.initState();
+    final tab = widget.initialTab;
+    if (isTarmacApp && tab != null && !_tarmacHidden.contains(tab)) {
+      _selectedReport = tab;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ScanProvider>().loadCheckpoints();
       _loadDailyExports();
@@ -113,6 +122,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final role = auth.user?.role ?? '';
     final canExport = _canExport(role);
 
+    if (isTarmacApp) {
+      return _buildTarmac(auth, shift, checkpoints, canExport, exportLabel);
+    }
+
     return DefaultTabController(
       length: 7,
       initialIndex: widget.initialTab ?? 0,
@@ -178,153 +191,330 @@ class _ReportsScreenState extends State<ReportsScreen> {
             Expanded(
               child: TabBarView(
                 children: [
-                  _ObservationTab(
-                    checkpoints: checkpoints,
-                    busy: _submitting,
-                    onSubmit: (message, checkpointId) {
-                      return _submit(
-                        () => ApiService.submitObservation(
-                          message: message,
-                          checkpointId: checkpointId,
-                        ),
-                        'Observation sent to the control room.',
-                      );
-                    },
-                  ),
-                  _DailyActivityTab(
-                    checkpoints: checkpoints,
-                    busy: _submitting,
-                    canExport: canExport,
-                    onSubmit: (summary, activities, issues, checkpointId) {
-                      final shiftWindow = _buildShiftWindow(shift);
-                      return _submit(
-                        () => ApiService.submitDailyActivityReport(
-                          summary: summary,
-                          activities: activities,
-                          openIssues: issues,
-                          siteLabel: shift.siteLabel ?? '',
-                          checkpointId: checkpointId,
-                          shiftWindow: shiftWindow,
-                        ),
-                        'Daily activity report submitted.',
-                      );
-                    },
-                    onRequestExport: () {
-                      return _submit(() async {
-                        final result = await ApiService.requestDailyTourExport(
-                          date: DateFormat('yyyy-MM-dd').format(_exportDate),
-                        );
-                        await _loadDailyExports();
-                        return result;
-                      }, 'CSV export requested for $exportLabel.');
-                    },
-                    exportLabel: exportLabel,
-                    onPickExportDate: _pickExportDate,
-                    exports: _dailyExports,
-                    exportsLoading: _exportsLoading,
-                  ),
-                  _IncidentTab(
-                    checkpoints: checkpoints,
-                    busy: _submitting,
-                    onSubmit:
-                        (
-                          title,
-                          description,
-                          checkpointId,
-                          severity,
-                          category,
-                          photos,
-                        ) {
-                          return _submit(
-                            () => ApiService.reportIncident(
-                              title: title,
-                              description: description,
-                              checkpointId: checkpointId,
-                              severity: severity,
-                              category: category,
-                              photos: photos,
-                            ),
-                            'Incident report submitted.',
-                          );
-                        },
-                  ),
-                  _ParkingViolationTab(
-                    checkpoints: checkpoints,
-                    busy: _submitting,
-                    onSubmit: (plate, vehicle, location, notes, checkpointId) {
-                      return _submit(
-                        () => ApiService.reportIncident(
-                          title: 'Parking Violation: $plate',
-                          description:
-                              'Vehicle: $vehicle\nLocation: $location\nNotes: $notes',
-                          checkpointId: checkpointId,
-                          severity: 'low',
-                        ),
-                        'Parking violation submitted.',
-                      );
-                    },
-                  ),
-                  _MaintenanceTab(
-                    checkpoints: checkpoints,
-                    busy: _submitting,
-                    onSubmit:
-                        (
-                          title,
-                          issue,
-                          assetName,
-                          checkpointId,
-                          severity,
-                          evidence,
-                        ) {
-                          return _submit(
-                            () => ApiService.submitMaintenanceReport(
-                              title: title,
-                              issue: issue,
-                              assetName: assetName,
-                              checkpointId: checkpointId,
-                              severity: severity,
-                              evidence: evidence,
-                            ),
-                            'Maintenance report submitted.',
-                          );
-                        },
-                  ),
-                  _PassOnLogTab(
-                    checkpoints: checkpoints,
-                    busy: _submitting,
-                    onSubmit: (title, instruction, checkpointId, priority) {
-                      return _submit(
-                        () => ApiService.submitPassOnLog(
-                          title: title,
-                          instruction: instruction,
-                          checkpointId: checkpointId,
-                          priority: priority,
-                          siteLabel: shift.siteLabel ?? '',
-                        ),
-                        'Pass-on log created.',
-                      );
-                    },
-                  ),
-                  _CustomReportTab(
-                    checkpoints: checkpoints,
-                    busy: _submitting,
-                    onSubmit: (type, title, details, checkpointId) {
-                      return _submit(
-                        () => ApiService.reportIncident(
-                          title: '$type: $title',
-                          description: details,
-                          checkpointId: checkpointId,
-                          severity: 'medium',
-                        ),
-                        'Custom report submitted.',
-                      );
-                    },
-                  ),
+                  ..._reportForms(shift, checkpoints, canExport, exportLabel),
                 ],
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// The report forms, in tab order: 0 Observation, 1 Daily Activity,
+  /// 2 Incident, 3 Parking, 4 Maintenance, 5 Pass-On Log, 6 Custom.
+  List<Widget> _reportForms(
+    ShiftProvider shift,
+    List<Checkpoint> checkpoints,
+    bool canExport,
+    String exportLabel,
+  ) {
+    return [
+      _ObservationTab(
+        checkpoints: checkpoints,
+        busy: _submitting,
+        onSubmit: (message, checkpointId) {
+          return _submit(
+            () => ApiService.submitObservation(
+              message: message,
+              checkpointId: checkpointId,
+            ),
+            'Observation sent to the control room.',
+          );
+        },
+      ),
+      _DailyActivityTab(
+        checkpoints: checkpoints,
+        busy: _submitting,
+        canExport: canExport,
+        onSubmit: (summary, activities, issues, checkpointId) {
+          final shiftWindow = _buildShiftWindow(shift);
+          return _submit(
+            () => ApiService.submitDailyActivityReport(
+              summary: summary,
+              activities: activities,
+              openIssues: issues,
+              siteLabel: shift.siteLabel ?? '',
+              checkpointId: checkpointId,
+              shiftWindow: shiftWindow,
+            ),
+            'Daily activity report submitted.',
+          );
+        },
+        onRequestExport: () {
+          return _submit(() async {
+            final result = await ApiService.requestDailyTourExport(
+              date: DateFormat('yyyy-MM-dd').format(_exportDate),
+            );
+            await _loadDailyExports();
+            return result;
+          }, 'CSV export requested for $exportLabel.');
+        },
+        exportLabel: exportLabel,
+        onPickExportDate: _pickExportDate,
+        exports: _dailyExports,
+        exportsLoading: _exportsLoading,
+      ),
+      _IncidentTab(
+        checkpoints: checkpoints,
+        busy: _submitting,
+        onSubmit:
+            (
+              title,
+              description,
+              checkpointId,
+              severity,
+              category,
+              photos,
+            ) {
+              return _submit(
+                () => ApiService.reportIncident(
+                  title: title,
+                  description: description,
+                  checkpointId: checkpointId,
+                  severity: severity,
+                  category: category,
+                  photos: photos,
+                ),
+                'Incident report submitted.',
+              );
+            },
+      ),
+      _ParkingViolationTab(
+        checkpoints: checkpoints,
+        busy: _submitting,
+        onSubmit: (plate, vehicle, location, notes, checkpointId) {
+          return _submit(
+            () => ApiService.reportIncident(
+              title: 'Parking Violation: $plate',
+              description:
+                  'Vehicle: $vehicle\nLocation: $location\nNotes: $notes',
+              checkpointId: checkpointId,
+              severity: 'low',
+            ),
+            'Parking violation submitted.',
+          );
+        },
+      ),
+      _MaintenanceTab(
+        checkpoints: checkpoints,
+        busy: _submitting,
+        onSubmit:
+            (
+              title,
+              issue,
+              assetName,
+              checkpointId,
+              severity,
+              evidence,
+            ) {
+              return _submit(
+                () => ApiService.submitMaintenanceReport(
+                  title: title,
+                  issue: issue,
+                  assetName: assetName,
+                  checkpointId: checkpointId,
+                  severity: severity,
+                  evidence: evidence,
+                ),
+                'Maintenance report submitted.',
+              );
+            },
+      ),
+      _PassOnLogTab(
+        checkpoints: checkpoints,
+        busy: _submitting,
+        onSubmit: (title, instruction, checkpointId, priority) {
+          return _submit(
+            () => ApiService.submitPassOnLog(
+              title: title,
+              instruction: instruction,
+              checkpointId: checkpointId,
+              priority: priority,
+              siteLabel: shift.siteLabel ?? '',
+            ),
+            'Pass-on log created.',
+          );
+        },
+      ),
+      _CustomReportTab(
+        checkpoints: checkpoints,
+        busy: _submitting,
+        onSubmit: (type, title, details, checkpointId) {
+          return _submit(
+            () => ApiService.reportIncident(
+              title: '$type: $title',
+              description: details,
+              checkpointId: checkpointId,
+              severity: 'medium',
+            ),
+            'Custom report submitted.',
+          );
+        },
+      ),
+    ];
+  }
+
+  static const _reportTypes = [
+    (0, 'Observation', 'Something you noticed on site', Icons.visibility_outlined),
+    (1, 'Daily Activity', 'Summary of your shift', Icons.event_note_outlined),
+    (2, 'Incident', 'Security incident, with photos', Icons.report_problem_outlined),
+    (3, 'Parking', 'Parking violation', Icons.local_parking_outlined),
+    (4, 'Maintenance', 'Broken equipment or facility issue', Icons.build_outlined),
+    (5, 'Pass-On Log', 'Instruction for the next shift', Icons.forum_outlined),
+    (6, 'Custom', 'Any other report', Icons.edit_note_outlined),
+  ];
+
+  Widget _statusCard(AuthProvider auth, ShiftProvider shift) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            (shift.siteLabel ?? '').isNotEmpty
+                ? 'Current site: ${shift.siteLabel}'
+                : 'No active site on this shift yet.',
+            style: TextStyle(fontWeight: FontWeight.w700, color: AppTheme.text),
+          ),
+          if (_statusMessage.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              _statusMessage,
+              style: TextStyle(
+                color: AppTheme.primaryDark,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTarmac(
+    AuthProvider auth,
+    ShiftProvider shift,
+    List<Checkpoint> checkpoints,
+    bool canExport,
+    String exportLabel,
+  ) {
+    final selected = _selectedReport;
+    if (selected != null) {
+      final type = _reportTypes.firstWhere((t) => t.$1 == selected);
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) setState(() => _selectedReport = null);
+        },
+        child: Scaffold(
+          appBar: AppBar(
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () => setState(() => _selectedReport = null),
+            ),
+            title: Text('${type.$2} Report'),
+          ),
+          body: Column(
+            children: [
+              if (_statusMessage.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: _statusCard(auth, shift),
+                ),
+              Expanded(
+                child: _reportForms(shift, checkpoints, canExport, exportLabel)[selected],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final types = _reportTypes.where((t) => !_tarmacHidden.contains(t.$1)).toList();
+    return Scaffold(
+      appBar: AppBar(title: const Text('Reports')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+        children: [
+          _statusCard(auth, shift),
+          const SizedBox(height: 20),
+          Text(
+            'What would you like to report?',
+            style: TextStyle(
+              color: AppTheme.text,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (final t in types)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Material(
+                color: AppTheme.card,
+                borderRadius: BorderRadius.circular(16),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () => setState(() {
+                    _statusMessage = '';
+                    _selectedReport = t.$1;
+                  }),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: AppTheme.primarySurface,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(t.$4, color: AppTheme.primary),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                t.$2,
+                                style: TextStyle(
+                                  color: AppTheme.text,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 15,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                t.$3,
+                                style: TextStyle(
+                                  color: AppTheme.textSecondary,
+                                  fontSize: 12.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.chevron_right, color: AppTheme.textSecondary),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

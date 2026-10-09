@@ -15,6 +15,7 @@ import '../utils/access_control.dart';
 import '../utils/routes.dart';
 import '../utils/sign_out.dart';
 import '../utils/theme.dart';
+import '../utils/constants.dart' show isTarmacApp;
 import '../widgets/duty_prompts.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -469,16 +470,19 @@ class _HomeScreenState extends State<HomeScreen> {
         title: 'Security Policy',
         route: AppRoutes.policy,
       ),
-      _MenuItem(
-        icon: Icons.local_shipping_outlined,
-        title: 'Truck Check In / Out',
-        route: AppRoutes.truckCheck,
-      ),
-      _MenuItem(
-        icon: Icons.badge_outlined,
-        title: 'Visitor Check In / Out',
-        route: AppRoutes.visitorCheck,
-      ),
+      // Tarmac does not use truck or visitor check-in (screens kept for Evergreen).
+      if (!isTarmacApp) ...[
+        _MenuItem(
+          icon: Icons.local_shipping_outlined,
+          title: 'Truck Check In / Out',
+          route: AppRoutes.truckCheck,
+        ),
+        _MenuItem(
+          icon: Icons.badge_outlined,
+          title: 'Visitor Check In / Out',
+          route: AppRoutes.visitorCheck,
+        ),
+      ],
       _MenuItem(
         icon: Icons.event_available_outlined,
         title: 'Vacation Requests',
@@ -985,6 +989,10 @@ class _DashboardTab extends StatelessWidget {
   ) {
     final canPatrol = canSubmitPatrol(auth.user);
 
+    if (isTarmacApp) {
+      return _buildTarmacDashboard(context, auth, duty, scan, shift, role, canPatrol);
+    }
+
     return RefreshIndicator(
       color: AppTheme.primaryDark,
       backgroundColor: AppTheme.card,
@@ -1230,6 +1238,210 @@ class _DashboardTab extends StatelessWidget {
           else
             ...scan.scans
                 .take(5)
+                .map(
+                  (s) => _DashboardScanTile(
+                    scan: s,
+                    onTap: () => Navigator.pushNamed(
+                      context,
+                      AppRoutes.scanDetail,
+                      arguments: {'scanId': s.id},
+                    ),
+                  ),
+                ),
+        ],
+      ),
+    );
+  }
+
+  /// Tarmac home: one duty card with the single next action, the emergency
+  /// hold, a short list of shortcuts and the last few scans. Nothing repeated.
+  Widget _buildTarmacDashboard(
+    BuildContext context,
+    AuthProvider auth,
+    DutyProvider duty,
+    ScanProvider scan,
+    ShiftProvider shift,
+    AccountRole role,
+    bool canPatrol,
+  ) {
+    final name = auth.user?.name ?? 'Officer';
+    final initials = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .take(2)
+        .map((p) => p[0].toUpperCase())
+        .join();
+
+    return RefreshIndicator(
+      color: AppTheme.primaryDark,
+      backgroundColor: AppTheme.card,
+      onRefresh: () async {
+        await Future.wait([
+          scan.loadScans(force: true),
+          scan.loadCheckpoints(force: true),
+          shift.loadStatus(force: true),
+          duty.load(force: true),
+        ]);
+      },
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 112),
+        children: [
+          GestureDetector(
+            onTap: () => Navigator.pushNamed(context, AppRoutes.profile),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 24,
+                  backgroundColor: AppTheme.primary,
+                  child: Text(
+                    initials.isEmpty ? '?' : initials,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Good ${_greeting()}',
+                        style: TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: AppTheme.text,
+                          fontSize: 21,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          _TarmacDutyCard(
+            onDuty: shift.onDuty,
+            loading: shift.loading,
+            siteLabel: shift.siteLabel,
+            since: _formatHour(shift.clockInTime),
+            scansToday: scan.todayScans,
+            postOrders: duty.orders.length,
+            canPatrol: canPatrol,
+            onClockToggle: shift.loading ? null : () => handleDutyToggle(context),
+            onScan: () => context
+                .findAncestorStateOfType<_HomeScreenState>()
+                ?._openScannerOrExplain(context),
+          ),
+          const SizedBox(height: 14),
+          _EmergencyHoldButton(
+            onConfirmed: () async {
+              final cat = await _showEmergencyCategorySheet(context);
+              if (cat != null && cat.trim().isNotEmpty && context.mounted) {
+                await _triggerEmergency(context, category: cat);
+              }
+            },
+          ),
+          const SizedBox(height: 26),
+          Text(
+            'Shortcuts',
+            style: TextStyle(
+              color: AppTheme.text,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
+              color: AppTheme.card,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: Column(
+              children: [
+                _TarmacShortcut(
+                  icon: Icons.description_outlined,
+                  title: 'Reports',
+                  subtitle: 'Incidents, observations, daily activity',
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.reports),
+                ),
+                _TarmacShortcut(
+                  icon: Icons.assignment_turned_in_outlined,
+                  title: 'Post orders',
+                  subtitle: duty.orders.isEmpty
+                      ? 'No instructions right now'
+                      : '${duty.orders.length} instruction${duty.orders.length == 1 ? '' : 's'} for your site',
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.duties),
+                ),
+                _TarmacShortcut(
+                  icon: Icons.location_on_outlined,
+                  title: 'Checkpoints',
+                  subtitle: 'QR points on your site',
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.checkpoints),
+                ),
+                _TarmacShortcut(
+                  icon: Icons.history,
+                  title: 'Patrol history',
+                  subtitle: 'Your previous scans',
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.history),
+                  last: true,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 26),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Recent scans',
+                  style: TextStyle(
+                    color: AppTheme.text,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              if (scan.scans.isNotEmpty)
+                TextButton(
+                  onPressed: () => Navigator.pushNamed(context, AppRoutes.history),
+                  child: Text(
+                    'View all',
+                    style: TextStyle(
+                      color: AppTheme.primaryDark,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (scan.scans.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 18),
+              child: Text(
+                'No scans yet. They will appear here once you start your patrol.',
+                style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+              ),
+            )
+          else
+            ...scan.scans
+                .take(3)
                 .map(
                   (s) => _DashboardScanTile(
                     scan: s,
@@ -1991,6 +2203,248 @@ class _QuickAction extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+
+/// Tarmac's duty card: where the guard stands and the one thing to do next.
+class _TarmacDutyCard extends StatelessWidget {
+  const _TarmacDutyCard({
+    required this.onDuty,
+    required this.loading,
+    required this.siteLabel,
+    required this.since,
+    required this.scansToday,
+    required this.postOrders,
+    required this.canPatrol,
+    required this.onClockToggle,
+    required this.onScan,
+  });
+
+  final bool onDuty;
+  final bool loading;
+  final String? siteLabel;
+  final String since;
+  final int scansToday;
+  final int postOrders;
+  final bool canPatrol;
+  final VoidCallback? onClockToggle;
+  final VoidCallback onScan;
+
+  @override
+  Widget build(BuildContext context) {
+    final site = (siteLabel ?? '').isNotEmpty ? siteLabel! : 'No site assigned';
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF0B1220), Color(0xFF1E3A8A)],
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: onDuty ? const Color(0xFF34D399) : Colors.white54,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      onDuty ? 'ON DUTY' : 'OFF DUTY',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            onDuty ? site : 'Ready to start your shift',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.4,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            onDuty
+                ? 'Clocked in at $since'
+                : (siteLabel ?? '').isNotEmpty
+                ? 'Clock in when you arrive at $site.'
+                : 'No site assigned yet. Ask your supervisor to post you to a site.',
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              _TarmacMiniStat(value: '$scansToday', label: 'Scans today'),
+              const SizedBox(width: 22),
+              _TarmacMiniStat(value: '$postOrders', label: 'Post orders'),
+            ],
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: FilledButton.icon(
+              onPressed: loading
+                  ? null
+                  : onDuty
+                  ? (canPatrol ? onScan : null)
+                  : onClockToggle,
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: const Color(0xFF0B1220),
+                disabledBackgroundColor: Colors.white24,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              icon: loading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(onDuty ? Icons.qr_code_scanner_rounded : Icons.login_rounded),
+              label: Text(
+                onDuty ? 'Scan a checkpoint' : 'Clock in',
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+              ),
+            ),
+          ),
+          if (onDuty) ...[
+            const SizedBox(height: 6),
+            Center(
+              child: TextButton(
+                onPressed: loading ? null : onClockToggle,
+                child: Text(
+                  'Clock out',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.8),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _TarmacMiniStat extends StatelessWidget {
+  const _TarmacMiniStat({required this.value, required this.label});
+
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 12),
+        ),
+      ],
+    );
+  }
+}
+
+class _TarmacShortcut extends StatelessWidget {
+  const _TarmacShortcut({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.last = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final bool last;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          border: last
+              ? null
+              : Border(bottom: BorderSide(color: AppTheme.border)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: AppTheme.primary, size: 22),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: AppTheme.text,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    subtitle,
+                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 12.5),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: AppTheme.textSecondary),
+          ],
         ),
       ),
     );

@@ -312,6 +312,8 @@ class _ProfileHeader extends StatelessWidget {
         .toUpperCase();
     final role = (userRole ?? 'officer').toUpperCase();
 
+    if (isTarmacApp) return _buildTarmac(initials, role);
+
     return SliverAppBar(
       expandedHeight: 260,
       pinned: true,
@@ -432,6 +434,151 @@ class _ProfileHeader extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Tarmac profile header: photo circle on the left, details beside it,
+  /// and the three numbers on a clean strip underneath.
+  Widget _buildTarmac(String initials, String role) {
+    return SliverAppBar(
+      expandedHeight: 236,
+      pinned: true,
+      backgroundColor: const Color(0xFF0B1220),
+      foregroundColor: Colors.white,
+      surfaceTintColor: const Color(0xFF0B1220),
+      title: const Text('Profile'),
+      flexibleSpace: FlexibleSpaceBar(
+        background: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF0B1220), Color(0xFF1E3A8A)],
+            ),
+          ),
+          child: SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 64, 20, 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 78,
+                        height: 78,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: const Color(0xFF2F5BD3),
+                          border: Border.all(color: Colors.white, width: 3),
+                        ),
+                        child: Center(
+                          child: Text(
+                            initials,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 26,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              userName ?? 'Officer',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 21,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.3,
+                              ),
+                            ),
+                            if ((userEmail ?? '').isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                userEmail!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.7),
+                                  fontSize: 12.5,
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.14),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    role,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.8,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Container(
+                                  width: 7,
+                                  height: 7,
+                                  decoration: const BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Color(0xFF34D399),
+                                  ),
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  'Active',
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.85),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(child: _MiniStat(label: 'Total scans', value: '$scanCount')),
+                        _MiniStatDivider(),
+                        Expanded(child: _MiniStat(label: 'Today', value: '$todayCount')),
+                        _MiniStatDivider(),
+                        Expanded(child: _MiniStat(label: 'Accuracy', value: accuracy)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
