@@ -40,3 +40,8 @@ export function applyBrand(surfaceTitle: string) {
   font.href = 'https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700&display=swap'
   document.head.appendChild(font)
 }
+
+/** Features a company has switched off. Tarmac does not use shift handovers. */
+export const features = {
+  handovers: !isTarmac,
+}

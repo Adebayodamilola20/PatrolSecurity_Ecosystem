@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/post_order.dart';
 import '../providers/duty_provider.dart';
 import '../providers/shift_provider.dart';
+import '../utils/constants.dart' show isTarmacApp;
 import '../utils/theme.dart';
 import '../widgets/network_error_state.dart';
 import '../widgets/loading_state.dart';
@@ -240,6 +241,8 @@ class _DutiesScreenState extends State<DutiesScreen> {
       appBar: AppBar(
         title: const Text('Duties'),
         actions: [
+          // Tarmac does not use shift handovers.
+          if (!isTarmacApp)
           TextButton.icon(
             onPressed: _openHandoverDialog,
             icon: Icon(Icons.swap_horiz, color: AppTheme.primary),
@@ -255,7 +258,7 @@ class _DutiesScreenState extends State<DutiesScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            if (duty.pendingHandovers.isNotEmpty) ...[
+            if (!isTarmacApp && duty.pendingHandovers.isNotEmpty) ...[
               Text(
                 'Pending Handovers',
                 style: TextStyle(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../utils/brand.dart';
+import '../utils/constants.dart' show isTarmacApp;
 import '../utils/routes.dart';
 import '../utils/theme.dart';
 
@@ -43,7 +44,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       eyebrow: 'CAPTURE WHAT MATTERS',
       title: 'Turn every observation into a record.',
       description:
-          'Log incidents, handovers, visitor checks, and site activity while the details are still fresh.',
+          isTarmacApp
+              ? 'Log incidents, visitor checks, and site activity while the details are still fresh.'
+              : 'Log incidents, handovers, visitor checks, and site activity while the details are still fresh.',
       icon: Icons.fact_check_rounded,
       accent: Brand.accent(const Color(0xFFFFD38D), const Color(0xFFB9C8F5)),
     ),

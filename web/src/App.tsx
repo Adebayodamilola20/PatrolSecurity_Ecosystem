@@ -12,6 +12,7 @@ import Alerts from './pages/Alerts'
 import Login from './pages/Login'
 import { useAuthStore, useCanViewLiveTracking, type UserRole } from './stores/useAuthStore'
 import { useIdleLogout } from './hooks/useIdleLogout'
+import { features } from './brand'
 
 // Analytics pulls in the charting library; loading it on demand keeps it out
 // of the bundle every other page pays for.
@@ -115,7 +116,7 @@ export default function App() {
           <Route path="/alerts" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Alerts /></RoleRoute>} />
           <Route path="/timesheets" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><Timesheets /></RoleRoute>} />
           <Route path="/post-orders" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><PostOrders /></RoleRoute>} />
-          <Route path="/handovers" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Handovers /></RoleRoute>} />
+          <Route path="/handovers" element={features.handovers ? <RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Handovers /></RoleRoute> : <Navigate to="/" replace />} />
           <Route path="/pass-on-logs" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><PassOnLogs /></RoleRoute>} />
           <Route path="/activity-summary" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><ActivitySummary /></RoleRoute>} />
           <Route path="/analytics" element={<RoleRoute allowedRoles={['admin', 'supervisor']}><Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading analytics…</div>}><Analytics /></Suspense></RoleRoute>} />

@@ -1,3 +1,4 @@
+import { features } from "../brand";
 // MIRROR of mobile/patrol_app/convex/lib/reportTemplates.ts — keep in sync.
 // The staff app renders these fields as the report form; the backend
 // validates submissions against its own copy of this registry.
@@ -42,12 +43,12 @@ export const REPORT_TEMPLATES: ReportTemplate[] = [
   {
     category: "clock-out",
     label: "Clock-Out Report",
-    description: "Shift end summary and handover.",
+    description: features.handovers ? "Shift end summary and handover." : "Shift end summary.",
     fields: [
       { key: "shiftDate", label: "Shift date", type: "date", required: true },
       { key: "clockOutTime", label: "Clock-out time", type: "time", required: true },
       { key: "hoursCovered", label: "Hours covered", type: "number" },
-      { key: "handoverNotes", label: "Handover notes", type: "textarea", required: true },
+      { key: "handoverNotes", label: features.handovers ? "Handover notes" : "Shift notes", type: "textarea", required: true },
       { key: "incidentsDuringShift", label: "Incidents during shift", type: "textarea", placeholder: "None" },
     ],
   },
