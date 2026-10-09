@@ -2785,7 +2785,7 @@ describe("clock-in geofence is enforced", () => {
     ).rejects.toThrow(/location is off/i);
   });
 
-  test("a supervisor is fenced like a guard (Tarmac rule)", async () => {
+  test("a supervisor is not gated, because supervisors roam", async () => {
     await mapAlphaSite();
     await t.run((ctx) =>
       ctx.db.insert("userSiteAssignments", {
@@ -2795,12 +2795,12 @@ describe("clock-in geofence is enforced", () => {
         createdAt: Date.now(),
       }),
     );
-    // Same coordinates that refuse a guard now refuse a supervisor too.
-    await expect(
-      t.mutation(internal.shifts.clockIn, { userId: w.supervisor, ...HOME }),
-    ).rejects.toThrow(/m from/i);
-    const shifts = await t.run((ctx) => ctx.db.query("shifts").collect());
-    expect(shifts).toHaveLength(0);
+    // Same coordinates that refuse a guard.
+    await t.mutation(internal.shifts.clockIn, { userId: w.supervisor, ...HOME });
+    const [shift] = await t.run((ctx) => ctx.db.query("shifts").collect());
+    expect(shift.status).toBe("active");
+    // Recorded as outside, so the flag stays reviewable for them too.
+    expect(shift.clockInGpsValid).toBe(false);
   });
 });
 

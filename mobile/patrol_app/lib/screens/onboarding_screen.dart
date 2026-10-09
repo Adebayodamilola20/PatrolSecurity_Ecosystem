@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-import '../utils/brand.dart';
 import '../utils/routes.dart';
 import '../utils/theme.dart';
 
@@ -22,14 +21,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   int _currentPage = 0;
   bool _finishing = false;
 
-  static final _pages = [
+  static const _pages = [
     _OnboardingPageData(
-      eyebrow: 'WELCOME TO ${Brand.appNameCaps}',
+      eyebrow: 'WELCOME TO PATROL COMMAND',
       title: 'A clearer way to protect every site.',
       description:
           'Everything your team needs to stay visible, accountable, and ready during every shift.',
       icon: Icons.shield_rounded,
-      accent: Brand.accent(const Color(0xFF8DF5B7), const Color(0xFF8FB0FF)),
+      accent: Color(0xFF8DF5B7),
     ),
     _OnboardingPageData(
       eyebrow: 'PATROLS, MADE SIMPLE',
@@ -37,7 +36,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       description:
           'Scan checkpoint QR codes, confirm your location, and keep your patrol moving with confidence.',
       icon: Icons.route_rounded,
-      accent: Brand.accent(const Color(0xFF8DD8FF), const Color(0xFF9CC3FF)),
+      accent: Color(0xFF8DD8FF),
     ),
     _OnboardingPageData(
       eyebrow: 'CAPTURE WHAT MATTERS',
@@ -45,7 +44,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       description:
           'Log incidents, handovers, visitor checks, and site activity while the details are still fresh.',
       icon: Icons.fact_check_rounded,
-      accent: Brand.accent(const Color(0xFFFFD38D), const Color(0xFFB9C8F5)),
+      accent: Color(0xFFFFD38D),
     ),
     _OnboardingPageData(
       eyebrow: 'ONE TEAM, ONE VIEW',
@@ -53,7 +52,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       description:
           'Your duty information, recent activity, and important updates are always close at hand.',
       icon: Icons.groups_rounded,
-      accent: Brand.accent(const Color(0xFFD5B5FF), const Color(0xFFA7B8F0)),
+      accent: Color(0xFFD5B5FF),
     ),
     _OnboardingPageData(
       eyebrow: 'READY WHEN YOU ARE',
@@ -61,7 +60,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       description:
           'Sign in to your account and get the right tools for your role, right when you need them.',
       icon: Icons.arrow_forward_rounded,
-      accent: Brand.accent(const Color(0xFF8DF5B7), const Color(0xFF8FB0FF)),
+      accent: Color(0xFF8DF5B7),
     ),
   ];
 
@@ -125,7 +124,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   const SizedBox(width: 10),
                   Flexible(
                     child: Text(
-                      Brand.appNameCaps,
+                      'PATROL COMMAND',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -456,13 +455,10 @@ class _WelcomeScene extends StatelessWidget {
                   ),
                 ],
               ),
-              child: Brand.mark(
-                size: 66,
-                fallback: Icon(
-                  Icons.shield_rounded,
-                  color: AppTheme.onboardingInk,
-                  size: 57,
-                ),
+              child: Icon(
+                Icons.shield_rounded,
+                color: AppTheme.onboardingInk,
+                size: 57,
               ),
             ),
           ),
@@ -1003,20 +999,17 @@ class _BrandMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Brand.mark(
-      size: 28,
-      fallback: Container(
-        width: 28,
-        height: 28,
-        decoration: BoxDecoration(
-          color: AppTheme.primary,
-          borderRadius: BorderRadius.circular(9),
-        ),
-        child: Icon(
-          Icons.shield_rounded,
-          color: AppTheme.onboardingInk,
-          size: 17,
-        ),
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        color: AppTheme.primary,
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Icon(
+        Icons.shield_rounded,
+        color: AppTheme.onboardingInk,
+        size: 17,
       ),
     );
   }

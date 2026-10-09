@@ -4,8 +4,6 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/scan_provider.dart';
 import '../utils/sign_out.dart';
-import '../utils/brand.dart';
-import '../utils/constants.dart' show isTarmacApp;
 import '../utils/theme.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -180,7 +178,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       iconColor: AppTheme.textSecondary,
                       iconBg: AppTheme.textSecondary.withValues(alpha: 0.1),
                       title: 'App Version',
-                      subtitle: '${Brand.appName} v1.0.0',
+                      subtitle: 'Patrol Command v1.0.0',
                     ),
                   ],
                 ),
@@ -321,13 +319,11 @@ class _ProfileHeader extends StatelessWidget {
       flexibleSpace: FlexibleSpaceBar(
         stretchModes: const [StretchMode.zoomBackground],
         background: Container(
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: isTarmacApp
-                  ? const [Color(0xFF05070C), Color(0xFF1E3A8A), Color(0xFF2F5BD3)]
-                  : const [Color(0xFF059669), Color(0xFF10B981), Color(0xFF34D399)],
+              colors: [Color(0xFF059669), Color(0xFF10B981), Color(0xFF34D399)],
             ),
           ),
           child: SafeArea(
