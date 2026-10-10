@@ -42,7 +42,7 @@ function useNav() {
       { to: '/profile', label: 'Profile', icon: User },
       { to: '/scans', label: 'My Scan History', icon: ClipboardList },
       { to: '/timesheets', label: 'My Timesheets', icon: Clock },
-      { to: '/ai-assistant', label: 'AI Assistant', icon: Bot },
+      ...(features.aiAssistant ? [{ to: '/ai-assistant', label: 'AI Assistant', icon: Bot }] : []),
     ]
   }
 
@@ -66,12 +66,12 @@ function useNav() {
   items.push({ to: '/timesheets', label: 'Timesheets', icon: Clock })
   items.push({ to: '/post-orders', label: 'Post Orders', icon: ClipboardList })
   if (features.handovers) items.push({ to: '/handovers', label: 'Handovers', icon: ClipboardCheck })
-  items.push({ to: '/pass-on-logs', label: 'Pass-On Logs', icon: ClipboardList })
+  if (features.passOnLogs) items.push({ to: '/pass-on-logs', label: 'Pass-On Logs', icon: ClipboardList })
   items.push({ to: '/activity-summary', label: 'Activity Summary', icon: Activity })
-  if (role === 'admin' || role === 'supervisor') {
+  if (features.analytics && (role === 'admin' || role === 'supervisor')) {
     items.push({ to: '/analytics', label: 'Analytics', icon: BarChart3 })
   }
-  items.push({ to: '/ai-assistant', label: 'AI Assistant', icon: Bot })
+  if (features.aiAssistant) items.push({ to: '/ai-assistant', label: 'AI Assistant', icon: Bot })
 
   if (role === 'admin' || role === 'main_account') {
     items.push({ to: '/reports', label: 'Reports', icon: FileText })

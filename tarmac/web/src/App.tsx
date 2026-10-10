@@ -131,13 +131,13 @@ export default function App() {
           <Route path="/timesheets" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><Timesheets /></RoleRoute>} />
           <Route path="/post-orders" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><PostOrders /></RoleRoute>} />
           <Route path="/handovers" element={features.handovers ? <RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Handovers /></RoleRoute> : <Navigate to="/" replace />} />
-          <Route path="/pass-on-logs" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><PassOnLogs /></RoleRoute>} />
+          <Route path="/pass-on-logs" element={features.passOnLogs ? <RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><PassOnLogs /></RoleRoute> : <Navigate to="/" replace />} />
           <Route path="/activity-summary" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><ActivitySummary /></RoleRoute>} />
-          <Route path="/analytics" element={<RoleRoute allowedRoles={['admin', 'supervisor']}><Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading analytics…</div>}><Analytics /></Suspense></RoleRoute>} />
+          <Route path="/analytics" element={features.analytics ? <RoleRoute allowedRoles={['admin', 'supervisor']}><Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading analytics…</div>}><Analytics /></Suspense></RoleRoute> : <Navigate to="/" replace />} />
           {features.finance && FINANCE_PAGES.map((page) => (
             <Route key={page.path} path={`/finance/${page.path}`} element={<RoleRoute allowedRoles={['admin']}><FinancePage eyebrow={page.eyebrow} title={page.title} /></RoleRoute>} />
           ))}
-          <Route path="/ai-assistant" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><AiAssistant /></RoleRoute>} />
+          <Route path="/ai-assistant" element={features.aiAssistant ? <RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><AiAssistant /></RoleRoute> : <Navigate to="/" replace />} />
         </Route>
 
         <Route path="*" element={<ProtectedRoute><RoleHomeRedirect /></ProtectedRoute>} />

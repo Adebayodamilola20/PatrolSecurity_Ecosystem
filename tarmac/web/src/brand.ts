@@ -50,4 +50,9 @@ export const features = {
   lateScanAlerts: isTarmac,
   // Finance package pages (payments, partners, payroll…), Tarmac only.
   finance: isTarmac,
+  // Not used by Tarmac (pages kept, hidden): charts duplicate Overview, the AI
+  // service is deliberately not connected, and pass-on logs left the app.
+  analytics: !isTarmac,
+  aiAssistant: !isTarmac,
+  passOnLogs: !isTarmac,
 }
