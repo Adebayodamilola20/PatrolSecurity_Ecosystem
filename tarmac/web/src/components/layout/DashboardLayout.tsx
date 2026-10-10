@@ -8,6 +8,7 @@ import { useAuthStore } from '../../stores/useAuthStore'
 import { ErrorBoundary } from '../ErrorBoundary'
 import { Skeleton } from '../ui/Skeleton'
 import AiAssistantPanel, { AiAssistantLauncher } from '../AiAssistantPanel'
+import { features } from '../../brand'
 import IncidentToasts from '../IncidentToasts'
 import { subscribeToEmergency } from '../../services/websocket'
 
@@ -237,8 +238,12 @@ export default function DashboardLayout() {
             </Suspense>
           </ErrorBoundary>
         </main>
-        <AiAssistantLauncher onClick={() => setAiOpen(true)} />
-        <AiAssistantPanel open={aiOpen} onClose={() => setAiOpen(false)} />
+        {features.aiAssistant && (
+          <>
+            <AiAssistantLauncher onClick={() => setAiOpen(true)} />
+            <AiAssistantPanel open={aiOpen} onClose={() => setAiOpen(false)} />
+          </>
+        )}
       </div>
     </div>
   )
