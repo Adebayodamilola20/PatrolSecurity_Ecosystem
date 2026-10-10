@@ -50,15 +50,33 @@ git checkout <type>/<name>
 A **Patrol Monitoring & Automated Reporting System**. Security guards scan QR codes at checkpoints using a Flutter mobile app. The system logs scans, tracks patrol routes, and generates reports for supervisors via a web dashboard.
 
 ## Architecture at a Glance
-- **Mobile app**: Flutter — `/mobile/patrol_app/` (Android-first)
-- **Web dashboard**: React/Vue — `/web/`
-- **Live backend**: Convex — `/convex/` — deployed at `resilient-buffalo-226.convex.site`
-  - This is the REAL backend. The `/backend/` Express dir is legacy/unused.
-  - All data logic lives in `convex/` and must be deployed with `npx convex deploy`
-- **Convex URL**: `resilient-buffalo-226.convex.site`
+
+All paths below are relative to this `evergreen/` folder.
+
+- **Mobile app**: Flutter — `mobile/patrol_app/` (Android-first)
+- **Web dashboard**: React/Vue — `web/`
+- **Live backend**: Convex — the function code lives in **`mobile/patrol_app/convex/`**
+  - The `convex/` folder at the root of `evergreen/` is only a generated stub. Do not put logic there.
+  - All data logic must be deployed with `npx convex deploy` or it does not go live.
+
+### Convex deployments — do not mix these up
+
+| Role | Deployment | Used by |
+|---|---|---|
+| **LIVE (production)** | `harmless-pigeon-186` | The released mobile app and the deployed dashboards |
+| **TEST (dev)** | `resilient-buffalo-226` | Local development only (`npx convex dev`) |
+
+- `npx convex deploy` always targets **production** (`harmless-pigeon-186`), regardless of what
+  `CONVEX_DEPLOYMENT` in `mobile/patrol_app/.env.local` says — that variable only steers `npx convex dev`.
+- The released APK hardcodes `https://harmless-pigeon-186.convex.site/api/v1` (see
+  `mobile/patrol_app/lib/utils/constants.dart`), overridable at build time with
+  `--dart-define=API_BASE_URL=...`.
+- **`resilient-buffalo-226` holds stale test data.** Never point a client build at it.
+- Both deployments answer unauthenticated requests with `401`, so a wrong target is *not* obvious
+  from a quick curl. Confirm with `npx convex deploy --dry-run`, which prints the target before pushing.
 
 ## Key Rules — Read Before Touching Anything
-1. **Never edit `/backend/`** — it is not live. All fixes go in `/convex/`.
+1. **All backend fixes go in `mobile/patrol_app/convex/`.** There is no longer an Express `backend/` dir.
 2. **After any Convex change**, run `npx convex deploy` — edits don't go live otherwise.
 3. **Always read `convex/_generated/ai/guidelines.md`** before writing Convex queries/mutations.
 4. **Do not delete files** without asking the user first.
@@ -78,13 +96,17 @@ Guard scans QR at checkpoint
 ## Folder Map
 ```
 PatrolSecurity_Ecosystem/
-├── convex/          ← LIVE backend (mutations, queries, schema)
-├── mobile/patrol_app/ ← Flutter app (lib/ has all Dart code)
-├── web/             ← Web dashboard
-├── backend/         ← LEGACY — do not use
-├── docs/            ← Documentation
-└── SYSTEM_ARCHITECTURE.md ← Full architecture reference
+├── evergreen/                    ← THIS company (Evergreen Security)
+│   ├── mobile/patrol_app/        ← Flutter app (lib/ has all Dart code)
+│   │   └── convex/               ← LIVE backend (mutations, queries, schema)
+│   ├── web/                      ← Admin dashboard
+│   ├── web-client/               ← Client portal
+│   ├── convex/                   ← generated stub only — no logic here
+│   ├── docs/                     ← Documentation
+│   └── SYSTEM_ARCHITECTURE.md    ← Full architecture reference
+└── tarmac/                       ← OTHER company — never touch from here
 ```
+See `../PROJECT_BOUNDARY.md` for the two-company split.
 
 ## Current Status & Known Issues
 - Mobile app exists in `/mobile/patrol_app/`
