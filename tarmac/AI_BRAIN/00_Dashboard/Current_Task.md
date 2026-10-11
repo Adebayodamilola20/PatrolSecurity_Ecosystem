@@ -4,6 +4,14 @@
 
 ## Active Focus
 
+> 🏢 **THIS IS TARMAC SECURITY (`tarmac/`)** — updated 2026-10-11. Everything below this box was copied from Evergreen in August and describes **Evergreen's** history and servers; ignore it for Tarmac work.
+>
+> - **Servers:** production `unique-anteater-230` (Europe; app + both websites point here), development `gallant-crow-174`. Evergreen's `harmless-pigeon-186` / `resilient-buffalo-226` are off-limits.
+> - **Websites:** `tarmac-admin` (root `tarmac/web`), `tarmac-clients` (root `tarmac/web-client`, also serves `/privacy.html`). Each rebuilds only when its own folder changes.
+> - **Built for Tarmac:** own branding (crest, flat royal blue), no SMS, no handovers / truck / visitor / pass-on / analytics / AI assistant, guard profile photos, late-scan alerts (WAT, one per checkpoint per day, `LATE_SCAN_ALERTS=on`), shift-only location tracking (no background-location permission), supervisor clock-in geofence.
+> - **Play Store:** signed `.aab` built (key backed up at `~/Documents/Tarmac_Release_Signing_Key_KEEP_SAFE` on the Mac mini), listing + data-safety answers in `tarmac/docs/play-store/`. Waiting on: real-phone test, production admin account, reviewer account, screenshots, Tarmac's Play account + contact email.
+> - **Finance package:** admin sidebar has placeholder pages (Branches, Partners, Invoices, Payments, Recruitment, Staff Records, Rosters, Payroll, Finance Reports). Next phase F1 (branches, partners, roles, audit, money maths) — only after the user's go-ahead. Client is reconsidering the price (₦3.2M); nothing finance-related is built yet.
+
 > 🚨 **2026-08-03 — READ [[Session_2026-08-03_Alert_Delivery]] FIRST.** Newest.
 >
 > - **The panic button had never notified anyone.** All 9 prod emergency events
