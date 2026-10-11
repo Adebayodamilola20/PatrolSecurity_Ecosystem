@@ -49,22 +49,23 @@ git checkout <type>/<name>
 ## What This Project Is
 A **Patrol Monitoring & Automated Reporting System**. Security guards scan QR codes at checkpoints using a Flutter mobile app. The system logs scans, tracks patrol routes, and generates reports for supervisors via a web dashboard.
 
-## Architecture at a Glance
-- **Mobile app**: Flutter — `/mobile/patrol_app/` (Android-first)
-- **Web dashboard**: React/Vue — `/web/`
-- **Live backend**: Convex — `/convex/` — deployed at `resilient-buffalo-226.convex.site`
-  - This is the REAL backend. The `/backend/` Express dir is legacy/unused.
-  - All data logic lives in `convex/` and must be deployed with `npx convex deploy`
-- **Convex URL**: `resilient-buffalo-226.convex.site`
+## Architecture at a Glance (Tarmac)
+- **Mobile app**: Flutter — `tarmac/mobile/patrol_app/` (build with `--flavor tarmac`)
+- **Admin web**: React — `tarmac/web/` (Vercel `tarmac-admin`)
+- **Client portal**: React — `tarmac/web-client/` (Vercel `tarmac-clients`)
+- **Backend code**: Convex — `tarmac/mobile/patrol_app/convex/` (this is what gets deployed)
+- **Live backend (production)**: `unique-anteater-230` — `https://unique-anteater-230.eu-west-1.convex.site`
+- **Test backend (development)**: `gallant-crow-174`
+- ⚠️ `resilient-buffalo-226` and `harmless-pigeon-186` are **Evergreen's** servers. Never use them from this folder.
 
 ## Key Rules — Read Before Touching Anything
-1. **Never edit `/backend/`** — it is not live. All fixes go in `/convex/`.
-2. **After any Convex change**, run `npx convex deploy` — edits don't go live otherwise.
+1. **Run Convex commands from `tarmac/mobile/patrol_app/`** and check its `.env.local` says `gallant-crow-174` first.
+2. **After a Convex change**, deploy to production with `npx convex deploy` (from that folder). Edits don't go live otherwise.
 3. **Always read `convex/_generated/ai/guidelines.md`** before writing Convex queries/mutations.
 4. **Do not delete files** without asking the user first.
 5. **Explain before changing any database schema or logic.**
 6. **Run tests after edits** when possible.
-7. **Desktop is iCloud-synced** — never move this project to ~/Desktop. It lives at `/Users/macmini/PatrolSecurity_Ecosystem/`.
+7. **Desktop is iCloud-synced** — never move this project to ~/Desktop. It lives at `/Users/macmini/PatrolSecurity_Ecosystem/tarmac/`.
 
 ## Scan Data Flow (Mental Model)
 ```
@@ -77,30 +78,21 @@ Guard scans QR at checkpoint
 
 ## Folder Map
 ```
-PatrolSecurity_Ecosystem/
-├── convex/          ← LIVE backend (mutations, queries, schema)
-├── mobile/patrol_app/ ← Flutter app (lib/ has all Dart code)
-├── web/             ← Web dashboard
-├── backend/         ← LEGACY — do not use
-├── docs/            ← Documentation
-└── SYSTEM_ARCHITECTURE.md ← Full architecture reference
+tarmac/
+├── mobile/patrol_app/          ← Flutter app (lib/) + Convex backend (convex/)
+├── web/                        ← Admin dashboard (tarmac-admin)
+├── web-client/                 ← Client portal (tarmac-clients) — also serves /privacy.html
+├── docs/play-store/            ← Play Store listing, icon, banner
+└── PROJECT_BOUNDARY.md         ← Tarmac rules (read with ../PROJECT_BOUNDARY.md)
 ```
-
-## Current Status & Known Issues
-- Mobile app exists in `/mobile/patrol_app/`
-- Backend is fully on Convex (not Express)
-- Check `convex/PAGE_STRUCTURE.md` for page/feature breakdown
 
 ## Common Commands
 ```bash
-# Deploy Convex backend changes
-npx convex deploy
-
-# Run Flutter app
-cd mobile/patrol_app && flutter run
-
-# Install Convex AI skill files
-npx convex ai-files install
+cd tarmac/mobile/patrol_app
+npx convex deploy                              # backend → Tarmac production
+flutter build apk --release --flavor tarmac    # test APK
+flutter build appbundle --release --flavor tarmac   # Play Store upload (needs the signing key)
+npx vitest run                                 # backend tests
 ```
 
 ---
