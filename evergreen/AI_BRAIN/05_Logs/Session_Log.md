@@ -4,6 +4,43 @@ Per-session notes of **major changes**. Newest first. Short bullets only — wha
 
 > Format: `## YYYY-MM-DD — Agent — Session title`
 
+## 2026-10-11 — [[Claude_Code]] — Release build 4 + prod deploy + post-restructure secret rescue
+
+- **Shipped build `1.0.0+4`** (versionCode 4, PR #6). Signed with the real upload key
+  (`CN=Patrol Security`), APK Signature v2 verified, SHA-256
+  `9d81def03f84c6c5591aee7a1525182c21fc319cd5d97b09e97acb16d230b468`.
+- **Trap:** `android/app/build.gradle.kts` silently falls back to the **debug** key when the
+  keystore is missing, and a debug-signed APK cannot install over a release build. Always run
+  `apksigner verify --print-certs` before distributing — the build succeeds either way.
+- `pubspec.lock` deliberately NOT committed with that bump: `pub get` downgraded 5
+  Flutter-SDK-pinned transitive packages because the build machine runs Dart 3.9.2 while the
+  lock was resolved on 3.10. Local toolchain artifact, not a dependency decision.
+- **Deployed prod `harmless-pigeon-186`** (2026-08-25, user-authorised). Verified after:
+  unauthenticated `POST /scans` → 401, `POST /auth/login` → 400. No indexes dropped.
+- **Post-restructure secret rescue.** The two-company split moved tracked files into
+  `evergreen/` but left every **gitignored** file behind in the old `mobile/`:
+  `android/upload.jks`, `android/key.properties`, `.env.local`. Deleting that folder would have
+  destroyed the signing key permanently — it has never been in a commit, so nothing on GitHub
+  could restore it, and every guard's phone would need a manual uninstall/reinstall.
+  All three copied into `evergreen/`, keystore SHA-256 verified identical.
+- **Keystore now backed up outside the repo** at `~/patrolsecurity-keystore-backup/`
+  (mode 700/600). Deliberately not Desktop or Documents — iCloud sync is active.
+- `web/.env.local` copied to `evergreen/web/.env.local` (gitignored, so still uncommitted).
+  `web-client` never had one.
+- Stale pre-restructure folders (`mobile/ web/ backend/ web-client/`) **moved, not deleted**, to
+  `~/dev/PatrolSecurity_stale_pre-restructure/`.
+- **PR #23 merged:** `evergreen/CLAUDE.md` had named `resilient-buffalo-226` as the live
+  backend. Corrected to LIVE = `harmless-pigeon-186`, TEST = `resilient-buffalo-226`.
+  The brain has had this right since 2026-07-28; only `CLAUDE.md` was stale. (#24 did the
+  same for Tarmac.)
+- **Trap:** both deployments answer unauthenticated requests with `401`, so deploying to the
+  wrong one looks identical to deploying correctly. `npx convex deploy --dry-run` prints the
+  target first. `CONVEX_DEPLOYMENT` in `.env.local` steers only `convex dev`, never `deploy`.
+- **Open:** build 4 now predates PR #7 (clock-in geofence enforcement) and other Dart changes.
+  A `1.0.0+5` build is needed before the next release — not built, awaiting the user's call.
+
+---
+
 ## 2026-07-04 — [[Claude_Code]] — DEMO READINESS COMPLETE + security lockdown + load test
 
 - **Un-bricked the backend**: repo had a botched merge (duplicate `_sid`, conflict markers in `schema.ts`, duplicate AI tables, duplicate `/ai/chat` routes) that silently blocked ALL deploys. Fixed and redeployed; live backend is current again.
