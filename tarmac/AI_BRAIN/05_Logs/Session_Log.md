@@ -4,6 +4,15 @@ Per-session notes of **major changes**. Newest first. Short bullets only — wha
 
 > Format: `## YYYY-MM-DD — Agent — Session title`
 
+## 2026-10-08 → 10-11 — [[Claude_Code]] — Tarmac instance: production, split into tarmac/, Play Store prep
+
+- **Production backend** `unique-anteater-230` (Europe) created; fresh JWT secret, CORS to the two Tarmac sites, late-scan alerts on. App, both websites and the admin script point at it. Production has no accounts yet — admin is created with `scripts/create-tarmac-admin.mjs`.
+- **Repo split:** Tarmac moved from the `feature/tarmac` branch into `tarmac/` on `main` (PR #16); PR #13 had merged Tarmac into Evergreen's main by mistake and was reverted (#15). `feature/tarmac` is deleted. Never merge across company folders.
+- **Features:** guard profile photos (admin upload, signed URLs); late-scan alerts; shift-only tracking (ACCESS_BACKGROUND_LOCATION removed in the tarmac flavor); flat brand blue, Scan on home, Patrol Tour removed; duty card fixed for 320px phones (#19).
+- **Admin trimmed:** Analytics, AI Assistant and Pass-On Logs hidden via brand flags (#22); finance placeholder pages added (#21).
+- **Play Store prep:** release signing key + signed `.aab`; privacy policy live at tarmac-clients `/privacy.html`; listing, icon and banner in `docs/play-store/` (#20).
+- **Trap:** a browser tab opened before a deploy keeps the old code (looked like features "missing"); hard refresh fixes it.
+
 ## 2026-07-04 — [[Claude_Code]] — DEMO READINESS COMPLETE + security lockdown + load test
 
 - **Un-bricked the backend**: repo had a botched merge (duplicate `_sid`, conflict markers in `schema.ts`, duplicate AI tables, duplicate `/ai/chat` routes) that silently blocked ALL deploys. Fixed and redeployed; live backend is current again.
