@@ -4,6 +4,26 @@
 
 ## Active Focus
 
+> 🧭 **2026-10-11 — THE REPO IS NOW SPLIT BY COMPANY. Paths below this box are stale.**
+> Read `../../PROJECT_BOUNDARY.md` first.
+>
+> - One patrol system, two client companies, one folder each: **`evergreen/`** (this one) and
+>   **`tarmac/`** (Tarmac Security Ltd). They share nothing. Never touch `tarmac/` from here.
+> - Every Evergreen path in this file gained an `evergreen/` prefix. Convex source is
+>   **`evergreen/mobile/patrol_app/convex/`**. Run all commands from inside the company folder
+>   so the right `.env.local` applies.
+> - Prod is still **`harmless-pigeon-186`**; dev is still `resilient-buffalo-226`. Unchanged.
+>   Tarmac has its own (`unique-anteater-230` / `gallant-crow-174`) — never cross them.
+> - **Latest release: `1.0.0+4`**, signed, prod deployed. Build 4 now predates PR #7
+>   (clock-in geofence enforcement) — **a `1.0.0+5` build is needed before the next release.**
+> - ⚠️ **The signing keystore is gitignored and was nearly lost in the split.** It now lives at
+>   `evergreen/mobile/patrol_app/android/upload.jks` with an off-repo backup at
+>   `~/patrolsecurity-keystore-backup/`. It has never been in a commit — if both copies go, no
+>   future build can ever update an installed app. Never `rm` a folder holding it.
+> - Pre-restructure folders were moved (not deleted) to
+>   `~/dev/PatrolSecurity_stale_pre-restructure/`. Nothing should read from them.
+> - See [[Session_Log]] 2026-10-11 for the full account.
+
 > 🚨 **2026-08-03 — READ [[Session_2026-08-03_Alert_Delivery]] FIRST.** Newest.
 >
 > - **The panic button had never notified anyone.** All 9 prod emergency events
@@ -148,4 +168,4 @@
 ## Related
 - [[Roadmap]] · [[Todo]] · [[Decision_Log]] · [[Bug_Tracker]] · [[Session_Log]]
 
-_Last updated: 2026-07-12_
+_Last updated: 2026-10-11_
