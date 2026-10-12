@@ -36,21 +36,20 @@ const AiAssistant = lazy(() => import('./pages/AiAssistant'))
 const Settings = lazy(() => import('./pages/Settings'))
 const UserDetail = lazy(() => import('./pages/UserDetail'))
 const Profile = lazy(() => import('./pages/Profile'))
-const FinancePage = lazy(() => import('./pages/finance/FinancePage'))
-
-// Finance package pages (Tarmac only). Placeholders until each is built.
+// Finance package pages (Tarmac). UI with sample data until each is wired up.
 const FINANCE_PAGES = [
-  { path: 'clients', eyebrow: 'Finance', title: 'Clients' },
-  { path: 'branches', eyebrow: 'Finance', title: 'Branches' },
-  { path: 'partners', eyebrow: 'Finance', title: 'Partners' },
-  { path: 'invoices', eyebrow: 'Finance', title: 'Invoices' },
-  { path: 'payments', eyebrow: 'Finance', title: 'Payments' },
-  { path: 'recruitment', eyebrow: 'People', title: 'Recruitment' },
-  { path: 'staff', eyebrow: 'People', title: 'Staff Records' },
-  { path: 'rosters', eyebrow: 'People', title: 'Rosters' },
-  { path: 'payroll', eyebrow: 'Finance', title: 'Payroll' },
-  { path: 'reports', eyebrow: 'Finance', title: 'Finance Reports' },
+  { path: 'clients', Page: lazy(() => import('./pages/finance/Clients')) },
+  { path: 'invoices', Page: lazy(() => import('./pages/finance/Invoices')) },
+  { path: 'payments', Page: lazy(() => import('./pages/finance/Payments')) },
+  { path: 'branches', Page: lazy(() => import('./pages/finance/Branches')) },
+  { path: 'partners', Page: lazy(() => import('./pages/finance/Partners')) },
+  { path: 'recruitment', Page: lazy(() => import('./pages/finance/Recruitment')) },
+  { path: 'staff', Page: lazy(() => import('./pages/finance/Staff')) },
+  { path: 'rosters', Page: lazy(() => import('./pages/finance/Rosters')) },
+  { path: 'payroll', Page: lazy(() => import('./pages/finance/Payroll')) },
+  { path: 'reports', Page: lazy(() => import('./pages/finance/Reports')) },
 ]
+const FinanceOverview = lazy(() => import('./pages/finance/Overview'))
 
 const roleHomePath: Record<UserRole, string> = {
   admin: '/',
@@ -120,7 +119,7 @@ export default function App() {
         >
           <Route path="/" element={features.patrol
             ? <RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Dashboard /></RoleRoute>
-            : <RoleRoute allowedRoles={['admin']}><FinancePage eyebrow="Finance" title="Overview" /></RoleRoute>} />
+            : <RoleRoute allowedRoles={['admin']}><FinanceOverview /></RoleRoute>} />
           <Route path="/monitoring" element={<PatrolOnly><MonitoringGuard><Monitoring /></MonitoringGuard></PatrolOnly>} />
           <Route path="/scans" element={<PatrolOnly><RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><Scans /></RoleRoute></PatrolOnly>} />
           <Route path="/scans/:id" element={<PatrolOnly><RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><ScanDetail /></RoleRoute></PatrolOnly>} />
@@ -142,8 +141,8 @@ export default function App() {
           <Route path="/pass-on-logs" element={features.passOnLogs ? <RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><PassOnLogs /></RoleRoute> : <Navigate to="/" replace />} />
           <Route path="/activity-summary" element={<PatrolOnly><RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><ActivitySummary /></RoleRoute></PatrolOnly>} />
           <Route path="/analytics" element={features.analytics ? <RoleRoute allowedRoles={['admin', 'supervisor']}><Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading analytics…</div>}><Analytics /></Suspense></RoleRoute> : <Navigate to="/" replace />} />
-          {features.finance && FINANCE_PAGES.map((page) => (
-            <Route key={page.path} path={`/finance/${page.path}`} element={<RoleRoute allowedRoles={['admin']}><FinancePage eyebrow={page.eyebrow} title={page.title} /></RoleRoute>} />
+          {features.finance && FINANCE_PAGES.map(({ path, Page }) => (
+            <Route key={path} path={`/finance/${path}`} element={<RoleRoute allowedRoles={['admin']}><Page /></RoleRoute>} />
           ))}
           <Route path="/ai-assistant" element={features.aiAssistant ? <RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><AiAssistant /></RoleRoute> : <Navigate to="/" replace />} />
         </Route>
