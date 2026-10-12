@@ -40,6 +40,7 @@ const FinancePage = lazy(() => import('./pages/finance/FinancePage'))
 
 // Finance package pages (Tarmac only). Placeholders until each is built.
 const FINANCE_PAGES = [
+  { path: 'clients', eyebrow: 'Finance', title: 'Clients' },
   { path: 'branches', eyebrow: 'Finance', title: 'Branches' },
   { path: 'partners', eyebrow: 'Finance', title: 'Partners' },
   { path: 'invoices', eyebrow: 'Finance', title: 'Invoices' },
@@ -56,6 +57,11 @@ const roleHomePath: Record<UserRole, string> = {
   main_account: '/',
   supervisor: '/',
   guard: '/profile',
+}
+
+/** Patrol screens: shown only while the patrol package is switched on. */
+function PatrolOnly({ children }: { children: React.ReactNode }) {
+  return features.patrol ? <>{children}</> : <Navigate to="/" replace />
 }
 
 function RoleHomeRedirect() {
@@ -112,27 +118,29 @@ export default function App() {
             </ProtectedRoute>
           }
         >
-          <Route path="/" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Dashboard /></RoleRoute>} />
-          <Route path="/monitoring" element={<MonitoringGuard><Monitoring /></MonitoringGuard>} />
-          <Route path="/scans" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><Scans /></RoleRoute>} />
-          <Route path="/scans/:id" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><ScanDetail /></RoleRoute>} />
-          <Route path="/clients" element={<RoleRoute allowedRoles={['admin', 'supervisor']}><Clients /></RoleRoute>} />
-          <Route path="/clients/:id" element={<RoleRoute allowedRoles={['admin', 'supervisor']}><ClientDetail /></RoleRoute>} />
+          <Route path="/" element={features.patrol
+            ? <RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Dashboard /></RoleRoute>
+            : <RoleRoute allowedRoles={['admin']}><FinancePage eyebrow="Finance" title="Overview" /></RoleRoute>} />
+          <Route path="/monitoring" element={<PatrolOnly><MonitoringGuard><Monitoring /></MonitoringGuard></PatrolOnly>} />
+          <Route path="/scans" element={<PatrolOnly><RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><Scans /></RoleRoute></PatrolOnly>} />
+          <Route path="/scans/:id" element={<PatrolOnly><RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><ScanDetail /></RoleRoute></PatrolOnly>} />
+          <Route path="/clients" element={<PatrolOnly><RoleRoute allowedRoles={['admin', 'supervisor']}><Clients /></RoleRoute></PatrolOnly>} />
+          <Route path="/clients/:id" element={<PatrolOnly><RoleRoute allowedRoles={['admin', 'supervisor']}><ClientDetail /></RoleRoute></PatrolOnly>} />
           {/* The flat Checkpoints page moved inside client accounts; the list
               route now redirects there. Detail stays for printed QR deep links. */}
-          <Route path="/checkpoints" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Navigate to="/clients" replace /></RoleRoute>} />
-          <Route path="/checkpoints/:id" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><CheckpointDetail /></RoleRoute>} />
-          <Route path="/reports" element={<RoleRoute allowedRoles={['admin', 'main_account']}><Reports /></RoleRoute>} />
-          <Route path="/users" element={<RoleRoute allowedRoles={['admin']}><Users /></RoleRoute>} />
-          <Route path="/users/:id" element={<RoleRoute allowedRoles={['admin']}><UserDetail /></RoleRoute>} />
+          <Route path="/checkpoints" element={<PatrolOnly><RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Navigate to="/clients" replace /></RoleRoute></PatrolOnly>} />
+          <Route path="/checkpoints/:id" element={<PatrolOnly><RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><CheckpointDetail /></RoleRoute></PatrolOnly>} />
+          <Route path="/reports" element={<PatrolOnly><RoleRoute allowedRoles={['admin', 'main_account']}><Reports /></RoleRoute></PatrolOnly>} />
+          <Route path="/users" element={<PatrolOnly><RoleRoute allowedRoles={['admin']}><Users /></RoleRoute></PatrolOnly>} />
+          <Route path="/users/:id" element={<PatrolOnly><RoleRoute allowedRoles={['admin']}><UserDetail /></RoleRoute></PatrolOnly>} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/settings" element={<RoleRoute allowedRoles={['admin']}><Settings /></RoleRoute>} />
-          <Route path="/alerts" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Alerts /></RoleRoute>} />
-          <Route path="/timesheets" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><Timesheets /></RoleRoute>} />
-          <Route path="/post-orders" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><PostOrders /></RoleRoute>} />
+          <Route path="/alerts" element={<PatrolOnly><RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Alerts /></RoleRoute></PatrolOnly>} />
+          <Route path="/timesheets" element={<PatrolOnly><RoleRoute allowedRoles={['admin', 'main_account', 'supervisor', 'guard']}><Timesheets /></RoleRoute></PatrolOnly>} />
+          <Route path="/post-orders" element={<PatrolOnly><RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><PostOrders /></RoleRoute></PatrolOnly>} />
           <Route path="/handovers" element={features.handovers ? <RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><Handovers /></RoleRoute> : <Navigate to="/" replace />} />
           <Route path="/pass-on-logs" element={features.passOnLogs ? <RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><PassOnLogs /></RoleRoute> : <Navigate to="/" replace />} />
-          <Route path="/activity-summary" element={<RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><ActivitySummary /></RoleRoute>} />
+          <Route path="/activity-summary" element={<PatrolOnly><RoleRoute allowedRoles={['admin', 'main_account', 'supervisor']}><ActivitySummary /></RoleRoute></PatrolOnly>} />
           <Route path="/analytics" element={features.analytics ? <RoleRoute allowedRoles={['admin', 'supervisor']}><Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading analytics…</div>}><Analytics /></Suspense></RoleRoute> : <Navigate to="/" replace />} />
           {features.finance && FINANCE_PAGES.map((page) => (
             <Route key={page.path} path={`/finance/${page.path}`} element={<RoleRoute allowedRoles={['admin']}><FinancePage eyebrow={page.eyebrow} title={page.title} /></RoleRoute>} />

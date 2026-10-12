@@ -55,4 +55,9 @@ export const features = {
   analytics: !isTarmac,
   aiAssistant: !isTarmac,
   passOnLogs: !isTarmac,
+  // Patrol screens (overview map, monitoring, personnel, patrol history,
+  // timesheets, alerts…). Tarmac bought the finance package first, so the
+  // admin shows finance only. The patrol code and backend are untouched:
+  // set this to true for Tarmac to bring every patrol screen back.
+  patrol: !isTarmac,
 }

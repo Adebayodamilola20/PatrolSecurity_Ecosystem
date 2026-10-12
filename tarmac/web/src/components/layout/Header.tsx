@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Search, Bell, Menu } from 'lucide-react'
 import { api } from '../../services/api'
+import { features } from '../../brand'
 
 interface HeaderProps {
   onMenuClick?: () => void
@@ -10,6 +11,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
   const [alertCount, setAlertCount] = useState(0)
 
   useEffect(() => {
+    if (!features.patrol) return
     api.incidents.list({ status: 'open' }).then(i => setAlertCount(i.length)).catch(() => {})
   }, [])
 
@@ -21,6 +23,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
       >
         <Menu className="h-5 w-5" />
       </button>
+      {features.patrol && (<>
       <div className="relative flex-1 max-w-md">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <input
@@ -37,6 +40,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
           </span>
         )}
       </button>
+      </>)}
     </header>
   )
 }
