@@ -83,7 +83,8 @@ export default function DashboardLayout() {
   }, [logout])
 
   useEffect(() => {
-    if (!isAuthenticated || role === 'guard') return
+    // Guard emergencies are a patrol feature; off while patrol is switched off.
+    if (!isAuthenticated || role === 'guard' || !features.patrol) return
     const unsubscribe = subscribeToEmergency((data) => {
       setEmergency(data || {})
     })

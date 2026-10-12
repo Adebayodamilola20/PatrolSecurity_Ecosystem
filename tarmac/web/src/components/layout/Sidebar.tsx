@@ -32,6 +32,19 @@ import { features } from '../../brand'
 import { useAuthStore, useCanManageUsers, useCanViewAlerts } from '../../stores/useAuthStore'
 import { useAlertStore } from '../../stores/useAlertStore'
 
+const FINANCE_NAV = [
+  { to: '/finance/clients', label: 'Clients', icon: Building2 },
+  { to: '/finance/invoices', label: 'Invoices', icon: Receipt },
+  { to: '/finance/payments', label: 'Payments', icon: Wallet },
+  { to: '/finance/branches', label: 'Branches', icon: Landmark },
+  { to: '/finance/partners', label: 'Partners', icon: Handshake },
+  { to: '/finance/recruitment', label: 'Recruitment', icon: UserPlus },
+  { to: '/finance/staff', label: 'Staff Records', icon: IdCard },
+  { to: '/finance/rosters', label: 'Rosters', icon: CalendarDays },
+  { to: '/finance/payroll', label: 'Payroll', icon: Banknote },
+  { to: '/finance/reports', label: 'Finance Reports', icon: PieChart },
+]
+
 function useNav() {
   const role = useAuthStore((s) => s.user?.role)
   const canManageUsers = useCanManageUsers()
@@ -43,6 +56,17 @@ function useNav() {
       { to: '/scans', label: 'My Scan History', icon: ClipboardList },
       { to: '/timesheets', label: 'My Timesheets', icon: Clock },
       ...(features.aiAssistant ? [{ to: '/ai-assistant', label: 'AI Assistant', icon: Bot }] : []),
+    ]
+  }
+
+  // Finance-only admin (patrol screens switched off): the finance pages and
+  // Settings, nothing else.
+  if (!features.patrol) {
+    if (role !== 'admin') return []
+    return [
+      { to: '/', label: 'Overview', icon: LayoutDashboard },
+      ...FINANCE_NAV,
+      { to: '/settings', label: 'Settings', icon: Settings },
     ]
   }
 
@@ -82,20 +106,7 @@ function useNav() {
   }
 
   // Finance package (Tarmac only, admin only). Pages are placeholders for now.
-  if (features.finance && role === 'admin') {
-    items.push(
-      { to: '/finance/branches', label: 'Branches', icon: Landmark },
-      { to: '/finance/partners', label: 'Partners', icon: Handshake },
-      { to: '/finance/invoices', label: 'Invoices', icon: Receipt },
-      { to: '/finance/payments', label: 'Payments', icon: Wallet },
-      { to: '/finance/recruitment', label: 'Recruitment', icon: UserPlus },
-      { to: '/finance/staff', label: 'Staff Records', icon: IdCard },
-      { to: '/finance/rosters', label: 'Rosters', icon: CalendarDays },
-      { to: '/finance/payroll', label: 'Payroll', icon: Banknote },
-      { to: '/finance/reports', label: 'Finance Reports', icon: PieChart },
-    )
-  }
-
+  if (features.finance && role === 'admin') items.push(...FINANCE_NAV)
   if (role === 'admin') {
     items.push({ to: '/settings', label: 'Settings', icon: Settings })
   }
