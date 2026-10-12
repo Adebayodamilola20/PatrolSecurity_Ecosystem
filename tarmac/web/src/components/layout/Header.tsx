@@ -16,7 +16,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
   }, [])
 
   return (
-    <header className="flex items-center gap-3 border-b border-border bg-card/40 px-3 md:px-5 py-3">
+    <header className={`flex items-center gap-3 border-b border-border bg-card/40 px-3 md:px-5 py-3 ${features.patrol ? '' : 'md:hidden'}`}>
       <button
         onClick={onMenuClick}
         className="md:hidden rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-card border border-border"
