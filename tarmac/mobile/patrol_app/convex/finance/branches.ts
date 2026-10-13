@@ -6,9 +6,6 @@ import { assertSecondPerson, audit, clean, fail, getBranch, periodOf, periodRang
 
 const splitValidator = v.object({ hq: v.number(), vat: v.number(), partner: v.number(), salary: v.number() });
 
-/** Tarmac's branches, Head Office first. */
-export const TARMAC_BRANCHES = ["Jos", "Abuja", "Lagos", "Port Harcourt", "Owerri", "Yola", "Lafia"];
-
 export const list = internalQuery({
   args: {},
   handler: async (ctx) => {
@@ -74,27 +71,6 @@ export const create = internalMutation({
     });
     await audit(ctx, args.actorId, "branch.created", "finBranch", id, `Added branch ${name}`);
     return id;
-  },
-});
-
-/** One click on an empty system: Tarmac's 7 branches, Jos as Head Office. */
-export const addTarmacBranches = internalMutation({
-  args: { actorId: v.id("users") },
-  handler: async (ctx, args) => {
-    const existing = (await ctx.db.query("finBranches").collect()).filter((b) => b.active);
-    if (existing.length) fail("Branches already exist. Add any missing branch one at a time.");
-    for (const [i, name] of TARMAC_BRANCHES.entries()) {
-      await ctx.db.insert("finBranches", {
-        name,
-        isHq: i === 0,
-        splitBps: DEFAULT_SPLIT_BPS,
-        onHold: false,
-        active: true,
-        createdAt: Date.now(),
-      });
-    }
-    await audit(ctx, args.actorId, "branch.created", "finBranch", "all", `Added Tarmac's ${TARMAC_BRANCHES.length} branches`);
-    return TARMAC_BRANCHES.length;
   },
 });
 

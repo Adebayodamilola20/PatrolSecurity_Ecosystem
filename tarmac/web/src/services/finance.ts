@@ -226,8 +226,7 @@ export const finance = {
   reports: (period: string) => get<Reports>(`reports?period=${period}`),
 
   branches: () => get<Branch[]>('branches'),
-  addTarmacBranches: () => post('branches/add-tarmac'),
-  createBranch: (name: string) => post('branches/create', { name }),
+  createBranch: (name: string, isHq = false) => post('branches/create', { name, isHq }),
   updateBranch: (b: { branchId: string; name?: string; salaryBankName?: string; salaryAccountNumber?: string }) => post('branches/update', b),
   setHold: (branchId: string, onHold: boolean, note?: string) => post('branches/hold', { branchId, onHold, note }),
   setSplit: (branchId: string, splitBps: Split) => post('branches/split', { branchId, splitBps }),
