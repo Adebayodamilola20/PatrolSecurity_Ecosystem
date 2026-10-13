@@ -91,7 +91,9 @@ export const createReservedAccount = internalAction({
       clientId: args.clientId,
       bankName: account.bankName,
       accountNumber: account.accountNumber,
-      accountName: account.accountName ?? client.name,
+      // The full name (e.g. "ANDRIL-Rayfield Estate") is on the reserved account;
+      // each bank line may carry only a shortened form.
+      accountName: body.accountName ?? account.accountName ?? client.name,
       accountRef: client.id,
       provider: "monnify",
     });
