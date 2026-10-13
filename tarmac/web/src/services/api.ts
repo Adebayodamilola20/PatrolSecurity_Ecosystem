@@ -208,6 +208,7 @@ async function request<T>(
       message,
       kind: res.status >= 500 ? 'server' : 'request',
       status: res.status,
+      path,
     })
     throw new Error(message)
   }
@@ -215,6 +216,9 @@ async function request<T>(
   emitAppEvent('app:request-success', { path })
   return res.json()
 }
+
+/** The shared request helper, for feature modules (e.g. services/finance.ts). */
+export { request as apiRequest }
 
 // Same auth/refresh behaviour as request(), but for binary downloads (PDFs).
 async function requestBlob(path: string, allowRefresh = true): Promise<Blob> {

@@ -36,7 +36,7 @@ const AiAssistant = lazy(() => import('./pages/AiAssistant'))
 const Settings = lazy(() => import('./pages/Settings'))
 const UserDetail = lazy(() => import('./pages/UserDetail'))
 const Profile = lazy(() => import('./pages/Profile'))
-// Finance package pages (Tarmac). UI with sample data until each is wired up.
+// Finance package pages (Tarmac). /finance/partners redirects to Branches.
 const FINANCE_PAGES = [
   { path: 'clients', Page: lazy(() => import('./pages/finance/Clients')) },
   { path: 'invoices', Page: lazy(() => import('./pages/finance/Invoices')) },

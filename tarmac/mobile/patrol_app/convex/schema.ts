@@ -360,6 +360,219 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_serviceDate", ["serviceDate"]),
 
+  // ---------------------------------------------------------------------------
+  // Finance package (Tarmac). Every amount is integer kobo (₦1 = 100). The maths
+  // lives in lib/finance.ts; these tables only store results.
+  // ---------------------------------------------------------------------------
+  finBranches: defineTable({
+    name: v.string(),
+    isHq: v.boolean(),
+    partnerId: v.optional(v.id("finPartners")),
+    // Basis points, 10,000 = 100%. Default 800 / 750 / 3450 / 5000.
+    splitBps: v.object({ hq: v.number(), vat: v.number(), partner: v.number(), salary: v.number() }),
+    // While on hold, payments for this branch are recorded but not shared.
+    onHold: v.boolean(),
+    holdNote: v.optional(v.string()),
+    salaryBankName: v.optional(v.string()),
+    salaryAccountNumber: v.optional(v.string()),
+    active: v.boolean(),
+    createdAt: v.number(),
+  }).index("by_name", ["name"]),
+
+  finPartners: defineTable({
+    name: v.string(),
+    phone: v.string(),
+    email: v.optional(v.string()),
+    branchId: v.id("finBranches"),
+    bankName: v.string(),
+    accountNumber: v.string(),
+    accountName: v.string(),
+    // No money goes to a partner until a second admin approves them.
+    status: v.union(v.literal("pending"), v.literal("active"), v.literal("removed")),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+    approvedBy: v.optional(v.id("users")),
+    approvedAt: v.optional(v.number()),
+  })
+    .index("by_branchId", ["branchId"])
+    .index("by_status", ["status"]),
+
+  finClients: defineTable({
+    name: v.string(),
+    branchId: v.id("finBranches"),
+    contactName: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    email: v.optional(v.string()),
+    address: v.optional(v.string()),
+    monthlyFeeKobo: v.number(),
+    guards: v.number(),
+    contractEnd: v.optional(v.string()),
+    status: v.union(v.literal("active"), v.literal("ended")),
+    // The client's own payment account (Monnify reserved account, or typed in).
+    payBankName: v.optional(v.string()),
+    payAccountNumber: v.optional(v.string()),
+    payAccountName: v.optional(v.string()),
+    payAccountRef: v.optional(v.string()),
+    payProvider: v.optional(v.union(v.literal("monnify"), v.literal("manual"))),
+    createdAt: v.number(),
+  })
+    .index("by_branchId", ["branchId"])
+    .index("by_payAccountRef", ["payAccountRef"])
+    .index("by_payAccountNumber", ["payAccountNumber"]),
+
+  finInvoices: defineTable({
+    number: v.string(),
+    clientId: v.id("finClients"),
+    branchId: v.id("finBranches"),
+    period: v.string(), // "2026-10"
+    lines: v.array(v.object({ description: v.string(), quantity: v.number(), unitKobo: v.number() })),
+    subtotalKobo: v.number(),
+    vatKobo: v.number(),
+    totalKobo: v.number(),
+    paidKobo: v.number(),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("sent"),
+      v.literal("part_paid"),
+      v.literal("paid"),
+      v.literal("cancelled"),
+    ),
+    dueDate: v.string(), // "2026-10-31"
+    notes: v.optional(v.string()),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+    sentAt: v.optional(v.number()),
+  })
+    .index("by_clientId", ["clientId"])
+    .index("by_status", ["status"])
+    .index("by_number", ["number"])
+    .index("by_period", ["period"]),
+
+  finPayments: defineTable({
+    clientId: v.id("finClients"),
+    branchId: v.id("finBranches"),
+    amountKobo: v.number(),
+    receivedAt: v.number(),
+    // Unique per payment: the Monnify transaction reference, or one we make.
+    reference: v.string(),
+    source: v.union(v.literal("monnify"), v.literal("manual")),
+    method: v.optional(v.string()),
+    note: v.optional(v.string()),
+    // Which invoices this payment paid, oldest first.
+    allocations: v.array(v.object({ invoiceId: v.id("finInvoices"), amountKobo: v.number() })),
+    unallocatedKobo: v.number(),
+    state: v.union(v.literal("held"), v.literal("shared")),
+    split: v.object({ hq: v.number(), vat: v.number(), partner: v.number(), salary: v.number() }),
+    splitBps: v.object({ hq: v.number(), vat: v.number(), partner: v.number(), salary: v.number() }),
+    partnerId: v.optional(v.id("finPartners")),
+    recordedBy: v.optional(v.id("users")),
+    releasedBy: v.optional(v.id("users")),
+    releasedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_reference", ["reference"])
+    .index("by_clientId", ["clientId"])
+    .index("by_receivedAt", ["receivedAt"])
+    .index("by_state", ["state"])
+    .index("by_branchId_receivedAt", ["branchId", "receivedAt"]),
+
+  finStaff: defineTable({
+    name: v.string(),
+    staffNo: v.string(),
+    phone: v.optional(v.string()),
+    branchId: v.id("finBranches"),
+    role: v.union(v.literal("guard"), v.literal("supervisor"), v.literal("office")),
+    post: v.optional(v.string()),
+    status: v.union(v.literal("active"), v.literal("leave"), v.literal("suspended"), v.literal("left")),
+    startDate: v.optional(v.string()),
+    basicKobo: v.number(),
+    allowancesKobo: v.number(),
+    nhf: v.boolean(),
+    bankName: v.optional(v.string()),
+    accountNumber: v.optional(v.string()),
+    pensionPin: v.optional(v.string()),
+    guarantorName: v.optional(v.string()),
+    guarantorPhone: v.optional(v.string()),
+    guarantorVerified: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("by_branchId", ["branchId"])
+    .index("by_staffNo", ["staffNo"]),
+
+  finApplicants: defineTable({
+    name: v.string(),
+    phone: v.optional(v.string()),
+    branchId: v.id("finBranches"),
+    stage: v.union(
+      v.literal("applied"),
+      v.literal("screening"),
+      v.literal("interview"),
+      v.literal("training"),
+      v.literal("hired"),
+      v.literal("rejected"),
+    ),
+    appliedOn: v.string(),
+    guarantorName: v.optional(v.string()),
+    guarantorPhone: v.optional(v.string()),
+    guarantorVerified: v.boolean(),
+    notes: v.optional(v.string()),
+    staffId: v.optional(v.id("finStaff")),
+    createdAt: v.number(),
+  })
+    .index("by_branchId", ["branchId"])
+    .index("by_stage", ["stage"]),
+
+  finRoster: defineTable({
+    staffId: v.id("finStaff"),
+    branchId: v.id("finBranches"),
+    date: v.string(), // "2026-10-13"
+    shift: v.union(v.literal("day"), v.literal("night"), v.literal("off")),
+  })
+    .index("by_branchId_date", ["branchId", "date"])
+    .index("by_staffId_date", ["staffId", "date"]),
+
+  finPayrollRuns: defineTable({
+    branchId: v.id("finBranches"),
+    period: v.string(),
+    status: v.union(v.literal("draft"), v.literal("approved"), v.literal("paid")),
+    lines: v.array(
+      v.object({
+        staffId: v.id("finStaff"),
+        name: v.string(),
+        staffNo: v.string(),
+        role: v.string(),
+        bankName: v.optional(v.string()),
+        accountNumber: v.optional(v.string()),
+        basic: v.number(),
+        allowances: v.number(),
+        gross: v.number(),
+        pension: v.number(),
+        nhf: v.number(),
+        paye: v.number(),
+        net: v.number(),
+        employerPension: v.number(),
+        cost: v.number(),
+      }),
+    ),
+    totals: v.object({
+      gross: v.number(),
+      pension: v.number(),
+      nhf: v.number(),
+      paye: v.number(),
+      net: v.number(),
+      employerPension: v.number(),
+      cost: v.number(),
+    }),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+    approvedBy: v.optional(v.id("users")),
+    approvedAt: v.optional(v.number()),
+    paidBy: v.optional(v.id("users")),
+    paidAt: v.optional(v.number()),
+  }).index("by_branchId_period", ["branchId", "period"]),
+
+  finCounters: defineTable({ key: v.string(), value: v.number() }).index("by_key", ["key"]),
+
   officerPositions: defineTable({
     legacyId: v.optional(v.string()),
     clientId: v.optional(v.id("clients")),

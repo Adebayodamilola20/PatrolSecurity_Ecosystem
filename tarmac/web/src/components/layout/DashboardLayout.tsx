@@ -53,11 +53,14 @@ export default function DashboardLayout() {
   useEffect(() => {
     const sync = () => setOnline(navigator.onLine)
     const handleRequestError = (event: Event) => {
-      const detail = (event as CustomEvent<{ message?: string; kind?: AppIssue['kind']; status?: number }>).detail
+      const detail = (event as CustomEvent<{ message?: string; kind?: AppIssue['kind']; status?: number; path?: string }>).detail
       if (detail?.status === 401 || detail?.message === 'Invalid or expired token') {
         logout()
         return
       }
+      // Finance screens show their own "can't do that" messages next to the
+      // form; a second banner here would only repeat (and mislabel) them.
+      if (detail?.path?.startsWith('/finance/') && detail.status && detail.status < 500) return
       setIssue({
         message: detail?.message || 'Something went wrong while loading data. Please try again.',
         kind: detail?.kind || 'request',

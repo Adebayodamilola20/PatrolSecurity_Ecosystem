@@ -43,6 +43,24 @@ export function isLateScanAlertsEnabled() {
   return optionalEnv("LATE_SCAN_ALERTS").toLowerCase() === "on";
 }
 
+/**
+ * Monnify (Tarmac's payment provider). Until all three keys are set, client
+ * account numbers are typed in and payments are recorded by hand.
+ * MONNIFY_BASE_URL defaults to the sandbox; live is https://api.monnify.com.
+ */
+export function getMonnifyConfig() {
+  const apiKey = optionalEnv("MONNIFY_API_KEY");
+  const secretKey = optionalEnv("MONNIFY_SECRET_KEY");
+  const contractCode = optionalEnv("MONNIFY_CONTRACT_CODE");
+  if (!apiKey || !secretKey || !contractCode) return null;
+  return {
+    apiKey,
+    secretKey,
+    contractCode,
+    baseUrl: optionalEnv("MONNIFY_BASE_URL", "https://sandbox.monnify.com").replace(/\/$/, ""),
+  };
+}
+
 export function isSmsConfigured() {
   return Boolean(optionalEnv("TERMII_API_KEY") && optionalEnv("TERMII_SENDER_ID"));
 }

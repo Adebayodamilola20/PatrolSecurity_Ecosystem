@@ -1,93 +1,108 @@
-import { Download, FileSpreadsheet, FileText } from 'lucide-react'
-import { PageHeader } from '../../components/ui/PageHeader'
-import { BRANCHES, splitOf } from './sample'
-import { SampleBanner, Section, Select, Table, Td } from './ui'
-import { naira } from './format'
+import { useState } from 'react'
+import { Download } from 'lucide-react'
+import { finance, type Reports } from '../../services/finance'
+import { dateLabel, downloadCsv, monthOptions, naira, nairaPlain, thisPeriod } from './format'
+import {
+  Btn, Empty, Failed, Loading, Page, Panel, Row, Rows, SelectInput,
+} from './ui'
+import { useData } from './hooks'
 
-const REPORTS = [
-  { title: 'Branch statement', text: 'Everything a branch was paid, shared and spent in the month. For branch partners.' },
-  { title: 'Head Office income', text: "Head Office's 8% from every branch, month by month." },
-  { title: 'VAT set aside', text: 'VAT collected in each branch, ready to pay to FIRS.' },
-  { title: 'Salary account vs payroll', text: 'Whether each branch salary account had enough to cover its payroll.' },
-  { title: 'Money owed by clients', text: 'Unpaid invoices grouped by how late they are.' },
-  { title: 'Payroll summary', text: 'Gross pay, PAYE and pension per branch, for remittance.' },
+const REPORTS: { title: string; text: string; make: (r: Reports) => (string | number)[][] }[] = [
+  {
+    title: 'Money by branch',
+    text: 'What each branch received, and how it was shared.',
+    make: (r) => [
+      ['Branch', 'Payments', 'Received', 'On hold', 'Head Office', 'VAT', 'Partner', 'Salaries'],
+      ...r.byBranch.map((b) => [b.branchName, b.payments, nairaPlain(b.receivedKobo), nairaPlain(b.heldKobo), nairaPlain(b.split.hq), nairaPlain(b.split.vat), nairaPlain(b.split.partner), nairaPlain(b.split.salary)]),
+    ],
+  },
+  {
+    title: 'Money owed by clients',
+    text: 'Every unpaid invoice, the most late first.',
+    make: (r) => [
+      ['Invoice', 'Client', 'Branch', 'Due date', 'Days late', 'Still to pay'],
+      ...r.owed.map((o) => [o.number, o.clientName, o.branchName, o.dueDate, o.daysLate, nairaPlain(o.balanceKobo)]),
+    ],
+  },
+  {
+    title: 'Payroll summary',
+    text: 'Pay, PAYE and pension per branch, for paying the tax office and pension.',
+    make: (r) => [
+      ['Branch', 'Status', 'People', 'Gross pay', 'PAYE', 'Pension (staff 8%)', 'Pension (Tarmac 10%)', 'Housing fund', 'Take-home'],
+      ...r.payroll.map((p) => [p.branchName, p.status === 'none' ? 'not prepared' : p.status, p.people, nairaPlain(p.totals.gross), nairaPlain(p.totals.paye), nairaPlain(p.totals.pension), nairaPlain(p.totals.employerPension), nairaPlain(p.totals.nhf), nairaPlain(p.totals.net)]),
+    ],
+  },
+  {
+    title: 'VAT set aside',
+    text: 'The 7.5% VAT share kept from each branch, ready to pay to FIRS.',
+    make: (r) => [['Branch', 'VAT set aside'], ...r.byBranch.map((b) => [b.branchName, nairaPlain(b.split.vat)]), ['Total', nairaPlain(r.byBranch.reduce((s, b) => s + b.split.vat, 0))]],
+  },
 ]
 
 export default function FinanceReports() {
+  const [period, setPeriod] = useState(thisPeriod())
+  const { data, error, loading, reload } = useData(() => finance.reports(period), [period])
+
   return (
-    <div className="space-y-5">
-      <PageHeader
-        eyebrow="Finance"
-        title="Finance Reports"
-        blurb="Monthly statements for Head Office, branch partners and the tax office, ready to download."
-        actions={<Select options={['October 2026', 'September 2026', 'August 2026', 'Quarter 3 2026']} />}
-      />
-      <SampleBanner />
+    <Page
+      title="Reports"
+      help="Monthly figures to download and open in Excel."
+      action={<div className="w-56"><SelectInput value={period} onChange={setPeriod} options={monthOptions()} /></div>}
+    >
+      {loading && !data && <Loading />}
+      {error && <Failed message={error} onRetry={reload} />}
+      {data && (
+        <>
+          <Panel>
+            <Rows>
+              {REPORTS.map((r) => (
+                <div key={r.title} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center">
+                  <div className="flex-1">
+                    <div className="text-base font-semibold">{r.title}</div>
+                    <div className="text-[15px] text-muted-foreground">{r.text}</div>
+                  </div>
+                  <Btn variant="secondary" onClick={() => downloadCsv(`${r.title.toLowerCase().replace(/\s+/g, '-')}-${data.period}.csv`, r.make(data))}>
+                    <Download className="h-4 w-4" /> Download
+                  </Btn>
+                </div>
+              ))}
+            </Rows>
+          </Panel>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {REPORTS.map((r) => (
-          <article key={r.title} className="flex flex-col rounded-lg border border-border bg-card p-4 sm:p-5">
-            <h2 className="font-semibold">{r.title}</h2>
-            <p className="mt-1 flex-1 text-sm text-muted-foreground">{r.text}</p>
-            <div className="mt-4 flex gap-2">
-              <button type="button" className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted">
-                <FileText className="h-3.5 w-3.5" /> PDF
-              </button>
-              <button type="button" className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted">
-                <FileSpreadsheet className="h-3.5 w-3.5" /> Excel
-              </button>
-            </div>
-          </article>
-        ))}
-      </div>
+          <Panel title={`${data.periodLabel} by branch`}>
+            {data.byBranch.length === 0 ? (
+              <Empty title="No branches yet" />
+            ) : (
+              <Rows>
+                {data.byBranch.map((b) => (
+                  <Row
+                    key={b.branchName}
+                    title={b.branchName}
+                    sub={`Head Office ${naira(b.split.hq)} · Partner ${naira(b.split.partner)} · Salaries ${naira(b.split.salary)}`}
+                    right={naira(b.receivedKobo)}
+                    rightSub={b.heldKobo ? `${naira(b.heldKobo)} on hold` : `${b.payments} payment${b.payments === 1 ? '' : 's'}`}
+                  />
+                ))}
+              </Rows>
+            )}
+          </Panel>
 
-      <Section
-        title="October 2026 by branch"
-        action={
-          <button type="button" className="inline-flex items-center gap-1.5 text-xs font-medium text-primary">
-            <Download className="h-3.5 w-3.5" /> Download
-          </button>
-        }
-      >
-        <Table
-          head={[
-            { label: 'Branch' },
-            { label: 'Collected', align: 'right' },
-            { label: 'Head Office', align: 'right' },
-            { label: 'VAT set aside', align: 'right' },
-            { label: 'Partner', align: 'right' },
-            { label: 'Salaries', align: 'right' },
-          ]}
-        >
-          {BRANCHES.map((b) => {
-            const s = splitOf(b.collected)
-            return (
-              <tr key={b.id} className="hover:bg-muted/40">
-                <Td strong>{b.name}</Td>
-                <Td align="right" strong>{naira(b.collected)}</Td>
-                <Td align="right" muted>{naira(s.hq)}</Td>
-                <Td align="right" muted>{naira(s.vat)}</Td>
-                <Td align="right" muted>{naira(s.partner)}</Td>
-                <Td align="right" muted>{naira(s.salary)}</Td>
-              </tr>
-            )
-          })}
-          {(() => {
-            const total = BRANCHES.reduce((s, b) => s + b.collected, 0)
-            const s = splitOf(total)
-            return (
-              <tr className="bg-muted/40 font-semibold">
-                <Td>All branches</Td>
-                <Td align="right">{naira(total)}</Td>
-                <Td align="right">{naira(s.hq)}</Td>
-                <Td align="right">{naira(s.vat)}</Td>
-                <Td align="right">{naira(s.partner)}</Td>
-                <Td align="right">{naira(s.salary)}</Td>
-              </tr>
-            )
-          })()}
-        </Table>
-      </Section>
-    </div>
+          {data.owed.length > 0 && (
+            <Panel title="Still owed by clients">
+              <Rows>
+                {data.owed.slice(0, 10).map((o) => (
+                  <Row
+                    key={o.number}
+                    title={o.clientName}
+                    sub={`${o.number} · due ${dateLabel(o.dueDate)}${o.daysLate ? ` · ${o.daysLate} days late` : ''}`}
+                    right={naira(o.balanceKobo)}
+                  />
+                ))}
+              </Rows>
+            </Panel>
+          )}
+        </>
+      )}
+    </Page>
   )
 }

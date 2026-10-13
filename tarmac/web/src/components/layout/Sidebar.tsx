@@ -18,7 +18,6 @@ import {
   Activity,
   BarChart3,
   Landmark,
-  Handshake,
   Receipt,
   Wallet,
   UserPlus,
@@ -32,17 +31,17 @@ import { features } from '../../brand'
 import { useAuthStore, useCanManageUsers, useCanViewAlerts } from '../../stores/useAuthStore'
 import { useAlertStore } from '../../stores/useAlertStore'
 
+// Ordered by how often Head Office uses them. Partners live inside Branches.
 const FINANCE_NAV = [
-  { to: '/finance/clients', label: 'Clients', icon: Building2 },
-  { to: '/finance/invoices', label: 'Invoices', icon: Receipt },
   { to: '/finance/payments', label: 'Payments', icon: Wallet },
+  { to: '/finance/invoices', label: 'Invoices', icon: Receipt },
+  { to: '/finance/clients', label: 'Clients', icon: Building2 },
   { to: '/finance/branches', label: 'Branches', icon: Landmark },
-  { to: '/finance/partners', label: 'Partners', icon: Handshake },
-  { to: '/finance/recruitment', label: 'Recruitment', icon: UserPlus },
-  { to: '/finance/staff', label: 'Staff Records', icon: IdCard },
+  { to: '/finance/staff', label: 'Staff', icon: IdCard },
+  { to: '/finance/recruitment', label: 'Applicants', icon: UserPlus },
   { to: '/finance/rosters', label: 'Rosters', icon: CalendarDays },
   { to: '/finance/payroll', label: 'Payroll', icon: Banknote },
-  { to: '/finance/reports', label: 'Finance Reports', icon: PieChart },
+  { to: '/finance/reports', label: 'Reports', icon: PieChart },
 ]
 
 function useNav() {
@@ -173,7 +172,7 @@ export default function Sidebar({ collapsed, onToggle, mobile, onClose }: Sideba
                 <React.Fragment key={item.to}>
                   <Link
                     to={item.to}
-                    className={`group relative flex items-center gap-3 rounded-lg py-2 pl-4 pr-3 text-sm transition-colors ${
+                    className={`group relative flex items-center gap-3 rounded-lg pl-4 pr-3 transition-colors ${features.patrol ? 'py-2 text-sm' : 'py-3 text-base'} ${
                       active
                         ? "bg-sidebar-accent font-bold text-sidebar-foreground"
                         : "text-sidebar-foreground/75 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
@@ -188,7 +187,7 @@ export default function Sidebar({ collapsed, onToggle, mobile, onClose }: Sideba
                         active ? "bg-primary" : "bg-transparent"
                       }`}
                     />
-                    <Icon className={`h-[17px] w-[17px] shrink-0 ${active ? "text-primary" : ""}`} />
+                    <Icon className={`${features.patrol ? "h-[17px] w-[17px]" : "h-5 w-5"} shrink-0 ${active ? "text-primary" : ""}`} />
                     {(!collapsed || mobile) && <span>{item.label}</span>}
                     {(!collapsed || mobile) && item.label === "Alerts" && openIncidentCount > 0 && (
                       <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[11px] font-bold tabular-nums text-destructive-foreground">

@@ -21,6 +21,7 @@ import { scopeFor, scopeArgs } from "./lib/scope";
 import { parseScanRefusal } from "./scans";
 import { parseClockInRefusal } from "./shifts";
 import { autocompletePlaces, hasPlacesKey, isPlaceId, placeLocation } from "./lib/places";
+import { registerFinanceRoutes } from "./finance/routes";
 
 const _uid = (s: string): Id<"users"> => s as Id<"users">;
 const _cid = (s: string | null | undefined): Id<"clients"> | undefined => (s ?? undefined) as Id<"clients"> | undefined;
@@ -4997,5 +4998,8 @@ http.route({ path: "/client/analytics", method: "GET", handler: httpAction(async
     includeGuards: false,
   }));
 })});
+
+// Finance package (Tarmac): /finance/*
+registerFinanceRoutes(http);
 
 export default http;
