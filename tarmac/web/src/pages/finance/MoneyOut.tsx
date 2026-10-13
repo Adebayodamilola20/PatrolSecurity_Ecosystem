@@ -1,0 +1,323 @@
+import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
+import { finance, type MoneySettings, type Payout } from '../../services/finance'
+import { dateTimeLabel, naira } from './format'
+import { Btn, Empty, Failed, Field, FormButtons, Loading, Modal, Notice, Page, Panel, Stats, Status, TextInput } from './ui'
+import { useData, useFlash, useSave } from './hooks'
+import { BankAccountFields, emptyBankChoice } from './BankAccount'
+
+/**
+ * Money leaving Head Office's Monnify account: what was sent, what is waiting
+ * and why, and the few things a person must do.
+ */
+export default function MoneyOut() {
+  const { data, error, loading, reload } = useData(async () => {
+    const [payouts, settings] = await Promise.all([finance.payouts(), finance.settings()])
+    return { payouts, settings }
+  })
+  const { flash, node } = useFlash()
+  const send = useSave()
+  const [editing, setEditing] = useState<null | 'hq' | 'vat' | 'wallet'>(null)
+
+  const done = (message: string) => {
+    flash(message)
+    setEditing(null)
+    void reload()
+  }
+
+  const p = data?.payouts
+  const s = data?.settings
+  const needs = p?.open.filter((x) => x.status === 'failed' || x.status === 'needs_code') ?? []
+  const waiting = p?.open.filter((x) => x.status === 'waiting') ?? []
+  const moving = p?.open.filter((x) => x.status === 'ready' || x.status === 'sending') ?? []
+
+  const sendNow = async () => {
+    let result: Awaited<ReturnType<typeof finance.sendNow>> | undefined
+    const ok = await send.run(async () => {
+      result = await finance.sendNow()
+    })
+    if (!ok || !result) return
+    if (result.reason) send.setError(result.reason)
+    else done(`${result.sent} sent${result.failed ? `, ${result.failed} did not go through` : ''}${result.waiting ? `, ${result.waiting} still on the way` : ''}.`)
+  }
+
+  return (
+    <Page
+      title="Money out"
+      help="Every payment that reaches Head Office's Monnify account is split four ways and sent to these bank accounts."
+      action={
+        p && p.counts.ready > 0 ? (
+          <Btn busy={send.busy} onClick={sendNow} disabled={!s?.walletAccountNumber}>
+            Send {naira(p.readyKobo)} now
+          </Btn>
+        ) : undefined
+      }
+    >
+      {node}
+      {send.error && <Notice tone="bad" onClose={() => send.setError(null)}>{send.error}</Notice>}
+      {loading && !data && <Loading />}
+      {error && <Failed message={error} onRetry={reload} />}
+      {p && s && (
+        <>
+          <Stats
+            items={[
+              { label: 'Sent this month', value: naira(p.sentThisMonthKobo) },
+              { label: 'Waiting for an account', value: naira(p.waitingKobo), tone: p.waitingKobo ? 'warn' : undefined, note: p.waitingKobo ? 'Safe at Head Office' : 'Nothing waiting' },
+              { label: 'Needs you', value: String(needs.length), tone: needs.length ? 'bad' : undefined, note: needs.length ? 'See below' : 'Nothing to do' },
+            ]}
+          />
+
+          <AutoSend settings={s} onDone={done} />
+
+          {needs.length > 0 && (
+            <Panel title="Needs you">
+              <div className="divide-y divide-border">
+                {needs.map((x) => <NeedsYou key={x.id} payout={x} onDone={done} />)}
+              </div>
+            </Panel>
+          )}
+
+          {waiting.length > 0 && (
+            <Panel title="Waiting for a bank account">
+              <p className="px-6 pt-4 text-[15px] text-muted-foreground">This money is safe at Head Office. It is sent by itself once the account is added.</p>
+              <div className="divide-y divide-border">
+                {waiting.map((x) => (
+                  <PayoutLine
+                    key={x.id}
+                    payout={x}
+                    title={`${x.branchName} — ${x.shareLabel}`}
+                    sub={`${x.clientName} paid · waiting for ${x.waitingFor ?? 'an account'}`}
+                    right={
+                      /Head Office|VAT/.test(x.waitingFor ?? '') ? (
+                        <Btn variant="quiet" onClick={() => setEditing('hq')}>Add the account</Btn>
+                      ) : (
+                        <Link to="/finance/branches" className="inline-flex h-12 items-center px-3 font-medium text-primary hover:underline">Add the account</Link>
+                      )
+                    }
+                  />
+                ))}
+              </div>
+            </Panel>
+          )}
+
+          {moving.length > 0 && (
+            <Panel title="On the way">
+              <div className="divide-y divide-border">
+                {moving.map((x) => (
+                  <PayoutLine
+                    key={x.id}
+                    payout={x}
+                    title={x.toName ?? x.shareLabel}
+                    sub={`${x.bankName ?? ''} · ${x.accountNumber ?? ''} · ${x.accountName ?? ''}`}
+                    right={x.status === 'sending' ? <Status tone="wait">Being sent</Status> : <Status tone="plain">Ready to send</Status>}
+                  />
+                ))}
+              </div>
+            </Panel>
+          )}
+
+          <Panel title="Where Head Office money goes">
+            <div className="divide-y divide-border">
+              <SetupLine
+                label="Head Office account"
+                value={s.hq ? `${s.hq.bankName} · ${s.hq.accountNumber} · ${s.hq.accountName}` : null}
+                empty="Not added yet — the Head Office share waits until it is."
+                onEdit={() => setEditing('hq')}
+              />
+              <SetupLine
+                label="VAT account"
+                value={s.vat ? `${s.vat.bankName} · ${s.vat.accountNumber} · ${s.vat.accountName}` : null}
+                empty="Uses the Head Office account."
+                onEdit={() => setEditing('vat')}
+              />
+              <SetupLine
+                label="Monnify wallet (money is sent from here)"
+                value={s.walletAccountNumber}
+                empty="Not added yet. Find it in the Monnify dashboard under Disbursements."
+                onEdit={() => setEditing('wallet')}
+              />
+            </div>
+          </Panel>
+
+          <Panel title="Sent">
+            {p.sent.length === 0 ? (
+              <Empty title="Nothing sent yet" text="Money appears here once it has reached the bank account." />
+            ) : (
+              <div className="divide-y divide-border">
+                {p.sent.map((x) => (
+                  <PayoutLine
+                    key={x.id}
+                    payout={x}
+                    title={x.toName ?? x.shareLabel}
+                    sub={`${x.bankName ?? ''} · ${x.accountName ?? ''} · ref ${x.reference ?? ''} · ${x.sentAt ? dateTimeLabel(x.sentAt) : ''}`}
+                    right={<Status tone="good">Sent</Status>}
+                  />
+                ))}
+              </div>
+            )}
+          </Panel>
+        </>
+      )}
+
+      {editing === 'wallet' && s && <WalletForm current={s.walletAccountNumber} onClose={() => setEditing(null)} onDone={done} />}
+      {(editing === 'hq' || editing === 'vat') && s && <AccountForm which={editing} settings={s} onClose={() => setEditing(null)} onDone={done} />}
+    </Page>
+  )
+}
+
+function PayoutLine({ payout, title, sub, right }: { payout: Payout; title: string; sub: string; right: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-4">
+      <div className="min-w-0">
+        <div className="font-semibold">{title}</div>
+        <div className="mt-0.5 text-[15px] text-muted-foreground">{sub}</div>
+      </div>
+      <div className="flex flex-wrap items-center gap-4">
+        <span className="text-lg font-semibold tabular-nums">{naira(payout.amountKobo)}</span>
+        {right}
+      </div>
+    </div>
+  )
+}
+
+function NeedsYou({ payout, onDone }: { payout: Payout; onDone: (m: string) => void }) {
+  const [code, setCode] = useState('')
+  const save = useSave()
+  const title = payout.toName ?? `${payout.branchName} — ${payout.shareLabel}`
+  const bank = `${payout.bankName ?? ''} · ${payout.accountNumber ?? ''}`
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (await save.run(() => finance.enterCode(payout.id, code))) onDone(`Code accepted for ${naira(payout.amountKobo)} to ${title}.`)
+  }
+  return (
+    <div className="space-y-3 px-6 py-4">
+      <PayoutLine
+        payout={payout}
+        title={title}
+        sub={payout.status === 'failed' ? `${bank} · ${payout.error ?? 'Did not go through'}` : `${bank} · Monnify emailed a code to approve this`}
+        right={
+          payout.status === 'failed' ? (
+            <>
+              <Status tone="bad">Did not go through</Status>
+              <Btn variant="secondary" busy={save.busy} onClick={() => save.run(() => finance.retryPayout(payout.id)).then((ok) => ok && onDone('It will be tried again.'))}>
+                Try again
+              </Btn>
+            </>
+          ) : (
+            <form onSubmit={submit} className="flex items-end gap-2">
+              <label className="flex items-center gap-2 text-[15px] text-muted-foreground">
+                Code
+                <input
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                  inputMode="numeric"
+                  required
+                  placeholder="6 digits"
+                  className="h-12 w-32 rounded-xl border border-input bg-background px-3 text-lg tracking-widest text-foreground"
+                />
+              </label>
+              <Btn type="submit" busy={save.busy}>Approve</Btn>
+            </form>
+          )
+        }
+      />
+      {save.error && <Notice tone="bad">{save.error}</Notice>}
+    </div>
+  )
+}
+
+function SetupLine({ label, value, empty, onEdit }: { label: string; value: string | null; empty: string; onEdit: () => void }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-4">
+      <div className="min-w-0">
+        <div className="font-semibold">{label}</div>
+        <div className={value ? 'mt-0.5 text-[15px]' : 'mt-0.5 text-[15px] text-muted-foreground'}>{value ?? empty}</div>
+      </div>
+      <Btn variant="secondary" onClick={onEdit}>{value ? 'Change' : 'Add'}</Btn>
+    </div>
+  )
+}
+
+function AutoSend({ settings, onDone }: { settings: MoneySettings; onDone: (m: string) => void }) {
+  const save = useSave()
+  const on = settings.autoSend
+  const toggle = () => {
+    if (!on && !window.confirm('Turn on automatic sending? From now on, money is sent to the bank accounts by itself as soon as it arrives.')) return
+    void save.run(() => finance.setAutoSend(!on)).then((ok) => ok && onDone(on ? 'Automatic sending is off.' : 'Automatic sending is on.'))
+  }
+  return (
+    <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-[#111318] px-6 py-5 text-[#F2F3F6] sm:px-7">
+      <div className="max-w-2xl">
+        <div className="text-[17px] font-semibold">Send money out automatically: {on ? 'On' : 'Off'}</div>
+        <div className="mt-1 text-[15px] text-[#A9AFBF]">
+          {on
+            ? 'Money is sent to the bank accounts by itself as soon as it arrives.'
+            : "Money waits here until someone presses Send. Turn this on once Tarmac's live Monnify account can make transfers."}
+        </div>
+        {save.error && <div className="mt-2 text-[15px] text-[#F5A3A3]">{save.error}</div>}
+      </div>
+      <button
+        type="button"
+        onClick={toggle}
+        disabled={save.busy}
+        className="inline-flex h-12 items-center rounded-xl bg-white px-5 font-medium text-[#111318] hover:bg-white/90 disabled:opacity-60"
+      >
+        {on ? 'Turn off' : 'Turn on'}
+      </button>
+    </section>
+  )
+}
+
+function AccountForm({ which, settings, onClose, onDone }: { which: 'hq' | 'vat'; settings: MoneySettings; onClose: () => void; onDone: (m: string) => void }) {
+  const [bank, setBank] = useState(emptyBankChoice())
+  const save = useSave()
+  const label = which === 'hq' ? 'Head Office account' : 'VAT account'
+  return (
+    <Modal title={label} onClose={onClose}>
+      <form
+        className="space-y-4"
+        onSubmit={async (e) => {
+          e.preventDefault()
+          if (!bank.checked) return
+          const ok = await save.run(() => finance.setMoneyAccount(which, { bankCode: bank.checked!.bankCode, accountNumber: bank.checked!.accountNumber }))
+          if (ok) onDone(`${label} saved.`)
+        }}
+      >
+        {save.error && <Notice tone="bad">{save.error}</Notice>}
+        <p className="text-[15px] text-muted-foreground">
+          {which === 'hq'
+            ? 'The Head Office share of every payment is sent here (and VAT too, unless a separate VAT account is added).'
+            : 'The VAT share of every payment is sent here, ready to pay to the tax office.'}
+        </p>
+        <BankAccountFields value={bank} onChange={setBank} whose={`Tarmac's ${label}`} />
+        {bank.checked && <FormButtons onCancel={onClose} saveLabel="Yes, save this account" busy={save.busy} />}
+        {which === 'vat' && settings.vat && !bank.checked && (
+          <Btn variant="quiet" onClick={() => save.run(() => finance.setMoneyAccount('vat', { remove: true })).then((ok) => ok && onDone('VAT now goes to the Head Office account.'))}>
+            Send VAT to the Head Office account instead
+          </Btn>
+        )}
+      </form>
+    </Modal>
+  )
+}
+
+function WalletForm({ current, onClose, onDone }: { current: string | null; onClose: () => void; onDone: (m: string) => void }) {
+  const [number, setNumber] = useState(current ?? '')
+  const save = useSave()
+  return (
+    <Modal title="Monnify wallet" onClose={onClose}>
+      <form
+        className="space-y-4"
+        onSubmit={async (e) => {
+          e.preventDefault()
+          if (await save.run(() => finance.setWallet(number))) onDone('Monnify wallet saved.')
+        }}
+      >
+        {save.error && <Notice tone="bad">{save.error}</Notice>}
+        <p className="text-[15px] text-muted-foreground">Money is sent out of this wallet. In the Monnify dashboard, open Disbursements to find its 10-digit account number.</p>
+        <Field label="Wallet account number"><TextInput value={number} onChange={(e) => setNumber(e.target.value.replace(/\D/g, ''))} inputMode="numeric" maxLength={10} required /></Field>
+        <FormButtons onCancel={onClose} busy={save.busy} />
+      </form>
+    </Modal>
+  )
+}

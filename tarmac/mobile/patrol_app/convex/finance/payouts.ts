@@ -14,7 +14,7 @@ import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import { getMonnifyConfig } from "../env";
 import { authorizeTransfer, monnifyToken, sendTransfer, transferStatus, type TransferResult } from "./monnify";
-import { audit, fail, nextNumber } from "./shared";
+import { audit, fail, nextNumber, periodOf, periodRange } from "./shared";
 
 export const SHARES = ["hq", "vat", "partner", "salary"] as const;
 export type Share = (typeof SHARES)[number];
@@ -77,8 +77,10 @@ async function destinationFor(
     }
     return { waitingFor: `${branch.name}'s salary account` };
   }
-  const id = partnerId ?? branch.partnerId;
-  const partner = id ? await ctx.db.get(id) : null;
+  // The partner when the payment came in; if they have since been replaced,
+  // the branch's current approved partner (the old one can no longer be paid).
+  let partner = partnerId ? await ctx.db.get(partnerId) : null;
+  if (!partner || partner.status !== "active") partner = branch.partnerId ? await ctx.db.get(branch.partnerId) : null;
   if (partner && partner.status === "active") {
     if (!partner.bankCode) return { waitingFor: `${partner.name}'s bank account to be checked again` };
     return {
@@ -410,11 +412,20 @@ export const list = internalQuery({
       };
     };
     const attention = [...failed, ...needsCode, ...waiting, ...sending, ...ready].sort((a, b) => a.createdAt - b.createdAt);
+    const { start } = periodRange(periodOf(Date.now()));
+    let sentThisMonthKobo = 0;
+    for await (const p of ctx.db.query("finPayouts").withIndex("by_status", (q) => q.eq("status", "sent")).order("desc")) {
+      // Newest first; anything created long before this month was sent before it too.
+      if (p.createdAt < start - 62 * 24 * 60 * 60 * 1000) break;
+      if ((p.sentAt ?? 0) >= start) sentThisMonthKobo += p.amountKobo;
+    }
     return {
       autoSend: !!settings?.autoSend,
       ready: settings?.walletAccountNumber ? true : false,
       counts: { waiting: waiting.length, ready: ready.length, sending: sending.length, needsCode: needsCode.length, failed: failed.length },
       readyKobo: ready.reduce((s, p) => s + p.amountKobo, 0),
+      waitingKobo: waiting.reduce((s, p) => s + p.amountKobo, 0),
+      sentThisMonthKobo,
       open: await Promise.all(attention.map(view)),
       sent: await Promise.all(recentSent.map(view)),
     };

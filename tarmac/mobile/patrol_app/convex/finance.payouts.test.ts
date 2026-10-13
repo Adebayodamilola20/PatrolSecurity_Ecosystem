@@ -273,6 +273,25 @@ describe("payouts", () => {
     expect((await payouts())[0].status).toBe("sent");
   });
 
+  test("a share waiting for a replaced partner goes to the new approved partner", async () => {
+    await addClient(abuja);
+    const first = await post("partners/create", { branchId: abuja, name: "Ibrahim Danladi", phone: "0803", bankCode: "057", accountNumber: "2081234541" });
+    await t.mutation(f.branches.approvePartner, { actorId: admin, partnerId: await first.json() });
+    // Ibrahim's account is closed before his share is sent; a new partner takes over.
+    await t.run(async (ctx) => {
+      const p = (await ctx.db.query("finPartners").collect())[0];
+      await ctx.db.patch(p._id, { bankCode: undefined });
+    });
+    await monnifyPayment();
+    expect((await payouts()).find((r) => r.share === "partner")!.waitingFor).toMatch(/checked again/);
+    fake.accounts["058:0001112223"] = "AMINA YUSUF";
+    const second = await post("partners/create", { branchId: abuja, name: "Amina Yusuf", phone: "0805", bankCode: "058", accountNumber: "0001112223" });
+    await t.mutation(f.branches.approvePartner, { actorId: admin, partnerId: await second.json() });
+    const partnerPayout = (await payouts()).find((r) => r.share === "partner")!;
+    expect(partnerPayout.status).toBe("ready");
+    expect(partnerPayout.accountName).toBe("AMINA YUSUF");
+  });
+
   test("Head Office's own partner share goes to the Head Office account", async () => {
     await setUpAccounts();
     await addClient(jos, "jos-ref");

@@ -78,3 +78,9 @@ Per-session notes of **major changes**. Newest first. Short bullets only — wha
 - FUTURE (user request, not built): chat with the reporting guard from the incident detail.
 - Verified: web `npm run build` passes; live API returns user's real incident with new fields.
 - NOT YET PUSHED/DEPLOYED to hosted web — local changes only; user must OK Kilo push.
+
+## 2026-10-13 — Tarmac finance: money out + new look
+- Removed the fixed "Add Tarmac's 7 branches" button (PR #31); branches are added one at a time.
+- Money out (branch feat/tarmac-money-out): bank-name check via Monnify, payouts per share with never-pay-twice references, release on a set date, daily money check, staff photos. Manual payments are never sent from Monnify.
+- New look for the finance admin (dark money band, split bar, plain "how the money moves"); mockups on the Claude design canvas.
+- Verified locally end to end with Playwright against Monnify sandbox name checks. No transfer was attempted.

@@ -189,6 +189,7 @@ export const listPartners = internalQuery({
         branchId: p.branchId,
         branchName: branches.find((b) => b._id === p.branchId)?.name ?? "",
         bankName: p.bankName,
+        bankCode: p.bankCode ?? null,
         accountNumber: p.accountNumber,
         accountName: p.accountName,
         status: p.status,

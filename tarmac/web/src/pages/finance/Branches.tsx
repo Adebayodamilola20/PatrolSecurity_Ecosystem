@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { finance, type Branch, type Partner } from '../../services/finance'
-import { naira, pct } from './format'
+import { dateLabel, naira, pct, todayWat } from './format'
+import { BankAccountFields, emptyBankChoice } from './BankAccount'
 import {
   Btn, Check, Empty, Facts, Failed, Field, FormButtons, Loading, Modal, Notice, Page, Panel, Row, Rows, Status, TextArea, TextInput,
 } from './ui'
@@ -55,7 +56,7 @@ export default function FinanceBranches() {
                 }
                 right={naira(b.collectedKobo)}
                 rightSub={`this month · ${b.clients} client${b.clients === 1 ? '' : 's'}`}
-                status={b.onHold ? <Status tone="wait">On hold</Status> : b.partnerWaiting ? <Status tone="wait">Needs approval</Status> : undefined}
+                status={b.onHold ? <Status tone="wait">{b.holdReleaseOn ? `On hold until ${dateLabel(b.holdReleaseOn)}` : 'On hold'}</Status> : b.partnerWaiting ? <Status tone="wait">Needs approval</Status> : undefined}
                 onClick={() => setOpenId(b.id)}
               />
             ))}
@@ -134,7 +135,10 @@ function BranchDialog({
         {branch.onHold && (
           <Notice tone="warn">
             <div className="font-semibold">This branch is on hold.</div>
-            <div className="text-[15px]">Payments are recorded but not shared until it is taken off hold.{branch.holdNote ? ` Reason: ${branch.holdNote}` : ''}</div>
+            <div className="text-[15px]">
+              Payments are recorded but not shared{branch.holdReleaseOn ? ` until ${dateLabel(branch.holdReleaseOn)}, when they are released by themselves` : ' until it is taken off hold'}.
+              {branch.holdNote ? ` Reason: ${branch.holdNote}` : ''}
+            </div>
           </Notice>
         )}
 
@@ -147,7 +151,9 @@ function BranchDialog({
             { label: 'Sharing rule', value: `Head Office ${pct(s.hq)} · VAT ${pct(s.vat)} · Partner ${pct(s.partner)} · Salaries ${pct(s.salary)}` },
             {
               label: 'Salary account',
-              value: branch.salaryAccountNumber ? `${branch.salaryBankName ?? ''} ${branch.salaryAccountNumber}` : <span className="text-muted-foreground">Not added yet</span>,
+              value: branch.salaryAccountNumber
+                ? `${branch.salaryBankName ?? ''} · ${branch.salaryAccountNumber}${branch.salaryAccountName ? ` · ${branch.salaryAccountName}` : ''}`
+                : <span className="text-muted-foreground">Not added yet</span>,
             },
           ]}
         />
@@ -175,13 +181,19 @@ function BranchDialog({
                 items={[
                   { label: 'Name', value: active.name },
                   { label: 'Phone', value: active.phone },
-                  { label: 'Bank account', value: `${active.bankName} · ${active.accountNumber}` },
+                  { label: 'Bank account', value: `${active.bankName} · ${active.accountNumber} · ${active.accountName}` },
                   { label: 'Paid this month', value: naira(active.paidThisMonthKobo) },
                 ]}
               />
             </div>
           ) : (
-            !waiting && <p className="text-base text-muted-foreground">This branch has no partner. Their 34.5% share is kept until one is added.</p>
+            !waiting && (
+              <p className="text-base text-muted-foreground">
+                {branch.isHq
+                  ? 'Head Office has no partner, so its partner share goes to the Head Office account.'
+                  : 'This branch has no partner. Its partner share waits at Head Office until one is added and approved.'}
+              </p>
+            )
           )}
           <div className="flex flex-wrap gap-2">
             {!waiting && <Btn variant="secondary" onClick={() => setForm('partner')}>{active ? 'Replace partner' : 'Add a partner'}</Btn>}
@@ -242,8 +254,7 @@ function RenameForm({ branch, onClose, onDone }: SubForm) {
 }
 
 function SalaryForm({ branch, onClose, onDone }: SubForm) {
-  const [bank, setBank] = useState(branch.salaryBankName ?? '')
-  const [account, setAccount] = useState(branch.salaryAccountNumber ?? '')
+  const [bank, setBank] = useState(emptyBankChoice())
   const save = useSave()
   return (
     <Modal title={`${branch.name} salary account`} onClose={onClose}>
@@ -251,14 +262,18 @@ function SalaryForm({ branch, onClose, onDone }: SubForm) {
         className="space-y-4"
         onSubmit={async (e) => {
           e.preventDefault()
-          if (await save.run(() => finance.updateBranch({ branchId: branch.id, salaryBankName: bank, salaryAccountNumber: account }))) onDone('Salary account saved.')
+          if (!bank.checked) return
+          const ok = await save.run(() => finance.updateBranch({ branchId: branch.id, bankCode: bank.checked!.bankCode, accountNumber: bank.checked!.accountNumber }))
+          if (ok) onDone('Salary account saved.')
         }}
       >
         {save.error && <Notice tone="bad">{save.error}</Notice>}
-        <p className="text-[15px] text-muted-foreground">The branch's 50% salary share goes here, and payroll is paid from it.</p>
-        <Field label="Bank"><TextInput value={bank} onChange={(e) => setBank(e.target.value)} placeholder="e.g. GTBank" /></Field>
-        <Field label="Account number" hint="10 digits"><TextInput value={account} onChange={(e) => setAccount(e.target.value)} inputMode="numeric" /></Field>
-        <FormButtons onCancel={onClose} busy={save.busy} />
+        <p className="text-[15px] text-muted-foreground">
+          The branch's salary share is sent here, and payroll is paid from it.
+          {branch.salaryAccountNumber && ` Now: ${branch.salaryBankName ?? ''} ${branch.salaryAccountNumber}${branch.salaryAccountName ? ` (${branch.salaryAccountName})` : ' (not yet checked with the bank)'}.`}
+        </p>
+        <BankAccountFields value={bank} onChange={setBank} whose={`${branch.name}'s salary account`} />
+        {bank.checked && <FormButtons onCancel={onClose} saveLabel="Yes, save this account" busy={save.busy} />}
       </form>
     </Modal>
   )
@@ -266,6 +281,7 @@ function SalaryForm({ branch, onClose, onDone }: SubForm) {
 
 function HoldForm({ branch, onClose, onDone }: SubForm) {
   const [note, setNote] = useState('')
+  const [releaseOn, setReleaseOn] = useState('')
   const save = useSave()
   return (
     <Modal title={`Put ${branch.name} on hold`} onClose={onClose}>
@@ -273,11 +289,16 @@ function HoldForm({ branch, onClose, onDone }: SubForm) {
         className="space-y-4"
         onSubmit={async (e) => {
           e.preventDefault()
-          if (await save.run(() => finance.setHold(branch.id, true, note))) onDone(`${branch.name} is on hold.`)
+          if (await save.run(() => finance.setHold(branch.id, true, note, releaseOn || undefined))) {
+            onDone(releaseOn ? `${branch.name} is on hold until ${dateLabel(releaseOn)}.` : `${branch.name} is on hold.`)
+          }
         }}
       >
         {save.error && <Notice tone="bad">{save.error}</Notice>}
-        <p className="text-base">Payments for {branch.name} will be recorded but not shared until you take it off hold.</p>
+        <p className="text-base">Payments for {branch.name} will be recorded but not shared or sent while it is on hold.</p>
+        <Field label="Release on this day (optional)" hint="On that morning the held money is shared and sent by itself. Leave empty to release it yourself.">
+          <TextInput type="date" value={releaseOn} min={todayWat()} onChange={(e) => setReleaseOn(e.target.value)} />
+        </Field>
         <Field label="Reason (optional)"><TextArea value={note} onChange={(e) => setNote(e.target.value)} /></Field>
         <FormButtons onCancel={onClose} saveLabel="Put on hold" busy={save.busy} />
       </form>
@@ -323,14 +344,8 @@ function SplitForm({ branch, onClose, onDone }: SubForm) {
 }
 
 function PartnerForm({ branch, partner, onClose, onDone }: SubForm & { partner?: Partner }) {
-  const [p, setP] = useState({
-    name: partner?.name ?? '',
-    phone: partner?.phone ?? '',
-    email: partner?.email ?? '',
-    bankName: partner?.bankName ?? '',
-    accountNumber: partner?.accountNumber ?? '',
-    accountName: partner?.accountName ?? '',
-  })
+  const [p, setP] = useState({ name: partner?.name ?? '', phone: partner?.phone ?? '', email: partner?.email ?? '' })
+  const [bank, setBank] = useState(emptyBankChoice(partner))
   const save = useSave()
   const set = (k: keyof typeof p) => (e: React.ChangeEvent<HTMLInputElement>) => setP({ ...p, [k]: e.target.value })
   return (
@@ -339,21 +354,28 @@ function PartnerForm({ branch, partner, onClose, onDone }: SubForm & { partner?:
         className="space-y-4"
         onSubmit={async (e) => {
           e.preventDefault()
+          if (!bank.checked) return
+          const account = { bankCode: bank.checked.bankCode, accountNumber: bank.checked.accountNumber }
           const ok = await save.run(() =>
-            partner ? finance.updatePartner({ partnerId: partner.id, ...p }) : finance.createPartner({ branchId: branch.id, ...p }),
+            partner ? finance.updatePartner({ partnerId: partner.id, ...p, ...account }) : finance.createPartner({ branchId: branch.id, ...p, ...account }),
           )
-          if (ok) onDone(partner ? 'Partner details saved.' : `${p.name} added. A second admin must approve before money is sent.`)
+          if (ok) onDone(partner ? 'Partner details saved.' : `${p.name} added. Approve them before money is sent.`)
         }}
       >
         {save.error && <Notice tone="bad">{save.error}</Notice>}
         <Field label="Full name"><TextInput value={p.name} onChange={set('name')} required /></Field>
         <Field label="Phone number"><TextInput value={p.phone} onChange={set('phone')} required inputMode="tel" /></Field>
         <Field label="Email (optional)"><TextInput value={p.email} onChange={set('email')} type="email" /></Field>
-        <Field label="Bank"><TextInput value={p.bankName} onChange={set('bankName')} required placeholder="e.g. Zenith Bank" /></Field>
-        <Field label="Account number" hint="10 digits"><TextInput value={p.accountNumber} onChange={set('accountNumber')} required inputMode="numeric" /></Field>
-        <Field label="Name on the account"><TextInput value={p.accountName} onChange={set('accountName')} required /></Field>
+        <div className="border-t border-border pt-4">
+          <h3 className="mb-3 text-lg font-semibold">Bank account</h3>
+          <BankAccountFields value={bank} onChange={setBank} whose={p.name || `the ${branch.name} partner`} />
+        </div>
         {partner && <Notice tone="warn">If you change the bank account, the partner must be approved again before any money is sent.</Notice>}
-        <FormButtons onCancel={onClose} saveLabel={partner ? 'Save' : 'Add partner'} busy={save.busy} />
+        {bank.checked ? (
+          <FormButtons onCancel={onClose} saveLabel={partner ? 'Save' : 'Add partner'} busy={save.busy} />
+        ) : (
+          <p className="text-[15px] text-muted-foreground">Press “Check account” to continue.</p>
+        )}
       </form>
     </Modal>
   )
