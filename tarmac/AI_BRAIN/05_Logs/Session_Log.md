@@ -4,6 +4,15 @@ Per-session notes of **major changes**. Newest first. Short bullets only — wha
 
 > Format: `## YYYY-MM-DD — Agent — Session title`
 
+## 2026-10-13 — [[Claude_Code]] — Finance package made functional + calmer admin
+
+- **Backend:** new fin* tables (kobo integers), money engine `convex/lib/finance.ts` (exact splits, VAT 7.5% on top, PAYE bands NTA 2025, pension 8%/10%, NHF), modules in `convex/finance/` with a change-log row in the same transaction as every money action, second-admin rule for partner approval / payroll approval / releasing held money (single admin may self-approve).
+- **API:** `/finance/*` admin-only routes (routes.ts); plain-sentence errors; stray body fields dropped. Monnify: reserved-account creation + `/finance/monnify/webhook` (HMAC-SHA512 signature + re-check with Monnify, idempotent by transaction reference). Off until MONNIFY_API_KEY / MONNIFY_SECRET_KEY / MONNIFY_CONTRACT_CODE are set.
+- **Admin UI:** every finance page reads/writes real data; redesigned for older users (16px+ text, one main button, words not colour codes, forms in a simple box). Partners merged into Branches; Recruitment renamed Applicants.
+- **Bugs caught by tests:** manual payment references could clash in the same millisecond (now a running number); sub-forms stayed open after saving; field labels read hints/options aloud; roster double-clicks could save out of order.
+- **Verified:** 244 backend tests; full click-through on a local test backend (branches → partner → client → invoice → payment → staff → hire → roster → payroll → reports).
+- **Owner to do:** deploy Convex, Monnify keys, accountant sign-off, a second admin.
+
 ## 2026-10-08 → 10-11 — [[Claude_Code]] — Tarmac instance: production, split into tarmac/, Play Store prep
 
 - **Production backend** `unique-anteater-230` (Europe) created; fresh JWT secret, CORS to the two Tarmac sites, late-scan alerts on. App, both websites and the admin script point at it. Production has no accounts yet — admin is created with `scripts/create-tarmac-admin.mjs`.

@@ -1,106 +1,199 @@
-import { LockKeyhole } from 'lucide-react'
-import { PageHeader } from '../../components/ui/PageHeader'
-import { PAYMENTS, splitOf } from './sample'
-import { Button, Figures, Pill, SampleBanner, Section, Select, SplitBar, SplitLegend, Table, Td } from './ui'
-import { naira, nairaShort } from './format'
+import { useState, type FormEvent } from 'react'
+import { finance, type Client, type Payment } from '../../services/finance'
+import { dateTimeLabel, dayToMs, monthOptions, naira, thisPeriod, toKobo, todayWat } from './format'
+import {
+  Btn, Empty, Facts, Failed, Field, FormButtons, Loading, Modal, MoneyInput, Notice, Page, Panel, Row, Rows, SelectInput, Stats, Status, TextArea, TextInput,
+} from './ui'
+import { useData, useFlash, useSave } from './hooks'
 
 export default function FinancePayments() {
-  const shared = PAYMENTS.filter((p) => p.state === 'split')
-  const held = PAYMENTS.filter((p) => p.state === 'held')
-  const sharedTotal = shared.reduce((s, p) => s + p.amount, 0)
-  const heldTotal = held.reduce((s, p) => s + p.amount, 0)
-  const totals = splitOf(sharedTotal)
+  const [period, setPeriod] = useState(thisPeriod())
+  const { data, error, loading, reload } = useData(async () => {
+    const [payments, clients, status] = await Promise.all([finance.payments(period), finance.clients(), finance.status()])
+    return { ...payments, clients, monnify: status.monnifyConnected }
+  }, [period])
+  const [recording, setRecording] = useState(false)
+  const [openId, setOpenId] = useState<string | null>(null)
+  const { flash, node } = useFlash()
+  const release = useSave()
+  const done = (m: string) => {
+    flash(m)
+    void reload()
+  }
+  const all = [...(data?.payments ?? []), ...(data?.held ?? [])]
+  const open = all.find((p) => p.id === openId) ?? null
+  const s = data?.sharedSplit
 
   return (
-    <div className="space-y-5">
-      <PageHeader
-        eyebrow="Finance"
-        title="Payments"
-        blurb="Every payment a client makes, and exactly where it went: Head Office, VAT, the branch partner and branch salaries."
-        actions={<Select options={['This week', 'This month', 'Last month']} />}
-      />
-      <SampleBanner />
-
-      <Figures
-        items={[
-          { label: 'Received this week', value: nairaShort(sharedTotal + heldTotal), note: `${PAYMENTS.length} payments` },
-          { label: 'Shared automatically', value: nairaShort(sharedTotal), note: `${shared.length} payments` },
-          { label: 'On hold', value: nairaShort(heldTotal), note: 'Waiting for release', tone: held.length ? 'amber' : undefined },
-          { label: 'Failed transfers', value: '0', note: 'Nothing to retry' },
-        ]}
-      />
-
-      <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
-        <Section title="Where this week's money went">
-          <div className="space-y-4 p-4 sm:p-5">
-            <SplitBar height="h-3" />
-            <SplitLegend amounts={totals} />
-          </div>
-        </Section>
-
-        <Section title="On hold">
-          {held.length === 0 ? (
-            <p className="p-5 text-sm text-muted-foreground">Nothing is on hold.</p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {held.map((p) => (
-                <li key={p.ref} className="space-y-3 p-4 sm:p-5">
-                  <div className="flex items-start gap-3">
-                    <LockKeyhole className="mt-0.5 h-4 w-4 text-warning" />
-                    <div className="flex-1 text-sm">
-                      <div className="font-medium">{p.client}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {p.branch} branch is on hold · received {p.receivedAt}
-                      </div>
+    <Page
+      title="Payments"
+      help="Every payment from a client, and exactly where it went."
+      action={
+        <>
+          <div className="w-52"><SelectInput value={period} onChange={setPeriod} options={monthOptions()} /></div>
+          {data?.clients.length ? <Btn onClick={() => setRecording(true)}>Record a payment</Btn> : null}
+        </>
+      }
+    >
+      {node}
+      {data && !data.monnify && (
+        <Notice tone="info">
+          Monnify is not connected yet, so payments are recorded by hand with <b>Record a payment</b>. Once it is connected, payments into clients'
+          account numbers will appear here by themselves.
+        </Notice>
+      )}
+      {loading && !data && <Loading />}
+      {error && <Failed message={error} onRetry={reload} />}
+      {data && (
+        <>
+          {data.held.length > 0 && (
+            <Panel title="On hold">
+              {release.error && <div className="p-4"><Notice tone="bad">{release.error}</Notice></div>}
+              <Rows>
+                {data.held.map((p) => (
+                  <div key={p.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center">
+                    <div className="flex-1">
+                      <div className="text-base font-semibold">{p.clientName}</div>
+                      <div className="text-[15px] text-muted-foreground">{p.branchName} branch · {dateTimeLabel(p.receivedAt)}</div>
                     </div>
-                    <span className="font-semibold tabular-nums">{naira(p.amount)}</span>
+                    <div className="text-lg font-bold tabular-nums">{naira(p.amountKobo)}</div>
+                    <Btn busy={release.busy} onClick={async () => (await release.run(() => finance.releasePayment(p.id))) && done('Payment released and shared.')}>
+                      Release and share
+                    </Btn>
                   </div>
-                  <div className="flex gap-2">
-                    <Button>Release and share</Button>
-                    <Button variant="outline">Keep holding</Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Releasing needs a second Head Office approval.</p>
-                </li>
-              ))}
-            </ul>
+                ))}
+              </Rows>
+            </Panel>
           )}
-        </Section>
-      </div>
 
-      <Section title="All payments">
-        <Table
-          head={[
-            { label: 'Client' },
-            { label: 'Received' },
-            { label: 'Amount', align: 'right' },
-            { label: 'Head Office', align: 'right' },
-            { label: 'VAT', align: 'right' },
-            { label: 'Partner', align: 'right' },
-            { label: 'Salaries', align: 'right' },
-            { label: 'Status' },
+          <Stats
+            items={[
+              { label: `Received in ${monthOptions().find((m) => m.value === period)?.label ?? period}`, value: naira(data.receivedKobo), note: `${data.payments.length} payment${data.payments.length === 1 ? '' : 's'}` },
+              { label: 'Shared out', value: s ? naira(s.hq + s.vat + s.partner + s.salary) : '₦0', note: 'To Head Office, VAT, partners and salaries' },
+            ]}
+          />
+
+          {s && s.hq + s.vat + s.partner + s.salary > 0 && (
+            <Panel title="Where the money went">
+              <div className="px-5 py-1">
+                <Facts
+                  items={[
+                    { label: 'Head Office (8%)', value: naira(s.hq) },
+                    { label: 'VAT set aside (7.5%)', value: naira(s.vat) },
+                    { label: 'Branch partners (34.5%)', value: naira(s.partner) },
+                    { label: 'Branch salaries (50%)', value: naira(s.salary) },
+                  ]}
+                />
+              </div>
+            </Panel>
+          )}
+
+          <Panel title="All payments this month">
+            {data.payments.length === 0 ? (
+              <Empty title="No payments this month" />
+            ) : (
+              <Rows>
+                {data.payments.map((p) => (
+                  <Row
+                    key={p.id}
+                    title={p.clientName}
+                    sub={`${dateTimeLabel(p.receivedAt)}${p.method ? ` · ${p.method}` : ''}`}
+                    right={naira(p.amountKobo)}
+                    status={p.state === 'held' ? <Status tone="wait">On hold</Status> : <Status tone="good">Shared</Status>}
+                    onClick={() => setOpenId(p.id)}
+                  />
+                ))}
+              </Rows>
+            )}
+          </Panel>
+        </>
+      )}
+
+      {recording && data && <RecordPayment clients={data.clients} onClose={() => setRecording(false)} onDone={(m) => { setRecording(false); done(m) }} />}
+      {open && <PaymentDialog payment={open} onClose={() => setOpenId(null)} onDone={(m) => { setOpenId(null); done(m) }} />}
+    </Page>
+  )
+}
+
+function RecordPayment({ clients, onClose, onDone }: { clients: Client[]; onClose: () => void; onDone: (m: string) => void }) {
+  const [f, setF] = useState({ clientId: '', amount: '', day: todayWat(), method: 'Bank transfer', reference: '', note: '' })
+  const save = useSave()
+  const client = clients.find((c) => c.id === f.clientId)
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    const amountKobo = toKobo(f.amount)
+    if (!amountKobo) return save.setError('Enter the amount received')
+    if (f.day > todayWat()) return save.setError('The date cannot be in the future')
+    const ok = await save.run(() =>
+      finance.recordPayment({ clientId: f.clientId, amountKobo, receivedAt: dayToMs(f.day), method: f.method, reference: f.reference, note: f.note }),
+    )
+    if (ok) onDone(`${naira(amountKobo)} from ${client?.name ?? 'the client'} recorded.`)
+  }
+
+  return (
+    <Modal title="Record a payment" onClose={onClose}>
+      <form onSubmit={submit} className="space-y-4">
+        {save.error && <Notice tone="bad">{save.error}</Notice>}
+        <Field label="Who paid?">
+          <SelectInput value={f.clientId} onChange={(v) => setF({ ...f, clientId: v })} required placeholder="Choose a client" options={clients.map((c) => ({ value: c.id, label: `${c.name} (${c.branchName})` }))} />
+        </Field>
+        {client && client.owedKobo > 0 && <p className="text-[15px] text-muted-foreground">{client.name} owes {naira(client.owedKobo)} at the moment.</p>}
+        <Field label="Amount received"><MoneyInput value={f.amount} onChange={(v) => setF({ ...f, amount: v })} required /></Field>
+        <Field label="Date received"><TextInput type="date" value={f.day} max={todayWat()} onChange={(e) => setF({ ...f, day: e.target.value })} required /></Field>
+        <Field label="How was it paid?">
+          <SelectInput value={f.method} onChange={(v) => setF({ ...f, method: v })} options={['Bank transfer', 'Cash', 'Cheque', 'POS'].map((m) => ({ value: m, label: m }))} />
+        </Field>
+        <Field label="Bank reference (optional)" hint="Stops the same payment being recorded twice"><TextInput value={f.reference} onChange={(e) => setF({ ...f, reference: e.target.value })} /></Field>
+        <Field label="Note (optional)"><TextArea value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} /></Field>
+        <p className="text-[15px] text-muted-foreground">It pays the client's oldest unpaid invoice first, then is shared by the branch's rule.</p>
+        <FormButtons onCancel={onClose} saveLabel="Record payment" busy={save.busy} />
+      </form>
+    </Modal>
+  )
+}
+
+function PaymentDialog({ payment: p, onClose, onDone }: { payment: Payment; onClose: () => void; onDone: (m: string) => void }) {
+  const undo = useSave()
+  return (
+    <Modal title={`Payment from ${p.clientName}`} onClose={onClose}>
+      <div className="space-y-5">
+        {undo.error && <Notice tone="bad">{undo.error}</Notice>}
+        <div className="text-3xl font-bold tabular-nums">{naira(p.amountKobo)}</div>
+        <Facts
+          items={[
+            { label: 'Received', value: dateTimeLabel(p.receivedAt) },
+            { label: 'Branch', value: p.branchName },
+            { label: 'How', value: p.source === 'monnify' ? 'Into their account (Monnify)' : p.method ?? 'Recorded by hand' },
+            { label: 'Reference', value: p.reference },
+            { label: 'Status', value: p.state === 'held' ? <Status tone="wait">On hold</Status> : <Status tone="good">Shared</Status> },
           ]}
-        >
-          {PAYMENTS.map((p) => {
-            const s = splitOf(p.amount)
-            const held = p.state === 'held'
-            return (
-              <tr key={p.ref} className="hover:bg-muted/40">
-                <Td>
-                  <div className="font-medium">{p.client}</div>
-                  <div className="font-mono text-[11px] text-muted-foreground">{p.ref}</div>
-                </Td>
-                <Td muted>{p.receivedAt}</Td>
-                <Td align="right" strong>{naira(p.amount)}</Td>
-                <Td align="right" muted>{held ? '—' : naira(s.hq)}</Td>
-                <Td align="right" muted>{held ? '—' : naira(s.vat)}</Td>
-                <Td align="right" muted>{held ? '—' : naira(s.partner)}</Td>
-                <Td align="right" muted>{held ? '—' : naira(s.salary)}</Td>
-                <Td>{held ? <Pill tone="amber">On hold</Pill> : <Pill tone="green">Shared</Pill>}</Td>
-              </tr>
-            )
-          })}
-        </Table>
-      </Section>
-    </div>
+        />
+        <div>
+          <h3 className="mb-1 text-lg font-semibold">{p.state === 'held' ? 'Will be shared as' : 'Shared as'}</h3>
+          <Facts
+            items={[
+              { label: 'Head Office', value: naira(p.split.hq) },
+              { label: 'VAT set aside', value: naira(p.split.vat) },
+              { label: `Partner${p.partnerName ? ` (${p.partnerName})` : ''}`, value: naira(p.split.partner) },
+              { label: 'Branch salaries', value: naira(p.split.salary) },
+            ]}
+          />
+        </div>
+        {p.unallocatedKobo > 0 && <Notice tone="info">{naira(p.unallocatedKobo)} of this was more than the client owed at the time, so it is not matched to any invoice.</Notice>}
+        {p.note && <p className="text-base">Note: {p.note}</p>}
+        {p.source === 'manual' && (
+          <div className="border-t border-border pt-4">
+            <Btn
+              variant="danger"
+              busy={undo.busy}
+              onClick={async () => window.confirm('Undo this payment? Use this only if it was recorded by mistake.') && (await undo.run(() => finance.undoPayment(p.id))) && onDone('Payment undone.')}
+            >
+              Undo this payment
+            </Btn>
+          </div>
+        )}
+      </div>
+    </Modal>
   )
 }
