@@ -70,12 +70,12 @@ describe("finance API", () => {
       branchId: jos.id,
       name: "Ibrahim",
       phone: "0803",
-      bankName: "Zenith",
-      accountNumber: "123",
-      accountName: "Ibrahim",
+      bankCode: "057",
+      accountNumber: "2081234541",
     });
     expect(res.status).toBe(400);
-    expect(JSON.stringify(await res.json())).toContain("Account number must be 10 digits");
+    // No Monnify in this test: an account cannot be added without the bank's confirmation.
+    expect(JSON.stringify(await res.json())).toContain("once Monnify is connected");
 
     const missing = await post("clients/create", { name: "No Branch" });
     expect(missing.status).toBe(400);

@@ -76,7 +76,8 @@ describe("branches", () => {
 });
 
 describe("partners", () => {
-  const partner = { name: "Ibrahim Danladi", phone: "08030000000", bankName: "Zenith Bank", accountNumber: "2081234541", accountName: "Ibrahim Danladi" };
+  const zenith = { bankCode: "057", bankName: "Zenith Bank", accountNumber: "2081234541", accountName: "IBRAHIM DANLADI" };
+  const partner = { name: "Ibrahim Danladi", phone: "08030000000", account: zenith };
 
   test("new partner waits for approval; a second admin approves", async () => {
     const s = await setup({ admins: 2 });
@@ -102,7 +103,7 @@ describe("partners", () => {
     const s = await setup();
     const id = await s.t.mutation(f.branches.createPartner, { actorId: s.admin, branchId: s.branch("Abuja"), ...partner });
     await s.t.mutation(f.branches.approvePartner, { actorId: s.admin, partnerId: id });
-    await s.t.mutation(f.branches.updatePartner, { actorId: s.admin, partnerId: id, ...partner, accountNumber: "0123456789" });
+    await s.t.mutation(f.branches.updatePartner, { actorId: s.admin, partnerId: id, ...partner, account: { ...zenith, accountNumber: "0123456789" } });
     expect((await s.t.query(f.branches.listPartners, {}))[0].status).toBe("pending");
     expect((await s.t.query(f.branches.list, {})).find((b) => b.name === "Abuja")!.partner).toBeNull();
   });
@@ -110,7 +111,7 @@ describe("partners", () => {
   test("bad account numbers are refused", async () => {
     const s = await setup();
     await expect(
-      s.t.mutation(f.branches.createPartner, { actorId: s.admin, branchId: s.branch("Abuja"), ...partner, accountNumber: "12345" }),
+      s.t.mutation(f.branches.createPartner, { actorId: s.admin, branchId: s.branch("Abuja"), ...partner, account: { ...zenith, accountNumber: "12345" } }),
     ).rejects.toThrow(/10 digits/);
   });
 });

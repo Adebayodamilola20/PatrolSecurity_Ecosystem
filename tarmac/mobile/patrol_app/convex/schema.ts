@@ -373,8 +373,13 @@ export default defineSchema({
     // While on hold, payments for this branch are recorded but not shared.
     onHold: v.boolean(),
     holdNote: v.optional(v.string()),
+    // The day held money is released by itself ("YYYY-MM-DD", Nigerian time).
+    holdReleaseOn: v.optional(v.string()),
     salaryBankName: v.optional(v.string()),
+    salaryBankCode: v.optional(v.string()),
     salaryAccountNumber: v.optional(v.string()),
+    // As the bank gave it when the number was checked.
+    salaryAccountName: v.optional(v.string()),
     active: v.boolean(),
     createdAt: v.number(),
   }).index("by_name", ["name"]),
@@ -385,6 +390,8 @@ export default defineSchema({
     email: v.optional(v.string()),
     branchId: v.id("finBranches"),
     bankName: v.string(),
+    // Missing on partners added before bank checking; they must be re-checked.
+    bankCode: v.optional(v.string()),
     accountNumber: v.string(),
     accountName: v.string(),
     // No money goes to a partner until a second admin approves them.
@@ -476,6 +483,67 @@ export default defineSchema({
     .index("by_state", ["state"])
     .index("by_branchId_receivedAt", ["branchId", "receivedAt"]),
 
+  // Money leaving Head Office's Monnify wallet: one row per share of a payment.
+  finPayouts: defineTable({
+    paymentId: v.id("finPayments"),
+    branchId: v.id("finBranches"),
+    share: v.union(v.literal("hq"), v.literal("vat"), v.literal("partner"), v.literal("salary")),
+    amountKobo: v.number(),
+    // waiting = no checked account yet; ready = will be sent; sending = Monnify has it;
+    // needs_code = Monnify wants the email code; sent; failed.
+    status: v.union(
+      v.literal("waiting"),
+      v.literal("ready"),
+      v.literal("sending"),
+      v.literal("needs_code"),
+      v.literal("sent"),
+      v.literal("failed"),
+    ),
+    waitingFor: v.optional(v.string()),
+    toName: v.optional(v.string()), // "Abuja partner — Ibrahim Danladi"
+    bankCode: v.optional(v.string()),
+    bankName: v.optional(v.string()),
+    accountNumber: v.optional(v.string()),
+    accountName: v.optional(v.string()),
+    // Same reference on every retry of one attempt, so Monnify never pays twice.
+    reference: v.optional(v.string()),
+    attempts: v.number(),
+    error: v.optional(v.string()),
+    feeKobo: v.optional(v.number()),
+    sentAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_paymentId", ["paymentId"])
+    .index("by_status", ["status"])
+    .index("by_reference", ["reference"]),
+
+  // Head Office money settings (one row, key "money").
+  finSettings: defineTable({
+    key: v.string(),
+    autoSend: v.boolean(),
+    walletAccountNumber: v.optional(v.string()),
+    hqBankCode: v.optional(v.string()),
+    hqBankName: v.optional(v.string()),
+    hqAccountNumber: v.optional(v.string()),
+    hqAccountName: v.optional(v.string()),
+    vatBankCode: v.optional(v.string()),
+    vatBankName: v.optional(v.string()),
+    vatAccountNumber: v.optional(v.string()),
+    vatAccountName: v.optional(v.string()),
+    updatedBy: v.optional(v.id("users")),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
+
+  // The daily money check: one row per run.
+  finChecks: defineTable({
+    day: v.string(),
+    ranAt: v.number(),
+    ok: v.boolean(),
+    lines: v.array(v.object({ tone: v.union(v.literal("good"), v.literal("warn"), v.literal("bad")), text: v.string() })),
+    recovered: v.number(),
+  }).index("by_ranAt", ["ranAt"]),
+
   finStaff: defineTable({
     name: v.string(),
     staffNo: v.string(),
@@ -489,7 +557,10 @@ export default defineSchema({
     allowancesKobo: v.number(),
     nhf: v.boolean(),
     bankName: v.optional(v.string()),
+    bankCode: v.optional(v.string()),
     accountNumber: v.optional(v.string()),
+    accountName: v.optional(v.string()),
+    photoId: v.optional(v.id("_storage")),
     pensionPin: v.optional(v.string()),
     guarantorName: v.optional(v.string()),
     guarantorPhone: v.optional(v.string()),
