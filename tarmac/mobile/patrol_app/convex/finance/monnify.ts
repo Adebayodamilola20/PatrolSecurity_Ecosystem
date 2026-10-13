@@ -83,9 +83,26 @@ export const createReservedAccount = internalAction({
         getAllAvailableBanks: true,
       }),
     });
-    const body = await monnifyJson(res);
+    const body = await monnifyJson(res).catch((err) => {
+      if (err instanceof ConvexError && /more than 1 account/i.test(String(err.data))) {
+        throw new ConvexError(
+          `This email (${client.email}) already has a Monnify account number for another client. Give ${client.name} its own email address and try again.`,
+        );
+      }
+      throw err;
+    });
     const account = body.accounts?.[0];
     if (!account?.accountNumber) throw new ConvexError("Monnify did not return an account number");
+    // The create answer can carry a shortened name; the account itself has the full one.
+    let fullName: string | undefined = body.accountName;
+    try {
+      const again = await fetch(`${cfg.baseUrl}/api/v2/bank-transfer/reserved-accounts/${encodeURIComponent(client.id)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      fullName = (await monnifyJson(again)).accountName ?? fullName;
+    } catch {
+      // Keep whatever name we already have; the account number is what matters.
+    }
     await ctx.runMutation(internal.finance.clients.setPayAccount, {
       actorId: args.actorId,
       clientId: args.clientId,
@@ -93,7 +110,7 @@ export const createReservedAccount = internalAction({
       accountNumber: account.accountNumber,
       // The full name (e.g. "ANDRIL-Rayfield Estate") is on the reserved account;
       // each bank line may carry only a shortened form.
-      accountName: body.accountName ?? account.accountName ?? client.name,
+      accountName: fullName ?? account.accountName ?? client.name,
       accountRef: client.id,
       provider: "monnify",
     });
