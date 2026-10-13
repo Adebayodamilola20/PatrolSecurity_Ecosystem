@@ -35,14 +35,15 @@ describe("finance API", () => {
   test("refuses anyone who is not an admin", async () => {
     expect((await t.fetch("/finance/overview", { method: "GET" })).status).toBe(401);
     expect((await get("overview", guardToken)).status).toBe(403);
-    expect((await post("branches/add-tarmac", {}, guardToken)).status).toBe(403);
+    expect((await post("branches/create", { name: "Jos" }, guardToken)).status).toBe(403);
     expect(await t.run(async (ctx) => (await ctx.db.query("finBranches").collect()).length)).toBe(0);
   });
 
   test("full flow: branches → client → invoice → payment, all saved", async () => {
-    expect((await post("branches/add-tarmac", {})).status).toBe(200);
+    expect((await post("branches/create", { name: "Jos", isHq: true })).status).toBe(200);
+    expect((await post("branches/create", { name: "Kaduna" })).status).toBe(200);
     const branches = await (await get("branches")).json();
-    expect(branches).toHaveLength(7);
+    expect(branches).toHaveLength(2);
     const jos = branches[0];
 
     const clientRes = await post("clients/create", { name: "Rayfield Estate", branchId: jos.id, monthlyFeeKobo: 100_000_000, guards: 24 });
@@ -63,7 +64,7 @@ describe("finance API", () => {
   });
 
   test("mistakes come back as plain sentences", async () => {
-    await post("branches/add-tarmac", {});
+    await post("branches/create", { name: "Jos", isHq: true });
     const [jos] = await (await get("branches")).json();
     const res = await post("partners/create", {
       branchId: jos.id,
@@ -82,7 +83,7 @@ describe("finance API", () => {
   });
 
   test("stray fields never reach the database", async () => {
-    await post("branches/add-tarmac", {});
+    await post("branches/create", { name: "Jos", isHq: true });
     const [jos] = await (await get("branches")).json();
     const res = await post("clients/create", { name: "X", branchId: jos.id, monthlyFeeKobo: 0, guards: 0, status: "ended", payAccountNumber: "9999999999" });
     expect(res.status).toBe(200);

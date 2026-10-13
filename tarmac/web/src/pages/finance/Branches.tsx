@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { finance, type Branch, type Partner } from '../../services/finance'
 import { naira, pct } from './format'
 import {
-  Btn, Empty, Facts, Failed, Field, FormButtons, Loading, Modal, Notice, Page, Panel, Row, Rows, Status, TextArea, TextInput,
+  Btn, Check, Empty, Facts, Failed, Field, FormButtons, Loading, Modal, Notice, Page, Panel, Row, Rows, Status, TextArea, TextInput,
 } from './ui'
 import { useData, useFlash, useSave } from './hooks'
 
@@ -14,7 +14,6 @@ export default function FinanceBranches() {
   const [openId, setOpenId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const { flash, node } = useFlash()
-  const seed = useSave()
 
   const open = data?.branches.find((b) => b.id === openId) ?? null
   const done = (message: string) => {
@@ -35,15 +34,8 @@ export default function FinanceBranches() {
         <Panel>
           <Empty
             title="No branches yet"
-            text="Start by adding Tarmac's seven branches: Jos (Head Office), Abuja, Lagos, Port Harcourt, Owerri, Yola and Lafia."
-            action={
-              <div className="space-y-3">
-                {seed.error && <Notice tone="bad">{seed.error}</Notice>}
-                <Btn busy={seed.busy} onClick={() => seed.run(finance.addTarmacBranches).then((ok) => ok && done('The 7 branches were added.'))}>
-                  Add Tarmac's 7 branches
-                </Btn>
-              </div>
-            }
+            text="Add each branch your company runs. You can add as many as you need, now or later."
+            action={<Btn onClick={() => setAdding(true)}>Add a branch</Btn>}
           />
         </Panel>
       )}
@@ -71,7 +63,7 @@ export default function FinanceBranches() {
         </Panel>
       )}
 
-      {adding && <AddBranch onClose={() => setAdding(false)} onDone={(name) => { setAdding(false); done(`${name} branch added.`) }} />}
+      {adding && data && <AddBranch hasHq={data.branches.some((b) => b.isHq)} onClose={() => setAdding(false)} onDone={(name) => { setAdding(false); done(`${name} branch added.`) }} />}
       {open && data && (
         <BranchDialog
           branch={open}
@@ -84,12 +76,13 @@ export default function FinanceBranches() {
   )
 }
 
-function AddBranch({ onClose, onDone }: { onClose: () => void; onDone: (name: string) => void }) {
+function AddBranch({ hasHq, onClose, onDone }: { hasHq: boolean; onClose: () => void; onDone: (name: string) => void }) {
   const [name, setName] = useState('')
+  const [isHq, setIsHq] = useState(false)
   const save = useSave()
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    if (await save.run(() => finance.createBranch(name))) onDone(name.trim())
+    if (await save.run(() => finance.createBranch(name, isHq))) onDone(name.trim())
   }
   return (
     <Modal title="Add a branch" onClose={onClose}>
@@ -98,6 +91,7 @@ function AddBranch({ onClose, onDone }: { onClose: () => void; onDone: (name: st
         <Field label="Branch name">
           <TextInput value={name} onChange={(e) => setName(e.target.value)} required placeholder="e.g. Kaduna" />
         </Field>
+        {!hasHq && <Check checked={isHq} onChange={setIsHq} label="This branch is the Head Office" />}
         <FormButtons onCancel={onClose} saveLabel="Add branch" busy={save.busy} />
       </form>
     </Modal>

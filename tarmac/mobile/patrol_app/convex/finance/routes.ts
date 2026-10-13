@@ -68,7 +68,6 @@ export function registerFinanceRoutes(http: HttpRouter) {
   // Branches
   route("GET", "branches", (ctx) => ctx.runQuery(fin.branches.list, {}));
   route("POST", "branches/create", (ctx, { body, actorId }) => ctx.runMutation(fin.branches.create, { actorId, ...pick(body, ["name", "isHq"]) } as any));
-  route("POST", "branches/add-tarmac", (ctx, { actorId }) => ctx.runMutation(fin.branches.addTarmacBranches, { actorId }));
   route("POST", "branches/update", (ctx, { body, actorId }) =>
     ctx.runMutation(fin.branches.update, { actorId, ...pick(body, ["branchId", "name", "salaryBankName", "salaryAccountNumber"]) } as any),
   );

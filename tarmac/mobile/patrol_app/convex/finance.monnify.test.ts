@@ -63,7 +63,7 @@ beforeEach(async () => {
   const admin = await t.run(async (ctx) =>
     ctx.db.insert("users", { name: "A", email: "a@t.test", passwordHash: "x", role: "admin", phone: "", active: true, liveTracking: false, createdAt: Date.now() }),
   );
-  await t.mutation(internal.finance.branches.addTarmacBranches, { actorId: admin });
+  await t.mutation(internal.finance.branches.create, { actorId: admin, name: "Jos", isHq: true });
   const [jos] = await t.query(internal.finance.branches.list, {});
   clientId = await t.mutation(internal.finance.clients.create, { actorId: admin, name: "Rayfield Estate", branchId: jos.id, monthlyFeeKobo: 100_000_000, guards: 10 });
   await t.mutation(internal.finance.clients.setPayAccount, {
