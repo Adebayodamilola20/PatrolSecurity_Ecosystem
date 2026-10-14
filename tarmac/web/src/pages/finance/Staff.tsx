@@ -114,7 +114,7 @@ function StaffForm({ branches, staff, onClose, onDone }: { branches: Branch[]; s
     const number = bank.accountNumber.replace(/\D/g, '')
     const unchanged = !!staff && number === (staff.accountNumber ?? '') && bank.bankCode === ''
     // A new account must be checked with the bank first (when the bank list is available).
-    if (number && !bank.checked && !unchanged && !bank.bankName) return save.setError('Press “Check account” so the bank can confirm the name first')
+    if (number && !bank.checked && !unchanged && !bank.bankName) return save.setError('Wait for the account name to appear under the number before saving')
     const account = bank.checked
       ? { bankCode: bank.checked.bankCode, bankName: bank.checked.bankName, accountNumber: bank.checked.accountNumber }
       : unchanged

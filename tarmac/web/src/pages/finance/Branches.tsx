@@ -217,6 +217,19 @@ function BranchDialog({
             ) : (
               <Btn variant="danger" onClick={() => setForm('hold')}>Put on hold</Btn>
             )}
+            <Btn
+              variant="danger"
+              busy={action.busy}
+              onClick={async () => {
+                if (!window.confirm(`Remove the ${branch.name} branch? Only an empty branch (no clients, no staff, no money waiting) can be removed.`)) return
+                if (await action.run(() => finance.removeBranch(branch.id))) {
+                  onClose()
+                  onDone(`${branch.name} branch removed.`)
+                }
+              }}
+            >
+              Remove branch
+            </Btn>
           </div>
         </section>
       </div>
@@ -231,7 +244,7 @@ function BranchDialog({
   )
 }
 
-type SubForm = { branch: Branch; onClose: () => void; onDone: (m: string) => void }
+export type SubForm = { branch: Branch; onClose: () => void; onDone: (m: string) => void }
 
 function RenameForm({ branch, onClose, onDone }: SubForm) {
   const [name, setName] = useState(branch.name)
@@ -253,7 +266,7 @@ function RenameForm({ branch, onClose, onDone }: SubForm) {
   )
 }
 
-function SalaryForm({ branch, onClose, onDone }: SubForm) {
+export function SalaryForm({ branch, onClose, onDone }: SubForm) {
   const [bank, setBank] = useState(emptyBankChoice())
   const save = useSave()
   return (
@@ -343,7 +356,7 @@ function SplitForm({ branch, onClose, onDone }: SubForm) {
   )
 }
 
-function PartnerForm({ branch, partner, onClose, onDone }: SubForm & { partner?: Partner }) {
+export function PartnerForm({ branch, partner, onClose, onDone }: SubForm & { partner?: Partner }) {
   const [p, setP] = useState({ name: partner?.name ?? '', phone: partner?.phone ?? '', email: partner?.email ?? '' })
   const [bank, setBank] = useState(emptyBankChoice(partner))
   const save = useSave()
@@ -374,7 +387,7 @@ function PartnerForm({ branch, partner, onClose, onDone }: SubForm & { partner?:
         {bank.checked ? (
           <FormButtons onCancel={onClose} saveLabel={partner ? 'Save' : 'Add partner'} busy={save.busy} />
         ) : (
-          <p className="text-[15px] text-muted-foreground">Press “Check account” to continue.</p>
+          <p className="text-[15px] text-muted-foreground">Type the full account number — the account name will appear.</p>
         )}
       </form>
     </Modal>

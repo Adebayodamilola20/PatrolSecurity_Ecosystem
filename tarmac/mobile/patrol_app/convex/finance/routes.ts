@@ -113,6 +113,7 @@ export function registerFinanceRoutes(http: HttpRouter) {
   route("POST", "branches/hold", (ctx, { body, actorId }) =>
     ctx.runMutation(fin.branches.setHold, { actorId, ...pick(body, ["branchId", "onHold", "note", "releaseOn"]) } as any),
   );
+  route("POST", "branches/remove", (ctx, { body, actorId }) => ctx.runMutation(fin.branches.removeBranch, { actorId, ...pick(body, ["branchId"]) } as any));
   route("POST", "branches/split", (ctx, { body, actorId }) => ctx.runMutation(fin.branches.setSplit, { actorId, ...pick(body, ["branchId", "splitBps"]) } as any));
 
   // Partners

@@ -284,6 +284,34 @@ export const updatePartner = internalMutation({
   },
 });
 
+/**
+ * Takes a branch off the list. Only an empty branch can go: one with working
+ * clients or staff, money on hold or money still to send must be emptied first.
+ * The record is kept (inactive) so past payments still show their branch.
+ */
+export const removeBranch = internalMutation({
+  args: { actorId: v.id("users"), branchId: v.id("finBranches") },
+  handler: async (ctx, args) => {
+    const branch = await getBranch(ctx, args.branchId);
+    if (!branch.active) fail("This branch was already removed");
+    const clients = (await ctx.db.query("finClients").withIndex("by_branchId", (q) => q.eq("branchId", branch._id)).collect()).filter((c) => c.status === "active");
+    if (clients.length) fail(`${branch.name} still has ${clients.length} client${clients.length === 1 ? "" : "s"}. Move or end them first.`);
+    const staff = (await ctx.db.query("finStaff").withIndex("by_branchId", (q) => q.eq("branchId", branch._id)).collect()).filter((s) => s.status !== "left");
+    if (staff.length) fail(`${branch.name} still has ${staff.length} staff. Move them or mark them as left first.`);
+    const held = (await ctx.db.query("finPayments").withIndex("by_state", (q) => q.eq("state", "held")).collect()).filter((p) => p.branchId === branch._id);
+    if (held.length) fail(`${branch.name} has money on hold. Release it first.`);
+    for (const status of ["waiting", "ready", "sending", "needs_code", "failed"] as const) {
+      const open = (await ctx.db.query("finPayouts").withIndex("by_status", (q) => q.eq("status", status)).collect()).filter((p) => p.branchId === branch._id);
+      if (open.length) fail(`${branch.name} has money still to send. Finish it on the Money out page first.`);
+    }
+    for (const p of await ctx.db.query("finPartners").withIndex("by_branchId", (q) => q.eq("branchId", branch._id)).collect()) {
+      if (p.status !== "removed") await ctx.db.patch(p._id, { status: "removed" });
+    }
+    await ctx.db.patch(branch._id, { active: false, partnerId: undefined, onHold: false, holdReleaseOn: undefined });
+    await audit(ctx, args.actorId, "branch.removed", "finBranch", branch._id, `Removed branch ${branch.name}`);
+  },
+});
+
 export const removePartner = internalMutation({
   args: { actorId: v.id("users"), partnerId: v.id("finPartners") },
   handler: async (ctx, args) => {

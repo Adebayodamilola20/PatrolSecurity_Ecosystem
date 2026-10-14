@@ -3,8 +3,8 @@
  * bank, type the number, and the bank tells you whose account it is before
  * anything is saved. The server checks again when saving.
  */
-import { useEffect, useState } from 'react'
-import { CheckCircle2, AlertCircle } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
 import { finance, type Bank, type CheckedAccount } from '../../services/finance'
 import { Btn, Field, SelectInput, TextInput } from './ui'
 
@@ -37,8 +37,9 @@ export const emptyBankChoice = (a?: { bankCode?: string | null; accountNumber?: 
 })
 
 /**
- * Bank + account number + "Check account". `value.checked` is filled only
- * when the bank has confirmed the name for exactly this bank and number.
+ * Bank + account number. As soon as the 10th digit is typed the bank is asked
+ * whose account it is and the name appears underneath, as in banking apps.
+ * `value.checked` is filled only for exactly this bank and number.
  */
 export function BankAccountFields({
   value,
@@ -78,19 +79,37 @@ export function BankAccountFields({
   const digits = value.accountNumber.replace(/\D/g, '')
   const canCheck = !!value.bankCode && digits.length === 10
 
-  const check = async () => {
+  // Always call the latest onChange/value from the async check below.
+  const latest = useRef({ value, onChange })
+  useEffect(() => {
+    latest.current = { value, onChange }
+  })
+  const asked = useRef('')
+
+  const check = async (key: string) => {
+    asked.current = key
     setChecking(true)
     setError(null)
     try {
       const checked = await finance.checkAccount(value.bankCode, digits)
-      onChange({ ...value, accountNumber: digits, checked })
+      if (asked.current !== key) return // the number changed while we waited
+      latest.current.onChange({ ...latest.current.value, accountNumber: digits, checked })
     } catch (err) {
+      if (asked.current !== key) return
       setError(err instanceof Error ? err.message : 'Account not found')
-      onChange({ ...value, checked: null })
     } finally {
-      setChecking(false)
+      if (asked.current === key) setChecking(false)
     }
   }
+
+  // Ask the bank by itself once a bank is chosen and all 10 digits are in.
+  const key = canCheck ? `${value.bankCode}:${digits}` : ''
+  useEffect(() => {
+    if (!key || value.checked || asked.current === key) return
+    const t = window.setTimeout(() => void check(key), 300)
+    return () => window.clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, value.checked])
 
   if ((loadError || (banks && banks.length === 0)) && allowTyped) {
     return (
@@ -118,6 +137,8 @@ export function BankAccountFields({
           value={value.bankCode}
           onChange={(bankCode) => {
             setError(null)
+            setChecking(false)
+            asked.current = ''
             onChange({ ...value, bankCode, bankName: '', checked: null })
           }}
           options={options}
@@ -125,7 +146,7 @@ export function BankAccountFields({
           required
         />
       </Field>
-      <Field label={numberLabel} hint="The 10-digit NUBAN number">
+      <Field label={numberLabel} hint="10 digits. The name appears by itself once all 10 are typed.">
         <TextInput
           value={value.accountNumber}
           inputMode="numeric"
@@ -134,6 +155,8 @@ export function BankAccountFields({
           className="text-lg tracking-wider"
           onChange={(e) => {
             setError(null)
+            setChecking(false)
+            asked.current = ''
             onChange({ ...value, accountNumber: e.target.value.replace(/[^\d ]/g, ''), bankName: '', checked: null })
           }}
         />
@@ -158,9 +181,14 @@ export function BankAccountFields({
         </div>
       ) : null}
 
-      {!value.checked && (
-        <Btn variant="secondary" onClick={check} disabled={!canCheck} busy={checking}>
-          Check account
+      {checking && !value.checked && (
+        <div className="flex items-center gap-2.5 text-[15px] text-muted-foreground" role="status">
+          <Loader2 className="h-5 w-5 animate-spin" /> Asking the bank whose account this is…
+        </div>
+      )}
+      {error && !checking && (
+        <Btn variant="secondary" onClick={() => void check(key)} disabled={!canCheck}>
+          Try again
         </Btn>
       )}
     </div>

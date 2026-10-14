@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { finance, type MoneySettings, type Payout } from '../../services/finance'
+import { finance, type Branch, type MoneySettings, type Partner, type Payout } from '../../services/finance'
 import { dateTimeLabel, naira } from './format'
 import { Btn, Empty, Failed, Field, FormButtons, Loading, Modal, Notice, Page, Panel, Stats, Status, TextInput } from './ui'
 import { useData, useFlash, useSave } from './hooks'
 import { BankAccountFields, emptyBankChoice } from './BankAccount'
+import { PartnerForm, SalaryForm } from './Branches'
 
 /**
  * Money leaving Head Office's Monnify account: what was sent, what is waiting
@@ -12,16 +13,18 @@ import { BankAccountFields, emptyBankChoice } from './BankAccount'
  */
 export default function MoneyOut() {
   const { data, error, loading, reload } = useData(async () => {
-    const [payouts, settings] = await Promise.all([finance.payouts(), finance.settings()])
-    return { payouts, settings }
+    const [payouts, settings, branches, partners] = await Promise.all([finance.payouts(), finance.settings(), finance.branches(), finance.partners()])
+    return { payouts, settings, branches, partners }
   })
   const { flash, node } = useFlash()
   const send = useSave()
   const [editing, setEditing] = useState<null | 'hq' | 'vat' | 'wallet'>(null)
+  const [branchForm, setBranchForm] = useState<null | { kind: 'partner' | 'salary'; branch: Branch }>(null)
 
   const done = (message: string) => {
     flash(message)
     setEditing(null)
+    setBranchForm(null)
     void reload()
   }
 
@@ -91,7 +94,14 @@ export default function MoneyOut() {
                       /Head Office|VAT/.test(x.waitingFor ?? '') ? (
                         <Btn variant="quiet" onClick={() => setEditing('hq')}>Add the account</Btn>
                       ) : (
-                        <Link to="/finance/branches" className="inline-flex h-12 items-center px-3 font-medium text-primary hover:underline">Add the account</Link>
+                        (() => {
+                          const branch = data.branches.find((b) => b.name === x.branchName)
+                          return branch ? (
+                            <Btn variant="quiet" onClick={() => setBranchForm({ kind: x.share === 'salary' ? 'salary' : 'partner', branch })}>Add the account</Btn>
+                          ) : (
+                            <Link to="/finance/branches" className="inline-flex h-12 items-center px-3 font-medium text-primary hover:underline">Add the account</Link>
+                          )
+                        })()
                       )
                     }
                   />
@@ -139,6 +149,27 @@ export default function MoneyOut() {
             </div>
           </Panel>
 
+          <Panel title="Branch accounts">
+            <p className="px-6 pt-4 text-[15px] text-muted-foreground">
+              Each branch's share goes to two accounts: its partner's and its salary account. Add them here and the money starts going out to that branch.
+            </p>
+            {data.branches.length === 0 ? (
+              <Empty title="No branches yet" text="Add your branches on the Branches page first." />
+            ) : (
+              <div className="divide-y divide-border">
+                {data.branches.map((b) => (
+                  <BranchAccounts
+                    key={b.id}
+                    branch={b}
+                    partners={data.partners.filter((x) => x.branchId === b.id)}
+                    onEdit={(kind) => setBranchForm({ kind, branch: b })}
+                    onDone={done}
+                  />
+                ))}
+              </div>
+            )}
+          </Panel>
+
           <Panel title="Sent">
             {p.sent.length === 0 ? (
               <Empty title="Nothing sent yet" text="Money appears here once it has reached the bank account." />
@@ -159,6 +190,15 @@ export default function MoneyOut() {
         </>
       )}
 
+      {branchForm?.kind === 'salary' && <SalaryForm branch={branchForm.branch} onClose={() => setBranchForm(null)} onDone={done} />}
+      {branchForm?.kind === 'partner' && (
+        <PartnerForm
+          branch={branchForm.branch}
+          partner={data?.partners.find((x) => x.branchId === branchForm.branch.id && x.status === 'active')}
+          onClose={() => setBranchForm(null)}
+          onDone={done}
+        />
+      )}
       {editing === 'wallet' && s && <WalletForm current={s.walletAccountNumber} onClose={() => setEditing(null)} onDone={done} />}
       {(editing === 'hq' || editing === 'vat') && s && <AccountForm which={editing} settings={s} onClose={() => setEditing(null)} onDone={done} />}
     </Page>
@@ -319,5 +359,73 @@ function WalletForm({ current, onClose, onDone }: { current: string | null; onCl
         <FormButtons onCancel={onClose} busy={save.busy} />
       </form>
     </Modal>
+  )
+}
+
+function BranchAccounts({
+  branch: b,
+  partners,
+  onEdit,
+  onDone,
+}: {
+  branch: Branch
+  partners: Partner[]
+  onEdit: (kind: 'partner' | 'salary') => void
+  onDone: (m: string) => void
+}) {
+  const approve = useSave()
+  const active = partners.find((p) => p.status === 'active')
+  const waiting = partners.find((p) => p.status === 'pending')
+  const ok = (b.isHq || !!active) && !!b.salaryAccountNumber
+  return (
+    <div className="space-y-3 px-6 py-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="text-lg font-semibold">{b.isHq ? `${b.name} (Head Office)` : b.name}</div>
+        {ok ? <Status tone="good">Ready to receive</Status> : <Status tone="wait">Accounts missing</Status>}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-xl border border-border px-4 py-3">
+          <div className="text-sm text-muted-foreground">Partner share goes to</div>
+          {waiting ? (
+            <>
+              <div className="mt-0.5 font-medium">{waiting.name} — waiting for approval</div>
+              <div className="text-[15px] text-muted-foreground">{waiting.bankName} · {waiting.accountNumber} · {waiting.accountName}</div>
+              <div className="mt-2">
+                <Btn busy={approve.busy} onClick={() => approve.run(() => finance.approvePartner(waiting.id)).then((x) => x && onDone(`${waiting.name} approved.`))}>
+                  Approve
+                </Btn>
+              </div>
+              {approve.error && <p className="mt-1 text-[15px] text-destructive">{approve.error}</p>}
+            </>
+          ) : active ? (
+            <>
+              <div className="mt-0.5 font-medium">{active.name}</div>
+              <div className="text-[15px] text-muted-foreground">{active.bankName} · {active.accountNumber} · {active.accountName}</div>
+              <Btn variant="quiet" onClick={() => onEdit('partner')}>Change</Btn>
+            </>
+          ) : (
+            <>
+              <div className="mt-0.5 text-[15px] text-muted-foreground">{b.isHq ? 'The Head Office account (no partner)' : 'No partner yet'}</div>
+              <Btn variant="quiet" onClick={() => onEdit('partner')}>Add a partner</Btn>
+            </>
+          )}
+        </div>
+        <div className="rounded-xl border border-border px-4 py-3">
+          <div className="text-sm text-muted-foreground">Salary share goes to</div>
+          {b.salaryAccountNumber ? (
+            <>
+              <div className="mt-0.5 font-medium">{b.salaryAccountName ?? 'Salary account'}</div>
+              <div className="text-[15px] text-muted-foreground">{b.salaryBankName} · {b.salaryAccountNumber}</div>
+              <Btn variant="quiet" onClick={() => onEdit('salary')}>Change</Btn>
+            </>
+          ) : (
+            <>
+              <div className="mt-0.5 text-[15px] text-muted-foreground">No salary account yet</div>
+              <Btn variant="quiet" onClick={() => onEdit('salary')}>Add the salary account</Btn>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }

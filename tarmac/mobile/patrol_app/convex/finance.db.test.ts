@@ -67,6 +67,15 @@ describe("branches", () => {
     await expect(t.mutation(f.branches.create, { actorId: admin, name: "lagos" })).rejects.toThrow(/already a lagos/i);
   });
 
+  test("an empty branch can be removed; one with clients cannot", async () => {
+    const s = await setup();
+    await s.t.mutation(f.branches.removeBranch, { actorId: s.admin, branchId: s.branch("Yola") });
+    expect((await s.t.query(f.branches.list, {})).map((b) => b.name)).not.toContain("Yola");
+    await s.t.mutation(f.branches.create, { actorId: s.admin, name: "Yola" }); // the name is free again
+    await addClient(s, "Rayfield Estate", 1_000_000, "Lagos");
+    await expect(s.t.mutation(f.branches.removeBranch, { actorId: s.admin, branchId: s.branch("Lagos") })).rejects.toThrow(/still has 1 client/);
+  });
+
   test("sharing rule must add to 100%", async () => {
     const s = await setup();
     await expect(

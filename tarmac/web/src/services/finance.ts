@@ -289,6 +289,7 @@ export const finance = {
   updateBranch: (b: { branchId: string; name?: string; bankCode?: string; accountNumber?: string; removeSalaryAccount?: boolean }) => post('branches/update', b),
   setHold: (branchId: string, onHold: boolean, note?: string, releaseOn?: string) => post('branches/hold', { branchId, onHold, note, releaseOn }),
   setSplit: (branchId: string, splitBps: Split) => post('branches/split', { branchId, splitBps }),
+  removeBranch: (branchId: string) => post('branches/remove', { branchId }),
 
   banks: () => get<Bank[]>('banks'),
   checkAccount: (bankCode: string, accountNumber: string) => post<CheckedAccount>('banks/check', { bankCode, accountNumber }),
