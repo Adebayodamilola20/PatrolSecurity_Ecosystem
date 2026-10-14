@@ -10,7 +10,7 @@ const staffStatus = v.union(v.literal("active"), v.literal("leave"), v.literal("
 
 // ------------------------------------------------------------------- staff
 
-function staffView(s: Doc<"finStaff">, branchName: string) {
+function staffView(s: Doc<"finStaff">, branchName: string, photoUrl: string | null = null) {
   return {
     id: s._id,
     name: s.name,
@@ -27,6 +27,9 @@ function staffView(s: Doc<"finStaff">, branchName: string) {
     nhf: s.nhf,
     bankName: s.bankName ?? null,
     accountNumber: s.accountNumber ?? null,
+    accountName: s.accountName ?? null,
+    bankChecked: !!s.bankCode,
+    photoUrl,
     pensionPin: s.pensionPin ?? null,
     guarantorName: s.guarantorName ?? null,
     guarantorPhone: s.guarantorPhone ?? null,
@@ -39,9 +42,12 @@ export const listStaff = internalQuery({
   handler: async (ctx) => {
     const staff = await ctx.db.query("finStaff").collect();
     const branches = await ctx.db.query("finBranches").collect();
-    return staff
-      .sort((a, b) => Number(a.status === "left") - Number(b.status === "left") || a.name.localeCompare(b.name))
-      .map((s) => staffView(s, branches.find((b) => b._id === s.branchId)?.name ?? ""));
+    const sorted = staff.sort((a, b) => Number(a.status === "left") - Number(b.status === "left") || a.name.localeCompare(b.name));
+    return await Promise.all(
+      sorted.map(async (s) =>
+        staffView(s, branches.find((b) => b._id === s.branchId)?.name ?? "", s.photoId ? await ctx.storage.getUrl(s.photoId) : null),
+      ),
+    );
   },
 });
 
@@ -56,7 +62,10 @@ const staffFields = {
   allowancesKobo: v.number(),
   nhf: v.optional(v.boolean()),
   bankName: v.optional(v.string()),
+  // Present only when the bank confirmed the account (routes.ts).
+  bankCode: v.optional(v.string()),
   accountNumber: v.optional(v.string()),
+  accountName: v.optional(v.string()),
   pensionPin: v.optional(v.string()),
   guarantorName: v.optional(v.string()),
   guarantorPhone: v.optional(v.string()),
@@ -73,7 +82,9 @@ type StaffInput = {
   allowancesKobo: number;
   nhf?: boolean;
   bankName?: string;
+  bankCode?: string;
   accountNumber?: string;
+  accountName?: string;
   pensionPin?: string;
   guarantorName?: string;
   guarantorPhone?: string;
@@ -97,8 +108,10 @@ function checkedStaff(args: StaffInput) {
     basicKobo: args.basicKobo,
     allowancesKobo: args.allowancesKobo,
     nhf: !!args.nhf,
-    bankName: clean(args.bankName, 80),
+    bankName: accountNumber ? clean(args.bankName, 80) : undefined,
+    bankCode: accountNumber ? clean(args.bankCode, 6) : undefined,
     accountNumber,
+    accountName: accountNumber ? clean(args.accountName, 120) : undefined,
     pensionPin: clean(args.pensionPin, 40),
     guarantorName: clean(args.guarantorName, 80),
     guarantorPhone: clean(args.guarantorPhone, 30),
@@ -129,6 +142,11 @@ export const updateStaff = internalMutation({
     if (!staff) fail("Staff member not found");
     const branch = await getBranch(ctx, args.branchId);
     const data = checkedStaff(args);
+    // Same account as before and not re-checked: keep the bank's earlier answer.
+    if (data.accountNumber && data.accountNumber === staff.accountNumber && !data.bankCode) {
+      data.bankCode = staff.bankCode;
+      data.accountName = staff.accountName;
+    }
     await ctx.db.patch(staff._id, { ...data, branchId: branch._id });
     const payChanged = data.basicKobo !== staff.basicKobo || data.allowancesKobo !== staff.allowancesKobo;
     const bankChanged = data.accountNumber !== staff.accountNumber;
@@ -140,6 +158,36 @@ export const updateStaff = internalMutation({
       staff._id,
       `Updated ${data.name}${payChanged ? " (pay changed)" : ""}${bankChanged ? " (bank account changed)" : ""}`,
     );
+  },
+});
+
+const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Saves an uploaded photo on a staff record, replacing (and deleting) the old
+ * one. A refused file is deleted and the reason returned rather than thrown,
+ * because throwing would undo the delete and leave the file behind.
+ */
+export const setStaffPhoto = internalMutation({
+  args: { actorId: v.id("users"), staffId: v.id("finStaff"), storageId: v.id("_storage") },
+  handler: async (ctx, args): Promise<{ error?: string }> => {
+    const staff = await ctx.db.get(args.staffId);
+    const file = await ctx.db.system.get(args.storageId);
+    if (!file) return { error: "The photo did not upload. Try again." };
+    // The upload sets the type from the browser; a file without one is judged by size alone.
+    const bad = !staff
+      ? "Staff member not found"
+      : (file.contentType && !file.contentType.startsWith("image/")) || file.size > PHOTO_MAX_BYTES
+        ? "Choose a photo (JPG or PNG) smaller than 5 MB"
+        : null;
+    if (bad || !staff) {
+      await ctx.storage.delete(args.storageId);
+      return { error: bad ?? "Staff member not found" };
+    }
+    if (staff.photoId && staff.photoId !== args.storageId) await ctx.storage.delete(staff.photoId);
+    await ctx.db.patch(staff._id, { photoId: args.storageId });
+    await audit(ctx, args.actorId, "staff.photo", "finStaff", staff._id, `Updated photo for ${staff.name}`);
+    return {};
   },
 });
 

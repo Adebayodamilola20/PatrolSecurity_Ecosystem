@@ -6,7 +6,7 @@ import { json, parseJson } from "../lib/http";
 import { requireAuth } from "../lib/httpAuth";
 import { badRequest, forbidden, serviceUnavailable, unauthorized } from "../lib/errors";
 import { getMonnifyConfig } from "../env";
-import { monnifySignature, parsePaidOn, sameSignature, verifyTransaction } from "./monnify";
+import { checkBankAccount, listBanks, walletBalance, monnifySignature, parsePaidOn, sameSignature, verifyTransaction } from "./monnify";
 
 type User = { convexId: string; role: string };
 type Body = Record<string, unknown>;
@@ -30,6 +30,13 @@ function errorText(err: unknown): string | null {
  * Registers the finance API. Every route is admin-only: Tarmac's finance
  * screens are for Head Office administrators.
  */
+/** Asks the bank whose account this is; nothing is saved without its answer. */
+async function bankChecked(body: Body) {
+  const cfg = getMonnifyConfig();
+  if (!cfg) throw new ConvexError("Bank accounts can only be added once Monnify is connected, so the bank can confirm the name.");
+  return await checkBankAccount(cfg, body.bankCode, body.accountNumber);
+}
+
 export function registerFinanceRoutes(http: HttpRouter) {
   const route = (
     method: "GET" | "POST",
@@ -63,23 +70,74 @@ export function registerFinanceRoutes(http: HttpRouter) {
     const cfg = getMonnifyConfig();
     return { monnifyConnected: !!cfg, monnifyMode: cfg ? (cfg.baseUrl.includes("sandbox") ? "test" : "live") : null };
   });
+
+  // Banks: the list to pick from, and "whose account is this?"
+  route("GET", "banks", async () => {
+    const cfg = getMonnifyConfig();
+    return cfg ? await listBanks(cfg) : [];
+  });
+  route("POST", "banks/check", (_ctx, { body }) => bankChecked(body));
+
+  // Head Office money settings
+  route("GET", "settings", (ctx) => ctx.runQuery(fin.settings.get, {}));
+  // Head Office's balance: the Monnify wallet every payment lands in.
+  route("GET", "balance", async (ctx) => {
+    const cfg = getMonnifyConfig();
+    if (!cfg) return { available: false, reason: "Monnify is not connected yet" };
+    const { walletAccountNumber } = await ctx.runQuery(fin.payouts.sendSettings, {});
+    if (!walletAccountNumber) return { available: false, reason: "Add the Head Office account number on the Money out page" };
+    return await walletBalance(cfg, walletAccountNumber);
+  });
+  route("POST", "settings/account", async (ctx, { body, actorId }) => {
+    const which = body.which === "vat" ? "vat" : "hq";
+    const account = body.remove ? undefined : await bankChecked(body);
+    await ctx.runMutation(fin.settings.setAccount, { actorId, which, account });
+    return account ?? { ok: true };
+  });
+  route("POST", "settings/wallet", (ctx, { body, actorId }) => ctx.runMutation(fin.settings.setWallet, { actorId, ...pick(body, ["walletAccountNumber"]) } as any));
+  route("POST", "settings/auto-send", (ctx, { body, actorId }) => ctx.runMutation(fin.settings.setAutoSend, { actorId, autoSend: body.autoSend === true }));
+
+  // Money out
+  route("GET", "payouts", (ctx) => ctx.runQuery(fin.payouts.list, {}));
+  route("POST", "payouts/send-now", (ctx) => ctx.runAction(fin.payouts.sendReady, { manual: true }));
+  route("POST", "payouts/code", (ctx, { body, actorId }) => ctx.runAction(fin.payouts.authorize, { actorId, ...pick(body, ["payoutId", "code"]) } as any));
+  route("POST", "payouts/retry", (ctx, { body, actorId }) => ctx.runMutation(fin.payouts.retry, { actorId, ...pick(body, ["payoutId"]) } as any));
+
+  // Daily money check
+  route("GET", "check", (ctx) => ctx.runQuery(fin.daily.latestCheck, {}));
+  route("POST", "check/run", async (ctx) => {
+    await ctx.runAction(fin.daily.moneyCheck, {});
+    return await ctx.runQuery(fin.daily.latestCheck, {});
+  });
   route("GET", "reports", (ctx, { url }) => ctx.runQuery(fin.overview.reports, { period: q(url, "period") }));
 
   // Branches
   route("GET", "branches", (ctx) => ctx.runQuery(fin.branches.list, {}));
-  route("POST", "branches/create", (ctx, { body, actorId }) => ctx.runMutation(fin.branches.create, { actorId, ...pick(body, ["name", "isHq"]) } as any));
-  route("POST", "branches/add-tarmac", (ctx, { actorId }) => ctx.runMutation(fin.branches.addTarmacBranches, { actorId }));
-  route("POST", "branches/update", (ctx, { body, actorId }) =>
-    ctx.runMutation(fin.branches.update, { actorId, ...pick(body, ["branchId", "name", "salaryBankName", "salaryAccountNumber"]) } as any),
+  route("POST", "branches/create", (ctx, { body, actorId }) => {
+    if (!body.splitBps) throw new ConvexError("Set how the branch's money is shared");
+    return ctx.runMutation(fin.branches.create, { actorId, ...pick(body, ["name", "isHq", "splitBps"]) } as any);
+  });
+  route("POST", "branches/update", async (ctx, { body, actorId }) => {
+    const salaryAccount = body.removeSalaryAccount ? null : body.accountNumber ? await bankChecked(body) : undefined;
+    return await ctx.runMutation(fin.branches.update, { actorId, ...pick(body, ["branchId", "name"]), salaryAccount } as any);
+  });
+  route("POST", "branches/hold", (ctx, { body, actorId }) =>
+    ctx.runMutation(fin.branches.setHold, { actorId, ...pick(body, ["branchId", "onHold", "note", "releaseOn"]) } as any),
   );
-  route("POST", "branches/hold", (ctx, { body, actorId }) => ctx.runMutation(fin.branches.setHold, { actorId, ...pick(body, ["branchId", "onHold", "note"]) } as any));
+  route("POST", "branches/remove", (ctx, { body, actorId }) => ctx.runMutation(fin.branches.removeBranch, { actorId, ...pick(body, ["branchId"]) } as any));
   route("POST", "branches/split", (ctx, { body, actorId }) => ctx.runMutation(fin.branches.setSplit, { actorId, ...pick(body, ["branchId", "splitBps"]) } as any));
 
   // Partners
-  const partnerKeys = ["name", "phone", "email", "bankName", "accountNumber", "accountName"];
+  const partnerKeys = ["name", "phone", "email"];
   route("GET", "partners", (ctx) => ctx.runQuery(fin.branches.listPartners, {}));
-  route("POST", "partners/create", (ctx, { body, actorId }) => ctx.runMutation(fin.branches.createPartner, { actorId, ...pick(body, ["branchId", ...partnerKeys]) } as any));
-  route("POST", "partners/update", (ctx, { body, actorId }) => ctx.runMutation(fin.branches.updatePartner, { actorId, ...pick(body, ["partnerId", ...partnerKeys]) } as any));
+  route("POST", "partners/create", async (ctx, { body, actorId }) => {
+    const account = await bankChecked(body);
+    return await ctx.runMutation(fin.branches.createPartner, { actorId, ...pick(body, ["branchId", ...partnerKeys]), account } as any);
+  });
+  route("POST", "partners/update", async (ctx, { body, actorId }) => {
+    const account = await bankChecked(body);
+    return await ctx.runMutation(fin.branches.updatePartner, { actorId, ...pick(body, ["partnerId", ...partnerKeys]), account } as any);
+  });
   route("POST", "partners/approve", (ctx, { body, actorId }) => ctx.runMutation(fin.branches.approvePartner, { actorId, ...pick(body, ["partnerId"]) } as any));
   route("POST", "partners/remove", (ctx, { body, actorId }) => ctx.runMutation(fin.branches.removePartner, { actorId, ...pick(body, ["partnerId"]) } as any));
 
@@ -123,9 +181,26 @@ export function registerFinanceRoutes(http: HttpRouter) {
     "name", "phone", "branchId", "role", "post", "startDate", "basicKobo", "allowancesKobo", "nhf",
     "bankName", "accountNumber", "pensionPin", "guarantorName", "guarantorPhone", "guarantorVerified",
   ];
+  // A staff account picked from the bank list is checked with the bank; the
+  // bank's name replaces whatever was typed. Without Monnify it is saved as typed.
+  const staffBank = async (body: Body) => {
+    if (!body.accountNumber || !body.bankCode || !getMonnifyConfig()) return {};
+    const a = await bankChecked(body);
+    return { bankCode: a.bankCode, bankName: a.bankName, accountNumber: a.accountNumber, accountName: a.accountName };
+  };
   route("GET", "staff", (ctx) => ctx.runQuery(fin.people.listStaff, {}));
-  route("POST", "staff/create", (ctx, { body, actorId }) => ctx.runMutation(fin.people.createStaff, { actorId, ...pick(body, staffKeys) } as any));
-  route("POST", "staff/update", (ctx, { body, actorId }) => ctx.runMutation(fin.people.updateStaff, { actorId, ...pick(body, ["staffId", ...staffKeys]) } as any));
+  route("POST", "staff/create", async (ctx, { body, actorId }) =>
+    ctx.runMutation(fin.people.createStaff, { actorId, ...pick(body, staffKeys), ...(await staffBank(body)) } as any),
+  );
+  route("POST", "staff/update", async (ctx, { body, actorId }) =>
+    ctx.runMutation(fin.people.updateStaff, { actorId, ...pick(body, ["staffId", ...staffKeys]), ...(await staffBank(body)) } as any),
+  );
+  route("POST", "staff/photo-upload", async (ctx) => ({ uploadUrl: await ctx.storage.generateUploadUrl() }));
+  route("POST", "staff/photo", async (ctx, { body, actorId }) => {
+    const r = await ctx.runMutation(fin.people.setStaffPhoto, { actorId, ...pick(body, ["staffId", "storageId"]) } as any);
+    if (r.error) throw new ConvexError(r.error);
+    return { ok: true };
+  });
   route("POST", "staff/status", (ctx, { body, actorId }) => ctx.runMutation(fin.people.setStaffStatus, { actorId, ...pick(body, ["staffId", "status"]) } as any));
   route("GET", "applicants", (ctx) => ctx.runQuery(fin.people.listApplicants, {}));
   route("POST", "applicants/create", (ctx, { body, actorId }) =>

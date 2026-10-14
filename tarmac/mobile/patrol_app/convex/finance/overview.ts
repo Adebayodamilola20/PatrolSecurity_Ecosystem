@@ -57,6 +57,21 @@ export const overview = internalQuery({
     for (const r of runs.filter((x) => x.status === "approved")) {
       todo.push({ kind: "payroll", text: `${branchName(r.branchId)} payroll for ${periodLabel(r.period)} is approved — pay the staff`, detail: "", to: "/finance/payroll", urgent: false });
     }
+    const payouts = async (status: "failed" | "needs_code" | "waiting") =>
+      await ctx.db.query("finPayouts").withIndex("by_status", (q) => q.eq("status", status)).collect();
+    const failed = await payouts("failed");
+    if (failed.length) {
+      todo.push({ kind: "payout", text: `${failed.length} payment${failed.length === 1 ? "" : "s"} to banks did not go through`, detail: "Try again", to: "/finance/money-out", urgent: true });
+    }
+    const needsCode = await payouts("needs_code");
+    if (needsCode.length) {
+      todo.push({ kind: "payout", text: `Type the Monnify email code to send ${needsCode.length} payment${needsCode.length === 1 ? "" : "s"}`, detail: "", to: "/finance/money-out", urgent: true });
+    }
+    const waiting = await payouts("waiting");
+    if (waiting.length) {
+      const first = waiting[0].waitingFor;
+      todo.push({ kind: "payout", text: `Money is waiting to be sent — add ${first}`, detail: `${waiting.length} share${waiting.length === 1 ? "" : "s"}`, to: "/finance/money-out", urgent: false });
+    }
     const noAccount = clients.filter((c) => c.status === "active" && !c.payAccountNumber);
     if (noAccount.length) {
       todo.push({
@@ -81,6 +96,10 @@ export const overview = internalQuery({
         .slice(0, 5)
         .map((p) => ({ id: p._id, clientName: nameOf(p.clientId), amountKobo: p.amountKobo, receivedAt: p.receivedAt, state: p.state })),
       counts: { branches: branches.length, clients: clients.filter((c) => c.status === "active").length },
+      check: await (async () => {
+        const c = await ctx.db.query("finChecks").withIndex("by_ranAt").order("desc").first();
+        return c ? { day: c.day, ranAt: c.ranAt, ok: c.ok, lines: c.lines, recovered: c.recovered } : null;
+      })(),
     };
   },
 });

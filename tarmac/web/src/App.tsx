@@ -41,6 +41,7 @@ const FINANCE_PAGES = [
   { path: 'clients', Page: lazy(() => import('./pages/finance/Clients')) },
   { path: 'invoices', Page: lazy(() => import('./pages/finance/Invoices')) },
   { path: 'payments', Page: lazy(() => import('./pages/finance/Payments')) },
+  { path: 'money-out', Page: lazy(() => import('./pages/finance/MoneyOut')) },
   { path: 'branches', Page: lazy(() => import('./pages/finance/Branches')) },
   { path: 'partners', Page: lazy(() => import('./pages/finance/Partners')) },
   { path: 'recruitment', Page: lazy(() => import('./pages/finance/Recruitment')) },

@@ -1,10 +1,11 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { finance, type Branch, type Staff, type StaffRole, type StaffStatus } from '../../services/finance'
 import { dateLabel, naira, toKobo, toNairaText } from './format'
 import {
-  Btn, Check, Empty, Facts, Failed, Field, FormButtons, Loading, Modal, MoneyInput, Notice, Page, Panel, Row, Rows, SelectInput, Status, TextInput,
+  Avatar, Btn, Check, Empty, Facts, Failed, Field, FormButtons, Loading, Modal, MoneyInput, Notice, Page, Panel, Row, Rows, SelectInput, Status, TextInput,
 } from './ui'
 import { useData, useFlash, useSave } from './hooks'
+import { BankAccountFields, emptyBankChoice } from './BankAccount'
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const ROLE_LABEL: Record<StaffRole, string> = { guard: 'Guard', supervisor: 'Supervisor', office: 'Office staff' }
@@ -43,7 +44,7 @@ export default function FinanceStaff() {
   return (
     <Page
       title="Staff"
-      help="Everyone who works for Tarmac: where they work, their pay and their bank details. Payroll uses this list."
+      help="A record of everyone who works at each branch: their branch, pay and bank details. Payroll uses this list."
       action={data?.branches.length ? <Btn onClick={() => setAdding(true)}>Add staff</Btn> : undefined}
     >
       {node}
@@ -65,6 +66,7 @@ export default function FinanceStaff() {
               {shown.map((s) => (
                 <Row
                   key={s.id}
+                  lead={<Avatar name={s.name} url={s.photoUrl} />}
                   title={s.name}
                   sub={`${s.staffNo} · ${ROLE_LABEL[s.role]} · ${s.branchName}${s.post ? ` · ${s.post}` : ''}`}
                   right={naira(s.basicKobo + s.allowancesKobo)}
@@ -95,13 +97,12 @@ function StaffForm({ branches, staff, onClose, onDone }: { branches: Branch[]; s
     basic: staff ? toNairaText(staff.basicKobo) : '',
     allowances: staff ? toNairaText(staff.allowancesKobo) : '0',
     nhf: staff?.nhf ?? false,
-    bankName: staff?.bankName ?? '',
-    accountNumber: staff?.accountNumber ?? '',
     pensionPin: staff?.pensionPin ?? '',
     guarantorName: staff?.guarantorName ?? '',
     guarantorPhone: staff?.guarantorPhone ?? '',
     guarantorVerified: staff?.guarantorVerified ?? false,
   })
+  const [bank, setBank] = useState(emptyBankChoice(staff))
   const save = useSave()
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value })
 
@@ -110,9 +111,18 @@ function StaffForm({ branches, staff, onClose, onDone }: { branches: Branch[]; s
     const basicKobo = toKobo(f.basic)
     const allowancesKobo = toKobo(f.allowances || '0')
     if (basicKobo === null || allowancesKobo === null) return save.setError('Enter the pay in naira')
+    const number = bank.accountNumber.replace(/\D/g, '')
+    const unchanged = !!staff && number === (staff.accountNumber ?? '') && bank.bankCode === ''
+    // A new account must be checked with the bank first (when the bank list is available).
+    if (number && !bank.checked && !unchanged && !bank.bankName) return save.setError('Wait for the account name to appear under the number before saving')
+    const account = bank.checked
+      ? { bankCode: bank.checked.bankCode, bankName: bank.checked.bankName, accountNumber: bank.checked.accountNumber }
+      : unchanged
+        ? { bankName: staff?.bankName ?? '', accountNumber: number }
+        : { bankName: bank.bankName ?? '', accountNumber: number }
     const body = {
       name: f.name, phone: f.phone, branchId: f.branchId, role: f.role, post: f.post, startDate: f.startDate,
-      basicKobo, allowancesKobo, nhf: f.nhf, bankName: f.bankName, accountNumber: f.accountNumber, pensionPin: f.pensionPin,
+      basicKobo, allowancesKobo, nhf: f.nhf, ...account, pensionPin: f.pensionPin,
       guarantorName: f.guarantorName, guarantorPhone: f.guarantorPhone, guarantorVerified: f.guarantorVerified,
     }
     const ok = await save.run(() => (staff ? finance.updateStaff({ staffId: staff.id, ...body }) : finance.createStaff(body)))
@@ -137,17 +147,25 @@ function StaffForm({ branches, staff, onClose, onDone }: { branches: Branch[]; s
         <h3 className="pt-2 text-lg font-semibold">Pay</h3>
         <Field label="Basic pay a month"><MoneyInput value={f.basic} onChange={(v) => setF({ ...f, basic: v })} required /></Field>
         <Field label="Allowances a month"><MoneyInput value={f.allowances} onChange={(v) => setF({ ...f, allowances: v })} /></Field>
-        <Check checked={f.nhf} onChange={(v) => setF({ ...f, nhf: v })} label="Pays into the National Housing Fund (2.5%)" />
 
         <h3 className="pt-2 text-lg font-semibold">Bank</h3>
-        <Field label="Bank"><TextInput value={f.bankName} onChange={set('bankName')} placeholder="e.g. First Bank" /></Field>
-        <Field label="Account number" hint="10 digits. Needed before they can be paid."><TextInput value={f.accountNumber} onChange={set('accountNumber')} inputMode="numeric" /></Field>
-        <Field label="Pension PIN (optional)"><TextInput value={f.pensionPin} onChange={set('pensionPin')} /></Field>
+        {staff?.accountNumber && !bank.checked && bank.bankCode === '' && (
+          <p className="text-[15px] text-muted-foreground">
+            Now: {staff.bankName} · {staff.accountNumber}{staff.accountName ? ` · ${staff.accountName}` : ''}. To change it, choose the bank and type the new number.
+          </p>
+        )}
+        <BankAccountFields value={bank} onChange={setBank} whose={f.name || 'this person'} allowTyped />
 
-        <h3 className="pt-2 text-lg font-semibold">Guarantor</h3>
-        <Field label="Guarantor's name"><TextInput value={f.guarantorName} onChange={set('guarantorName')} /></Field>
-        <Field label="Guarantor's phone"><TextInput value={f.guarantorPhone} onChange={set('guarantorPhone')} inputMode="tel" /></Field>
-        <Check checked={f.guarantorVerified} onChange={(v) => setF({ ...f, guarantorVerified: v })} label="Guarantor has been checked" />
+        <details className="rounded-xl border border-border px-4 py-3" open={!!(f.guarantorName || f.pensionPin || f.nhf)}>
+          <summary className="cursor-pointer py-1 text-base font-semibold">More details (optional)</summary>
+          <div className="space-y-4 pt-3">
+            <Field label="Guarantor's name" hint="The person who vouches for this staff member."><TextInput value={f.guarantorName} onChange={set('guarantorName')} /></Field>
+            <Field label="Guarantor's phone"><TextInput value={f.guarantorPhone} onChange={set('guarantorPhone')} inputMode="tel" /></Field>
+            <Check checked={f.guarantorVerified} onChange={(v) => setF({ ...f, guarantorVerified: v })} label="Guarantor has been checked" />
+            <Field label="Pension PIN" hint="The number from their pension company (it starts with PEN). Leave empty if you don't have it."><TextInput value={f.pensionPin} onChange={set('pensionPin')} /></Field>
+            <Check checked={f.nhf} onChange={(v) => setF({ ...f, nhf: v })} label="Pays into the National Housing Fund (2.5% of basic pay)" />
+          </div>
+        </details>
 
         <FormButtons onCancel={onClose} saveLabel={staff ? 'Save' : 'Add staff'} busy={save.busy} />
       </form>
@@ -165,6 +183,7 @@ function StaffDialog({ staff: s, branches, onClose, onDone }: { staff: Staff; br
     <Modal title={s.name} onClose={onClose}>
       <div className="space-y-5">
         {action.error && <Notice tone="bad">{action.error}</Notice>}
+        <PhotoPicker staff={s} onDone={onDone} />
         <Facts
           items={[
             { label: 'Staff number', value: s.staffNo },
@@ -175,7 +194,12 @@ function StaffDialog({ staff: s, branches, onClose, onDone }: { staff: Staff; br
             { label: 'Started', value: s.startDate ? dateLabel(s.startDate) : '—' },
             { label: 'Basic pay', value: naira(s.basicKobo) },
             { label: 'Allowances', value: naira(s.allowancesKobo) },
-            { label: 'Bank', value: s.accountNumber ? `${s.bankName ?? ''} ${s.accountNumber}` : <span className="text-warning">Not added</span> },
+            {
+              label: 'Bank',
+              value: s.accountNumber
+                ? `${s.bankName ?? ''} · ${s.accountNumber}${s.accountName ? ` · ${s.accountName}` : ''}${s.bankChecked ? '' : ' (not checked with the bank)'}`
+                : <span className="text-amber-800 dark:text-amber-300">Not added</span>,
+            },
             { label: 'Guarantor', value: s.guarantorName ? `${s.guarantorName}${s.guarantorVerified ? ' (checked)' : ' (not checked)'}` : '—' },
             { label: 'Phone', value: s.phone ?? '—' },
           ]}
@@ -192,5 +216,34 @@ function StaffDialog({ staff: s, branches, onClose, onDone }: { staff: Staff; br
       </div>
       {editing && <StaffForm branches={branches} staff={s} onClose={() => setEditing(false)} onDone={(m) => { setEditing(false); onDone(m) }} />}
     </Modal>
+  )
+}
+
+function PhotoPicker({ staff, onDone }: { staff: Staff; onDone: (m: string) => void }) {
+  const input = useRef<HTMLInputElement>(null)
+  const save = useSave()
+  return (
+    <div className="flex items-center gap-5">
+      <Avatar name={staff.name} url={staff.photoUrl} size={96} />
+      <div className="space-y-2">
+        <input
+          ref={input}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={async (e) => {
+            const file = e.target.files?.[0]
+            e.target.value = ''
+            if (!file) return
+            if (file.size > 5 * 1024 * 1024) return save.setError('Choose a photo smaller than 5 MB')
+            if (await save.run(() => finance.uploadStaffPhoto(staff.id, file))) onDone(`Photo saved for ${staff.name}.`)
+          }}
+        />
+        <Btn variant="secondary" busy={save.busy} onClick={() => input.current?.click()}>
+          {staff.photoUrl ? 'Change photo' : 'Add a photo'}
+        </Btn>
+        {save.error && <p className="text-[15px] text-destructive">{save.error}</p>}
+      </div>
+    </div>
   )
 }

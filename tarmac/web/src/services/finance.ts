@@ -16,9 +16,11 @@ export type Branch = {
   isHq: boolean
   onHold: boolean
   holdNote: string | null
+  holdReleaseOn: string | null
   splitBps: Split
   salaryBankName: string | null
   salaryAccountNumber: string | null
+  salaryAccountName: string | null
   partner: { id: string; name: string } | null
   partnerWaiting: { id: string; name: string } | null
   clients: number
@@ -35,6 +37,7 @@ export type Partner = {
   branchId: string
   branchName: string
   bankName: string
+  bankCode: string | null
   accountNumber: string
   accountName: string
   status: 'pending' | 'active'
@@ -118,6 +121,58 @@ export type Payment = {
   split: Split
   partnerName: string | null
   unallocatedKobo: number
+  payouts: { share: Share; status: PayoutStatus; amountKobo: number; toName: string | null; waitingFor: string | null }[]
+}
+
+export type Share = 'hq' | 'vat' | 'partner' | 'salary'
+export type PayoutStatus = 'waiting' | 'ready' | 'sending' | 'needs_code' | 'sent' | 'failed'
+
+export type Payout = {
+  id: string
+  share: Share
+  shareLabel: string
+  amountKobo: number
+  status: PayoutStatus
+  toName: string | null
+  waitingFor: string | null
+  bankName: string | null
+  accountNumber: string | null
+  accountName: string | null
+  reference: string | null
+  error: string | null
+  branchName: string
+  clientName: string
+  createdAt: number
+  sentAt: number | null
+}
+
+export type Payouts = {
+  autoSend: boolean
+  ready: boolean
+  counts: { waiting: number; ready: number; sending: number; needsCode: number; failed: number }
+  readyKobo: number
+  waitingKobo: number
+  sentThisMonthKobo: number
+  open: Payout[]
+  sent: Payout[]
+}
+
+export type Bank = { code: string; name: string }
+export type CheckedAccount = { bankCode: string; bankName: string; accountNumber: string; accountName: string }
+
+export type MoneySettings = {
+  autoSend: boolean
+  walletAccountNumber: string | null
+  hq: CheckedAccount | null
+  vat: CheckedAccount | null
+}
+
+export type MoneyCheck = {
+  day: string
+  ranAt: number
+  ok: boolean
+  lines: { tone: 'good' | 'warn' | 'bad'; text: string }[]
+  recovered: number
 }
 
 export type StaffRole = 'guard' | 'supervisor' | 'office'
@@ -139,6 +194,9 @@ export type Staff = {
   nhf: boolean
   bankName: string | null
   accountNumber: string | null
+  accountName: string | null
+  bankChecked: boolean
+  photoUrl: string | null
   pensionPin: string | null
   guarantorName: string | null
   guarantorPhone: string | null
@@ -210,6 +268,7 @@ export type Overview = {
   todo: { kind: string; text: string; detail: string; to: string; urgent: boolean }[]
   latest: { id: string; clientName: string; amountKobo: number; receivedAt: number; state: 'held' | 'shared' }[]
   counts: { branches: number; clients: number }
+  check: MoneyCheck | null
 }
 
 export type Reports = {
@@ -226,11 +285,25 @@ export const finance = {
   reports: (period: string) => get<Reports>(`reports?period=${period}`),
 
   branches: () => get<Branch[]>('branches'),
-  addTarmacBranches: () => post('branches/add-tarmac'),
-  createBranch: (name: string) => post('branches/create', { name }),
-  updateBranch: (b: { branchId: string; name?: string; salaryBankName?: string; salaryAccountNumber?: string }) => post('branches/update', b),
-  setHold: (branchId: string, onHold: boolean, note?: string) => post('branches/hold', { branchId, onHold, note }),
+  createBranch: (name: string, isHq: boolean, splitBps: Split) => post('branches/create', { name, isHq, splitBps }),
+  updateBranch: (b: { branchId: string; name?: string; bankCode?: string; accountNumber?: string; removeSalaryAccount?: boolean }) => post('branches/update', b),
+  setHold: (branchId: string, onHold: boolean, note?: string, releaseOn?: string) => post('branches/hold', { branchId, onHold, note, releaseOn }),
   setSplit: (branchId: string, splitBps: Split) => post('branches/split', { branchId, splitBps }),
+  removeBranch: (branchId: string) => post('branches/remove', { branchId }),
+
+  banks: () => get<Bank[]>('banks'),
+  checkAccount: (bankCode: string, accountNumber: string) => post<CheckedAccount>('banks/check', { bankCode, accountNumber }),
+  settings: () => get<MoneySettings>('settings'),
+  balance: () => get<{ available: true; availableKobo: number; ledgerKobo: number; at: number } | { available: false; reason: string }>('balance'),
+  setMoneyAccount: (which: 'hq' | 'vat', a: { bankCode?: string; accountNumber?: string; remove?: boolean }) => post('settings/account', { which, ...a }),
+  setWallet: (walletAccountNumber: string) => post('settings/wallet', { walletAccountNumber }),
+  setAutoSend: (autoSend: boolean) => post('settings/auto-send', { autoSend }),
+  payouts: () => get<Payouts>('payouts'),
+  sendNow: () => post<{ sent: number; waiting: number; failed: number; reason?: string }>('payouts/send-now'),
+  enterCode: (payoutId: string, code: string) => post<{ state: string }>('payouts/code', { payoutId, code }),
+  retryPayout: (payoutId: string) => post('payouts/retry', { payoutId }),
+  lastCheck: () => get<MoneyCheck | null>('check'),
+  runCheck: () => post<MoneyCheck | null>('check/run'),
 
   partners: () => get<Partner[]>('partners'),
   createPartner: (p: Record<string, unknown>) => post('partners/create', p),
@@ -266,6 +339,14 @@ export const finance = {
   createStaff: (s: Record<string, unknown>) => post<{ id: string; staffNo: string }>('staff/create', s),
   updateStaff: (s: Record<string, unknown>) => post('staff/update', s),
   setStaffStatus: (staffId: string, status: StaffStatus) => post('staff/status', { staffId, status }),
+  /** Uploads straight to storage, then attaches the file to the staff record. */
+  uploadStaffPhoto: async (staffId: string, file: File) => {
+    const { uploadUrl } = await post<{ uploadUrl: string }>('staff/photo-upload')
+    const res = await fetch(uploadUrl, { method: 'POST', headers: { 'Content-Type': file.type || 'image/jpeg' }, body: file })
+    if (!res.ok) throw new Error('The photo did not upload. Try again.')
+    const { storageId } = (await res.json()) as { storageId: string }
+    return post('staff/photo', { staffId, storageId })
+  },
 
   applicants: () => get<Applicant[]>('applicants'),
   createApplicant: (a: Record<string, unknown>) => post('applicants/create', a),

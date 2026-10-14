@@ -34,7 +34,7 @@ const REPORTS: { title: string; text: string; make: (r: Reports) => (string | nu
   },
   {
     title: 'VAT set aside',
-    text: 'The 7.5% VAT share kept from each branch, ready to pay to FIRS.',
+    text: 'The VAT share kept from each branch, ready to pay to FIRS.',
     make: (r) => [['Branch', 'VAT set aside'], ...r.byBranch.map((b) => [b.branchName, nairaPlain(b.split.vat)]), ['Total', nairaPlain(r.byBranch.reduce((s, b) => s + b.split.vat, 0))]],
   },
 ]
