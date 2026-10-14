@@ -17,6 +17,7 @@ export type Branch = {
   onHold: boolean
   holdNote: string | null
   holdReleaseOn: string | null
+  payDay: number | null
   splitBps: Split
   salaryBankName: string | null
   salaryAccountNumber: string | null
@@ -287,7 +288,8 @@ export const finance = {
   reports: (period: string) => get<Reports>(`reports?period=${period}`),
 
   branches: () => get<Branch[]>('branches'),
-  createBranch: (b: { name: string; isHq: boolean; splitBps: Split; bankCode?: string; accountNumber?: string }) => post('branches/create', b),
+  createBranch: (b: { name: string; isHq: boolean; splitBps: Split; bankCode?: string; accountNumber?: string; payDay: number | null }) => post('branches/create', b),
+  setPayDay: (branchId: string, payDay: number | null) => post('branches/pay-day', { branchId, payDay }),
   updateBranch: (b: { branchId: string; name?: string; bankCode?: string; accountNumber?: string; removeSalaryAccount?: boolean }) => post('branches/update', b),
   setHold: (branchId: string, onHold: boolean, note?: string, releaseOn?: string) => post('branches/hold', { branchId, onHold, note, releaseOn }),
   setSplit: (branchId: string, splitBps: Split) => post('branches/split', { branchId, splitBps }),

@@ -4,7 +4,7 @@ import { finance, type Branch, type Partner } from '../../services/finance'
 import { dateLabel, naira, pct, todayWat } from './format'
 import { BankAccountFields, emptyBankChoice } from './BankAccount'
 import {
-  Btn, Check, MoneyInput, Facts, Field, FormButtons, Modal, Notice, TextArea, TextInput,
+  Btn, Check, MoneyInput, SelectInput, Facts, Field, FormButtons, Modal, Notice, TextArea, TextInput,
 } from './ui'
 import { useSave } from './hooks'
 
@@ -19,13 +19,14 @@ export function AddBranch({ hasHq, onClose, onDone }: { hasHq: boolean; onClose:
   const save = useSave()
   const [split, setSplit] = useState(emptySplit)
   const [bank, setBank] = useState(emptyBankChoice())
+  const [payDay, setPayDay] = useState<number | null>(null)
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     const bps = toBps(split)
     if (!bps) return save.setError('The amount cannot be more than ₦1,000,000')
     if (bps.salary > 0 && !bank.checked) return save.setError("Add the branch's bank account and wait for the name to appear")
     const account = bank.checked ? { bankCode: bank.checked.bankCode, accountNumber: bank.checked.accountNumber } : {}
-    if (await save.run(() => finance.createBranch({ name, isHq, splitBps: bps, ...account }))) onDone(name.trim())
+    if (await save.run(() => finance.createBranch({ name, isHq, splitBps: bps, payDay, ...account }))) onDone(name.trim())
   }
   return (
     <Modal title="Add a branch" onClose={onClose}>
@@ -42,6 +43,10 @@ export function AddBranch({ hasHq, onClose, onDone }: { hasHq: boolean; onClose:
         <div className="border-t border-border pt-4">
           <h3 className="text-lg font-semibold">How much the branch gets</h3>
           <SplitFields value={split} onChange={setSplit} />
+        </div>
+        <div className="border-t border-border pt-4">
+          <h3 className="mb-3 text-lg font-semibold">When the branch is paid</h3>
+          <PayDaySelect value={payDay} onChange={setPayDay} />
         </div>
         <FormButtons onCancel={onClose} saveLabel="Add branch" busy={save.busy} />
       </form>
@@ -370,5 +375,21 @@ export function PartnerForm({ branch, partner, onClose, onDone }: SubForm & { pa
         )}
       </form>
     </Modal>
+  )
+}
+
+/** As soon as money arrives, or once a month on a chosen day. */
+export function PayDaySelect({ value, onChange }: { value: number | null; onChange: (v: number | null) => void }) {
+  return (
+    <Field label="Send the branch its money" hint="Once a month: everything the branch earned since the last payment goes out on that day.">
+      <SelectInput
+        value={value ? String(value) : ''}
+        onChange={(v) => onChange(v ? Number(v) : null)}
+        options={[
+          { value: '', label: 'As soon as money arrives' },
+          ...Array.from({ length: 28 }, (_, i) => ({ value: String(i + 1), label: `Once a month, on day ${i + 1}` })),
+        ]}
+      />
+    </Field>
   )
 }

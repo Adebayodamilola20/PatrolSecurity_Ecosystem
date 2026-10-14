@@ -34,6 +34,7 @@ export const list = internalQuery({
           onHold: b.onHold,
           holdNote: b.holdNote ?? null,
           holdReleaseOn: b.holdReleaseOn ?? null,
+          payDay: b.payDay ?? null,
           splitBps: b.splitBps,
           salaryBankName: b.salaryBankName ?? null,
           salaryAccountNumber: b.salaryAccountNumber ?? null,
@@ -64,10 +65,12 @@ export const create = internalMutation({
     isHq: v.optional(v.boolean()),
     splitBps: v.optional(splitValidator),
     salaryAccount: v.optional(checkedAccount),
+    payDay: v.optional(v.union(v.number(), v.null())),
   },
   handler: async (ctx, args) => {
     const name = required(args.name, "Branch name", 60);
     if (args.splitBps) validateSplit(args.splitBps);
+    checkPayDay(args.payDay);
     if (await nameTaken(ctx, name)) fail(`There is already a ${name} branch`);
     if (args.isHq) {
       const hq = (await ctx.db.query("finBranches").collect()).find((b) => b.active && b.isHq);
@@ -77,6 +80,7 @@ export const create = internalMutation({
       name,
       isHq: !!args.isHq,
       splitBps: args.splitBps ?? DEFAULT_SPLIT_BPS,
+      payDay: args.payDay ?? undefined,
       ...(args.salaryAccount
         ? {
             salaryBankCode: args.salaryAccount.bankCode,
@@ -127,6 +131,21 @@ export const update = internalMutation({
       a ? `${branch.name} salary account set to ${a.bankName} ${a.accountNumber} (${a.accountName})` : `Updated branch ${patch.name ?? branch.name}`,
     );
     if (a) await fillWaiting(ctx);
+  },
+});
+
+function checkPayDay(day: number | null | undefined) {
+  if (day !== null && day !== undefined && (!Number.isInteger(day) || day < 1 || day > 28)) fail("Choose a day from 1 to 28");
+}
+
+/** When this branch is paid: as soon as money arrives (null) or once a month on a day. */
+export const setPayDay = internalMutation({
+  args: { actorId: v.id("users"), branchId: v.id("finBranches"), payDay: v.union(v.number(), v.null()) },
+  handler: async (ctx, args) => {
+    checkPayDay(args.payDay);
+    const branch = await getBranch(ctx, args.branchId);
+    await ctx.db.patch(branch._id, { payDay: args.payDay ?? undefined });
+    await audit(ctx, args.actorId, "branch.payday", "finBranch", branch._id, args.payDay ? `${branch.name} is paid on day ${args.payDay} of each month` : `${branch.name} is paid as soon as money arrives`);
   },
 });
 

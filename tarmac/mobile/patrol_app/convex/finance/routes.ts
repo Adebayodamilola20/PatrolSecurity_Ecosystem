@@ -120,7 +120,8 @@ export function registerFinanceRoutes(http: HttpRouter) {
     if (!body.splitBps) throw new ConvexError("Set how the branch's money is shared");
     // The branch's own bank account can be given at once; the bank confirms the name.
     const salaryAccount = body.accountNumber ? await bankChecked(body) : undefined;
-    return await ctx.runMutation(fin.branches.create, { actorId, ...pick(body, ["name", "isHq", "splitBps"]), salaryAccount } as any);
+    const payDay = body.payDay === null || body.payDay === undefined || body.payDay === "" ? null : Number(body.payDay);
+    return await ctx.runMutation(fin.branches.create, { actorId, ...pick(body, ["name", "isHq", "splitBps"]), salaryAccount, payDay } as any);
   });
   route("POST", "branches/update", async (ctx, { body, actorId }) => {
     const salaryAccount = body.removeSalaryAccount ? null : body.accountNumber ? await bankChecked(body) : undefined;
@@ -128,6 +129,9 @@ export function registerFinanceRoutes(http: HttpRouter) {
   });
   route("POST", "branches/hold", (ctx, { body, actorId }) =>
     ctx.runMutation(fin.branches.setHold, { actorId, ...pick(body, ["branchId", "onHold", "note", "releaseOn"]) } as any),
+  );
+  route("POST", "branches/pay-day", (ctx, { body, actorId }) =>
+    ctx.runMutation(fin.branches.setPayDay, { actorId, branchId: body.branchId, payDay: body.payDay === null || body.payDay === undefined || body.payDay === "" ? null : Number(body.payDay) } as any),
   );
   route("POST", "branches/remove", (ctx, { body, actorId }) => ctx.runMutation(fin.branches.removeBranch, { actorId, ...pick(body, ["branchId"]) } as any));
   route("POST", "branches/split", (ctx, { body, actorId }) => ctx.runMutation(fin.branches.setSplit, { actorId, ...pick(body, ["branchId", "splitBps"]) } as any));

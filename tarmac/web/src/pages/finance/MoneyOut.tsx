@@ -5,7 +5,7 @@ import { naira, pct } from './format'
 import { Btn, Empty, Failed, Loading, Notice, Page, Panel, Stats, Status } from './ui'
 import { useData, useFlash, useSave } from './hooks'
 
-import { AddBranch, BranchDialog, PartnerForm, SalaryForm } from './Branches'
+import { AddBranch, BranchDialog, PartnerForm, PayDaySelect, SalaryForm } from './Branches'
 
 /**
  * Money leaving Head Office's Monnify account: what was sent, what is waiting
@@ -271,27 +271,9 @@ function AutoSend({ settings, onDone }: { settings: MoneySettings; onDone: (m: s
         <div className="text-[17px] font-semibold">Pay the branches automatically: {on ? 'On' : 'Off'}</div>
         <div className="mt-1 text-[15px] text-[#A9AFBF]">
           {on
-            ? settings.sendDay
-              ? `Branches are paid by themselves on day ${settings.sendDay} of every month.`
-              : 'Branches are paid by themselves as soon as money arrives.'
+            ? 'Each branch is paid by itself, on the schedule set for that branch below.'
             : "Money waits here until someone presses Send. Turn this on once Tarmac's live Monnify account can make transfers."}
         </div>
-        <label className="mt-3 flex flex-wrap items-center gap-3 text-[15px]">
-          When:
-          <select
-            value={settings.sendDay ?? ''}
-            onChange={(e) => {
-              const day = e.target.value ? Number(e.target.value) : null
-              void save.run(() => finance.setSendDay(day)).then((ok) => ok && onDone(day ? `Branches will be paid on day ${day} of every month.` : 'Branches will be paid as soon as money arrives.'))
-            }}
-            className="h-11 rounded-lg border border-white/20 bg-[#1C1F27] px-3 text-[#F2F3F6]"
-          >
-            <option value="">As soon as money arrives</option>
-            {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
-              <option key={d} value={d}>Once a month, on day {d}</option>
-            ))}
-          </select>
-        </label>
         {save.error && <div className="mt-2 text-[15px] text-[#F5A3A3]">{save.error}</div>}
       </div>
       <button
@@ -333,6 +315,7 @@ function BranchAccounts({
             Gets {pct(b.splitBps.salary)}{hasPartner ? ` · partner ${pct(b.splitBps.partner)}` : ''} · Head Office keeps {pct(b.splitBps.hq + b.splitBps.vat)}
             {b.onHold ? ' · on hold' : ''}
           </div>
+          <PayDayLine branch={b} onDone={onDone} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {ok ? <Status tone="good">Ready to receive</Status> : <Status tone="wait">Bank account missing</Status>}
@@ -384,6 +367,23 @@ function BranchAccounts({
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+function PayDayLine({ branch, onDone }: { branch: Branch; onDone: (m: string) => void }) {
+  const save = useSave()
+  return (
+    <div className="mt-2 max-w-sm">
+      <PayDaySelect
+        value={branch.payDay}
+        onChange={(day) =>
+          void save.run(() => finance.setPayDay(branch.id, day)).then(
+            (ok) => ok && onDone(day ? `${branch.name} will be paid on day ${day} of every month.` : `${branch.name} will be paid as soon as money arrives.`),
+          )
+        }
+      />
+      {save.error && <p className="mt-1 text-[15px] text-destructive">{save.error}</p>}
     </div>
   )
 }

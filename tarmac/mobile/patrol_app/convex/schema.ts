@@ -373,6 +373,8 @@ export default defineSchema({
     // While on hold, payments for this branch are recorded but not shared.
     onHold: v.boolean(),
     holdNote: v.optional(v.string()),
+    // Day of the month (1–28) this branch is paid; missing = as soon as money arrives.
+    payDay: v.optional(v.number()),
     // The day held money is released by itself ("YYYY-MM-DD", Nigerian time).
     holdReleaseOn: v.optional(v.string()),
     salaryBankName: v.optional(v.string()),

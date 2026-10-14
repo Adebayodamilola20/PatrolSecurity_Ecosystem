@@ -276,10 +276,6 @@ export const sendReady = internalAction({
     const settings = await ctx.runQuery(internal.finance.payouts.sendSettings, {});
     if (!settings.walletAccountNumber) return { sent: 0, waiting: 0, failed: 0, reason: "The Head Office Monnify account is not set up yet" };
     if (!args.manual && !settings.autoSend) return { sent: 0, waiting: 0, failed: 0, reason: "Automatic sending is off" };
-    // Paid monthly: on any other day, automatic sending waits (Send now still works).
-    if (!args.manual && settings.sendDay && Number(todayWat().slice(8, 10)) !== settings.sendDay) {
-      return { sent: 0, waiting: 0, failed: 0, reason: `Branches are paid on day ${settings.sendDay} of the month` };
-    }
     const ids = await ctx.runQuery(internal.finance.payouts.readyIds, { status: "ready" });
     if (!ids.length) return { sent: 0, waiting: 0, failed: 0 };
     const token = await monnifyToken(cfg);
@@ -289,9 +285,15 @@ export const sendReady = internalAction({
     const balance = await walletBalance(cfg, settings.walletAccountNumber);
     let left = balance.available ? balance.availableKobo : Infinity;
     let short = 0;
+    const today = Number(todayWat().slice(8, 10));
     for (const id of ids) {
       const p = await ctx.runQuery(internal.finance.payouts.one, { payoutId: id });
       if (!p) continue;
+      // A branch paid monthly waits for its day (Send now still pays it at once).
+      if (!args.manual) {
+        const payDay = await ctx.runQuery(internal.finance.payouts.payDayOf, { branchId: p.branchId });
+        if (payDay && payDay !== today) continue;
+      }
       if (p.amountKobo > left) {
         short += p.amountKobo;
         continue;
@@ -362,6 +364,11 @@ export const authorize = internalAction({
     await ctx.runMutation(internal.finance.payouts.logAuthorized, { actorId: args.actorId, payoutId: args.payoutId });
     return { state: result.state };
   },
+});
+
+export const payDayOf = internalQuery({
+  args: { branchId: v.id("finBranches") },
+  handler: async (ctx, args) => (await ctx.db.get(args.branchId))?.payDay ?? null,
 });
 
 export const one = internalQuery({

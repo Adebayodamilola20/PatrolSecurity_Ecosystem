@@ -354,20 +354,22 @@ describe("Head Office balance", () => {
 });
 
 describe("sending day and VAT switch", () => {
-  test("paid monthly: automatic sending waits for the day; Send now still works", async () => {
+  test("each branch has its own pay day; Send now still pays at once", async () => {
     await setUpAccounts();
     await addClient(abuja);
     await monnifyPayment();
     await post("settings/auto-send", { autoSend: true });
     const today = Number(new Date(Date.now() + 3600_000).toISOString().slice(8, 10));
-    const other = today === 28 ? 1 : Math.min(today + 1, 28);
-    expect((await post("settings/send-day", { sendDay: other })).status).toBe(200);
+    const other = today >= 28 ? 1 : today + 1;
+    expect((await post("branches/pay-day", { branchId: abuja, payDay: other })).status).toBe(200);
     fake.transfers = [];
     await t.action(f.payouts.tick, {});
+    // Every share of Abuja's payment waits for Abuja's day.
     expect(fake.transfers).toHaveLength(0);
-    await post("payouts/send-now", {});
+    expect((await post("branches/pay-day", { branchId: abuja, payDay: today > 28 ? null : today })).status).toBe(200);
+    await t.action(f.payouts.tick, {});
     expect(fake.transfers.length).toBeGreaterThan(0);
-    expect(JSON.stringify(await (await post("settings/send-day", { sendDay: 31 })).json())).toContain("1 to 28");
+    expect(JSON.stringify(await (await post("branches/pay-day", { branchId: abuja, payDay: 31 })).json())).toContain("1 to 28");
   });
 
   test("with VAT switched off, new invoices have no VAT", async () => {
