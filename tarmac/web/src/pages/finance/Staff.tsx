@@ -44,7 +44,7 @@ export default function FinanceStaff() {
   return (
     <Page
       title="Staff"
-      help="Everyone who works for Tarmac: where they work, their pay and their bank details. Payroll uses this list."
+      help="A record of everyone who works at each branch: their branch, pay and bank details. Payroll uses this list."
       action={data?.branches.length ? <Btn onClick={() => setAdding(true)}>Add staff</Btn> : undefined}
     >
       {node}
@@ -147,7 +147,6 @@ function StaffForm({ branches, staff, onClose, onDone }: { branches: Branch[]; s
         <h3 className="pt-2 text-lg font-semibold">Pay</h3>
         <Field label="Basic pay a month"><MoneyInput value={f.basic} onChange={(v) => setF({ ...f, basic: v })} required /></Field>
         <Field label="Allowances a month"><MoneyInput value={f.allowances} onChange={(v) => setF({ ...f, allowances: v })} /></Field>
-        <Check checked={f.nhf} onChange={(v) => setF({ ...f, nhf: v })} label="Pays into the National Housing Fund (2.5%)" />
 
         <h3 className="pt-2 text-lg font-semibold">Bank</h3>
         {staff?.accountNumber && !bank.checked && bank.bankCode === '' && (
@@ -156,12 +155,17 @@ function StaffForm({ branches, staff, onClose, onDone }: { branches: Branch[]; s
           </p>
         )}
         <BankAccountFields value={bank} onChange={setBank} whose={f.name || 'this person'} allowTyped />
-        <Field label="Pension PIN (optional)"><TextInput value={f.pensionPin} onChange={set('pensionPin')} /></Field>
 
-        <h3 className="pt-2 text-lg font-semibold">Guarantor</h3>
-        <Field label="Guarantor's name"><TextInput value={f.guarantorName} onChange={set('guarantorName')} /></Field>
-        <Field label="Guarantor's phone"><TextInput value={f.guarantorPhone} onChange={set('guarantorPhone')} inputMode="tel" /></Field>
-        <Check checked={f.guarantorVerified} onChange={(v) => setF({ ...f, guarantorVerified: v })} label="Guarantor has been checked" />
+        <details className="rounded-xl border border-border px-4 py-3" open={!!(f.guarantorName || f.pensionPin || f.nhf)}>
+          <summary className="cursor-pointer py-1 text-base font-semibold">More details (optional)</summary>
+          <div className="space-y-4 pt-3">
+            <Field label="Guarantor's name" hint="The person who vouches for this staff member."><TextInput value={f.guarantorName} onChange={set('guarantorName')} /></Field>
+            <Field label="Guarantor's phone"><TextInput value={f.guarantorPhone} onChange={set('guarantorPhone')} inputMode="tel" /></Field>
+            <Check checked={f.guarantorVerified} onChange={(v) => setF({ ...f, guarantorVerified: v })} label="Guarantor has been checked" />
+            <Field label="Pension PIN" hint="The number from their pension company (it starts with PEN). Leave empty if you don't have it."><TextInput value={f.pensionPin} onChange={set('pensionPin')} /></Field>
+            <Check checked={f.nhf} onChange={(v) => setF({ ...f, nhf: v })} label="Pays into the National Housing Fund (2.5% of basic pay)" />
+          </div>
+        </details>
 
         <FormButtons onCancel={onClose} saveLabel={staff ? 'Save' : 'Add staff'} busy={save.busy} />
       </form>

@@ -113,7 +113,10 @@ export function registerFinanceRoutes(http: HttpRouter) {
 
   // Branches
   route("GET", "branches", (ctx) => ctx.runQuery(fin.branches.list, {}));
-  route("POST", "branches/create", (ctx, { body, actorId }) => ctx.runMutation(fin.branches.create, { actorId, ...pick(body, ["name", "isHq"]) } as any));
+  route("POST", "branches/create", (ctx, { body, actorId }) => {
+    if (!body.splitBps) throw new ConvexError("Set how the branch's money is shared");
+    return ctx.runMutation(fin.branches.create, { actorId, ...pick(body, ["name", "isHq", "splitBps"]) } as any);
+  });
   route("POST", "branches/update", async (ctx, { body, actorId }) => {
     const salaryAccount = body.removeSalaryAccount ? null : body.accountNumber ? await bankChecked(body) : undefined;
     return await ctx.runMutation(fin.branches.update, { actorId, ...pick(body, ["branchId", "name"]), salaryAccount } as any);

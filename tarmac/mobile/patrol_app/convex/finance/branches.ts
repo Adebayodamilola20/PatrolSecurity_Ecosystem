@@ -57,9 +57,11 @@ async function nameTaken(ctx: { db: any }, name: string, except?: Id<"finBranche
 }
 
 export const create = internalMutation({
-  args: { actorId: v.id("users"), name: v.string(), isHq: v.optional(v.boolean()) },
+  // The admin sets the branch's sharing percentages; the screen always sends them.
+  args: { actorId: v.id("users"), name: v.string(), isHq: v.optional(v.boolean()), splitBps: v.optional(splitValidator) },
   handler: async (ctx, args) => {
     const name = required(args.name, "Branch name", 60);
+    if (args.splitBps) validateSplit(args.splitBps);
     if (await nameTaken(ctx, name)) fail(`There is already a ${name} branch`);
     if (args.isHq) {
       const hq = (await ctx.db.query("finBranches").collect()).find((b) => b.active && b.isHq);
@@ -68,7 +70,7 @@ export const create = internalMutation({
     const id = await ctx.db.insert("finBranches", {
       name,
       isHq: !!args.isHq,
-      splitBps: DEFAULT_SPLIT_BPS,
+      splitBps: args.splitBps ?? DEFAULT_SPLIT_BPS,
       onHold: false,
       active: true,
       createdAt: Date.now(),

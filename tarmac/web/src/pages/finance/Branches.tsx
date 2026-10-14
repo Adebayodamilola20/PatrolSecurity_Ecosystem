@@ -25,7 +25,7 @@ export default function FinanceBranches() {
   return (
     <Page
       title="Branches"
-      help="Each branch has a partner, a salary account and a sharing rule. Click a branch to manage it."
+      help="Add each branch, its salary account and how its money is shared. Click a branch to manage it."
       action={data?.branches.length ? <Btn onClick={() => setAdding(true)}>Add a branch</Btn> : undefined}
     >
       {node}
@@ -50,9 +50,11 @@ export default function FinanceBranches() {
                 sub={
                   b.partnerWaiting
                     ? `New partner ${b.partnerWaiting.name} is waiting for approval`
-                    : b.partner
-                      ? `Partner: ${b.partner.name}`
-                      : 'No partner yet'
+                    : !b.salaryAccountNumber
+                      ? 'No salary account yet'
+                      : b.splitBps.partner > 0 && !b.partner && !b.isHq
+                        ? 'No partner yet'
+                        : `Salary account ${b.salaryBankName ?? ''} · ${b.salaryAccountNumber}`
                 }
                 right={naira(b.collectedKobo)}
                 rightSub={`this month · ${b.clients} client${b.clients === 1 ? '' : 's'}`}
@@ -81,9 +83,12 @@ function AddBranch({ hasHq, onClose, onDone }: { hasHq: boolean; onClose: () => 
   const [name, setName] = useState('')
   const [isHq, setIsHq] = useState(false)
   const save = useSave()
+  const [split, setSplit] = useState(emptySplit)
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    if (await save.run(() => finance.createBranch(name, isHq))) onDone(name.trim())
+    const bps = toBps(split)
+    if (!bps) return save.setError('The percentages must add up to exactly 100%')
+    if (await save.run(() => finance.createBranch(name, isHq, bps))) onDone(name.trim())
   }
   return (
     <Modal title="Add a branch" onClose={onClose}>
@@ -93,6 +98,11 @@ function AddBranch({ hasHq, onClose, onDone }: { hasHq: boolean; onClose: () => 
           <TextInput value={name} onChange={(e) => setName(e.target.value)} required placeholder="e.g. Kaduna" />
         </Field>
         {!hasHq && <Check checked={isHq} onChange={setIsHq} label="This branch is the Head Office" />}
+        <div className="border-t border-border pt-4">
+          <h3 className="text-lg font-semibold">How this branch's money is shared</h3>
+          <p className="mb-3 mt-1 text-[15px] text-muted-foreground">For every payment for this branch. You decide the percentages; they must add up to 100%.</p>
+          <SplitFields value={split} onChange={setSplit} />
+        </div>
         <FormButtons onCancel={onClose} saveLabel="Add branch" busy={save.busy} />
       </form>
     </Modal>
@@ -148,7 +158,15 @@ function BranchDialog({
             { label: 'Staff', value: branch.staff },
             { label: 'Received this month', value: naira(branch.collectedKobo) },
             { label: 'Owed by clients', value: naira(branch.owedKobo) },
-            { label: 'Sharing rule', value: `Head Office ${pct(s.hq)} · VAT ${pct(s.vat)} · Partner ${pct(s.partner)} · Salaries ${pct(s.salary)}` },
+            {
+              label: 'Sharing',
+              value: [
+                `Salary account ${pct(s.salary)}`,
+                s.partner ? `Partner ${pct(s.partner)}` : '',
+                s.hq ? `Head Office ${pct(s.hq)}` : '',
+                s.vat ? `VAT ${pct(s.vat)}` : '',
+              ].filter(Boolean).join(' · '),
+            },
             {
               label: 'Salary account',
               value: branch.salaryAccountNumber
@@ -158,6 +176,7 @@ function BranchDialog({
           ]}
         />
 
+        {s.partner > 0 && (
         <section className="space-y-3">
           <h3 className="text-lg font-semibold">Partner</h3>
           {waiting && (
@@ -205,12 +224,13 @@ function BranchDialog({
             )}
           </div>
         </section>
+        )}
 
         <section className="space-y-3 border-t border-border pt-5">
           <h3 className="text-lg font-semibold">Branch settings</h3>
           <div className="flex flex-wrap gap-2">
             <Btn variant="secondary" onClick={() => setForm('salary')}>Salary account</Btn>
-            <Btn variant="secondary" onClick={() => setForm('split')}>Change sharing rule</Btn>
+            <Btn variant="secondary" onClick={() => setForm('split')}>Change sharing</Btn>
             <Btn variant="secondary" onClick={() => setForm('rename')}>Rename</Btn>
             {branch.onHold ? (
               <Btn busy={action.busy} onClick={() => act(() => finance.setHold(branch.id, false), `${branch.name} is no longer on hold.`)}>Take off hold</Btn>
@@ -320,39 +340,66 @@ function HoldForm({ branch, onClose, onDone }: SubForm) {
 }
 
 function SplitForm({ branch, onClose, onDone }: SubForm) {
-  const [v, setV] = useState({
-    hq: String(branch.splitBps.hq / 100),
-    vat: String(branch.splitBps.vat / 100),
-    partner: String(branch.splitBps.partner / 100),
-    salary: String(branch.splitBps.salary / 100),
-  })
+  const [v, setV] = useState(splitText(branch.splitBps))
   const save = useSave()
-  const bps = (s: string) => Math.round(Number(s) * 100)
-  const total = (bps(v.hq) + bps(v.vat) + bps(v.partner) + bps(v.salary)) / 100
-  const fields: [keyof typeof v, string][] = [['hq', 'Head Office %'], ['vat', 'VAT %'], ['partner', 'Partner %'], ['salary', 'Salaries %']]
   return (
-    <Modal title={`${branch.name} sharing rule`} onClose={onClose}>
+    <Modal title={`${branch.name} sharing`} onClose={onClose}>
       <form
         className="space-y-4"
         onSubmit={async (e) => {
           e.preventDefault()
-          const splitBps = { hq: bps(v.hq), vat: bps(v.vat), partner: bps(v.partner), salary: bps(v.salary) }
-          if (await save.run(() => finance.setSplit(branch.id, splitBps))) onDone('Sharing rule changed.')
+          const bps = toBps(v)
+          if (!bps) return save.setError('The percentages must add up to exactly 100%')
+          if (await save.run(() => finance.setSplit(branch.id, bps))) onDone('Sharing changed.')
         }}
       >
         {save.error && <Notice tone="bad">{save.error}</Notice>}
-        <p className="text-[15px] text-muted-foreground">Only change this if Head Office has agreed a different rule for this branch. It applies to new payments.</p>
-        <div className="grid grid-cols-2 gap-4">
-          {fields.map(([k, label]) => (
-            <Field key={k} label={label}>
-              <TextInput value={v[k]} inputMode="decimal" onChange={(e) => setV({ ...v, [k]: e.target.value })} required />
-            </Field>
-          ))}
-        </div>
-        <p className={total === 100 ? 'text-base text-success' : 'text-base font-semibold text-destructive'}>Total: {total}% {total === 100 ? '✓' : '(must be 100%)'}</p>
+        <p className="text-[15px] text-muted-foreground">Applies to payments that come in from now on.</p>
+        <SplitFields value={v} onChange={setV} />
         <FormButtons onCancel={onClose} busy={save.busy} />
       </form>
     </Modal>
+  )
+}
+
+type SplitText = { hq: string; vat: string; partner: string; salary: string }
+const emptySplit: SplitText = { hq: '', vat: '', partner: '', salary: '' }
+const splitText = (b: Branch['splitBps']): SplitText => ({
+  hq: String(b.hq / 100),
+  vat: String(b.vat / 100),
+  partner: String(b.partner / 100),
+  salary: String(b.salary / 100),
+})
+const toNum = (x: string) => (x.trim() === '' ? 0 : Math.round(Number(x) * 100))
+/** Basis points, or null unless every box is a number and they add up to 100%. */
+function toBps(v: SplitText) {
+  const bps = { hq: toNum(v.hq), vat: toNum(v.vat), partner: toNum(v.partner), salary: toNum(v.salary) }
+  const parts = Object.values(bps)
+  if (parts.some((n) => !Number.isFinite(n) || n < 0)) return null
+  return parts.reduce((a, b) => a + b, 0) === 10_000 ? bps : null
+}
+
+function SplitFields({ value: v, onChange }: { value: SplitText; onChange: (v: SplitText) => void }) {
+  const fields: [keyof SplitText, string, string][] = [
+    ['salary', "Branch's salary account %", 'Sent to the branch salary account'],
+    ['partner', 'Branch partner %', 'Leave empty if the branch has no partner'],
+    ['hq', 'Head Office keeps %', 'Stays in the Head Office account'],
+    ['vat', 'VAT %', 'Stays in the Head Office account, set aside for tax'],
+  ]
+  const total = (toNum(v.hq) + toNum(v.vat) + toNum(v.partner) + toNum(v.salary)) / 100
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        {fields.map(([k, label, hint]) => (
+          <Field key={k} label={label} hint={hint}>
+            <TextInput value={v[k]} inputMode="decimal" placeholder="0" onChange={(e) => onChange({ ...v, [k]: e.target.value.replace(/[^\d.]/g, '') })} />
+          </Field>
+        ))}
+      </div>
+      <p className={total === 100 ? 'text-base font-medium text-emerald-700 dark:text-emerald-300' : 'text-base font-semibold text-red-700 dark:text-red-300'}>
+        Total: {total}% {total === 100 ? '✓' : `— ${total < 100 ? `${Math.round((100 - total) * 100) / 100}% still to share` : 'too much, must be 100%'}`}
+      </p>
+    </div>
   )
 }
 

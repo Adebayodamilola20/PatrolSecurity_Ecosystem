@@ -66,10 +66,10 @@ export default function FinanceOverview() {
           >
             <SplitBar
               parts={[
-                { key: 'hq', label: 'Head Office · 8%', amount: naira(s.hq), weight: s.hq },
-                { key: 'vat', label: 'VAT · 7.5%', amount: naira(s.vat), weight: s.vat },
-                { key: 'partner', label: 'Partners · 34.5%', amount: naira(s.partner), weight: s.partner },
-                { key: 'salary', label: 'Salaries · 50%', amount: naira(s.salary), weight: s.salary },
+                { key: 'hq', label: 'Head Office', amount: naira(s.hq), weight: s.hq },
+                { key: 'vat', label: 'VAT', amount: naira(s.vat), weight: s.vat },
+                { key: 'partner', label: 'Branch partners', amount: naira(s.partner), weight: s.partner },
+                { key: 'salary', label: 'Branch salary accounts', amount: naira(s.salary), weight: s.salary },
               ]}
             />
           </Hero>
@@ -79,7 +79,7 @@ export default function FinanceOverview() {
             steps={[
               { title: 'A client pays', text: 'into their own account number, printed on every invoice.' },
               { title: 'It lands at Head Office', text: "in Head Office's Monnify account — the balance above. The invoice is marked paid." },
-              { title: 'The branches get their share', text: "34.5% to the branch partner and 50% to the branch salary account. Head Office's 8% and VAT stay." },
+              { title: 'Each branch gets its share', text: "by the percentages set for that branch, sent to its salary account (and partner, if it has one)." },
             ]}
           />
 

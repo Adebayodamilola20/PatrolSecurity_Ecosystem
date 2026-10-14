@@ -285,7 +285,7 @@ export const finance = {
   reports: (period: string) => get<Reports>(`reports?period=${period}`),
 
   branches: () => get<Branch[]>('branches'),
-  createBranch: (name: string, isHq = false) => post('branches/create', { name, isHq }),
+  createBranch: (name: string, isHq: boolean, splitBps: Split) => post('branches/create', { name, isHq, splitBps }),
   updateBranch: (b: { branchId: string; name?: string; bankCode?: string; accountNumber?: string; removeSalaryAccount?: boolean }) => post('branches/update', b),
   setHold: (branchId: string, onHold: boolean, note?: string, releaseOn?: string) => post('branches/hold', { branchId, onHold, note, releaseOn }),
   setSplit: (branchId: string, splitBps: Split) => post('branches/split', { branchId, splitBps }),

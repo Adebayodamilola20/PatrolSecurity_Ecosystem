@@ -11,6 +11,7 @@ import type { Id } from "./_generated/dataModel";
 import { signPatrolToken } from "./lib/jwt";
 
 const modules = import.meta.glob("./**/*.*s");
+const SPLIT = { hq: 800, vat: 750, partner: 3450, salary: 5000 };
 const f = internal.finance;
 
 let t: ReturnType<typeof convexTest>;

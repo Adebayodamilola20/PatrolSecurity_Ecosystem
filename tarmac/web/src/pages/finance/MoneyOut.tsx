@@ -1,10 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { finance, type Branch, type MoneySettings, type Partner, type Payout } from '../../services/finance'
-import { dateTimeLabel, naira } from './format'
+import { dateTimeLabel, naira, pct } from './format'
 import { Btn, Empty, Failed, Field, FormButtons, Loading, Modal, Notice, Page, Panel, Stats, Status, TextInput } from './ui'
 import { useData, useFlash, useSave } from './hooks'
-import { BankAccountFields, emptyBankChoice } from './BankAccount'
+
 import { PartnerForm, SalaryForm } from './Branches'
 
 /**
@@ -18,7 +18,7 @@ export default function MoneyOut() {
   })
   const { flash, node } = useFlash()
   const send = useSave()
-  const [editing, setEditing] = useState<null | 'hq' | 'vat' | 'wallet'>(null)
+  const [editing, setEditing] = useState<null | 'wallet'>(null)
   const [branchForm, setBranchForm] = useState<null | { kind: 'partner' | 'salary'; branch: Branch }>(null)
 
   const done = (message: string) => {
@@ -47,7 +47,7 @@ export default function MoneyOut() {
   return (
     <Page
       title="Money out"
-      help="Every payment lands in Head Office's Monnify account. Each branch's share is sent from there to the branch partner and the branch salary account. Head Office's 8% and VAT stay."
+      help="Every payment lands in the Head Office account. Each branch's share is sent from there to the branch's own accounts, by the percentages set for that branch."
       action={
         p && p.counts.ready > 0 ? (
           <Btn busy={send.busy} onClick={sendNow} disabled={!s?.walletAccountNumber}>
@@ -91,9 +91,7 @@ export default function MoneyOut() {
                     title={`${x.branchName} — ${x.shareLabel}`}
                     sub={`${x.clientName} paid · waiting for ${x.waitingFor ?? 'an account'}`}
                     right={
-                      /Head Office|VAT/.test(x.waitingFor ?? '') ? (
-                        <Btn variant="quiet" onClick={() => setEditing('hq')}>Add the account</Btn>
-                      ) : (
+                      (
                         (() => {
                           const branch = data.branches.find((b) => b.name === x.branchName)
                           return branch ? (
@@ -126,32 +124,20 @@ export default function MoneyOut() {
             </Panel>
           )}
 
-          <Panel title="Head Office">
+          <Panel title="Head Office account">
             <div className="divide-y divide-border">
               <SetupLine
-                label="Head Office account (Monnify wallet)"
+                label="Monnify account number"
                 value={s.walletAccountNumber ? `${s.walletAccountNumber} — all money comes in here and is sent out from here` : null}
                 empty="Not added yet. Find its 10-digit number in the Monnify dashboard under Disbursements."
                 onEdit={() => setEditing('wallet')}
-              />
-              <SetupLine
-                label="Head Office's 8% share"
-                value={s.hq ? `Sent to ${s.hq.bankName} · ${s.hq.accountNumber} · ${s.hq.accountName}` : null}
-                empty="Stays in the Head Office account. Add an account only if it should be moved somewhere else."
-                onEdit={() => setEditing('hq')}
-              />
-              <SetupLine
-                label="VAT (7.5%)"
-                value={s.vat ? `Sent to ${s.vat.bankName} · ${s.vat.accountNumber} · ${s.vat.accountName}` : null}
-                empty="Stays in the Head Office account, set aside for the tax office. Add an account to keep it separate."
-                onEdit={() => setEditing('vat')}
               />
             </div>
           </Panel>
 
           <Panel title="Branch accounts">
             <p className="px-6 pt-4 text-[15px] text-muted-foreground">
-              Each branch's share goes to two accounts: its partner's and its salary account. Add them here and the money starts going out to that branch.
+              Add each branch's salary account here (and its partner's account, if the branch has a partner). Then money starts going out to that branch.
             </p>
             {data.branches.length === 0 ? (
               <Empty title="No branches yet" text="Add your branches on the Branches page first." />
@@ -200,7 +186,6 @@ export default function MoneyOut() {
         />
       )}
       {editing === 'wallet' && s && <WalletForm current={s.walletAccountNumber} onClose={() => setEditing(null)} onDone={done} />}
-      {(editing === 'hq' || editing === 'vat') && s && <AccountForm which={editing} settings={s} onClose={() => setEditing(null)} onDone={done} />}
     </Page>
   )
 }
@@ -308,39 +293,6 @@ function AutoSend({ settings, onDone }: { settings: MoneySettings; onDone: (m: s
   )
 }
 
-function AccountForm({ which, settings, onClose, onDone }: { which: 'hq' | 'vat'; settings: MoneySettings; onClose: () => void; onDone: (m: string) => void }) {
-  const [bank, setBank] = useState(emptyBankChoice())
-  const save = useSave()
-  const label = which === 'hq' ? "Head Office's 8% share" : 'VAT'
-  return (
-    <Modal title={label} onClose={onClose}>
-      <form
-        className="space-y-4"
-        onSubmit={async (e) => {
-          e.preventDefault()
-          if (!bank.checked) return
-          const ok = await save.run(() => finance.setMoneyAccount(which, { bankCode: bank.checked!.bankCode, accountNumber: bank.checked!.accountNumber }))
-          if (ok) onDone(`${label} will now be sent to that account.`)
-        }}
-      >
-        {save.error && <Notice tone="bad">{save.error}</Notice>}
-        <p className="text-[15px] text-muted-foreground">
-          {which === 'hq'
-            ? "Only if Head Office's 8% should be moved out of the Head Office (Monnify) account. Otherwise it stays there."
-            : 'The VAT part of every payment is sent here, kept apart until it is paid to the tax office.'}
-        </p>
-        <BankAccountFields value={bank} onChange={setBank} whose={which === 'hq' ? "Tarmac's account" : "Tarmac's VAT account"} />
-        {bank.checked && <FormButtons onCancel={onClose} saveLabel="Yes, save this account" busy={save.busy} />}
-        {settings[which] && !bank.checked && (
-          <Btn variant="quiet" onClick={() => save.run(() => finance.setMoneyAccount(which, { remove: true })).then((ok) => ok && onDone(`${label} will now stay in the Head Office account.`))}>
-            Keep it in the Head Office account instead
-          </Btn>
-        )}
-      </form>
-    </Modal>
-  )
-}
-
 function WalletForm({ current, onClose, onDone }: { current: string | null; onClose: () => void; onDone: (m: string) => void }) {
   const [number, setNumber] = useState(current ?? '')
   const save = useSave()
@@ -376,16 +328,18 @@ function BranchAccounts({
   const approve = useSave()
   const active = partners.find((p) => p.status === 'active')
   const waiting = partners.find((p) => p.status === 'pending')
-  const ok = (b.isHq || !!active) && !!b.salaryAccountNumber
+  const hasPartner = b.splitBps.partner > 0
+  const ok = (!hasPartner || b.isHq || !!active) && (b.splitBps.salary === 0 || !!b.salaryAccountNumber)
   return (
     <div className="space-y-3 px-6 py-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-lg font-semibold">{b.isHq ? `${b.name} (Head Office)` : b.name}</div>
         {ok ? <Status tone="good">Ready to receive</Status> : <Status tone="wait">Accounts missing</Status>}
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className={hasPartner ? 'grid gap-3 sm:grid-cols-2' : 'grid gap-3'}>
+        {hasPartner && (
         <div className="rounded-xl border border-border px-4 py-3">
-          <div className="text-sm text-muted-foreground">Partner share goes to</div>
+          <div className="text-sm text-muted-foreground">Partner's {pct(b.splitBps.partner)} goes to</div>
           {waiting ? (
             <>
               <div className="mt-0.5 font-medium">{waiting.name} — waiting for approval</div>
@@ -410,8 +364,9 @@ function BranchAccounts({
             </>
           )}
         </div>
+        )}
         <div className="rounded-xl border border-border px-4 py-3">
-          <div className="text-sm text-muted-foreground">Salary share goes to</div>
+          <div className="text-sm text-muted-foreground">Salary account's {pct(b.splitBps.salary)} goes to</div>
           {b.salaryAccountNumber ? (
             <>
               <div className="mt-0.5 font-medium">{b.salaryAccountName ?? 'Salary account'}</div>

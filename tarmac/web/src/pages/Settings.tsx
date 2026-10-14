@@ -1,3 +1,4 @@
+import { features } from '../brand'
 import { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
@@ -84,6 +85,10 @@ const SECTIONS = [
 
 type SectionId = (typeof SECTIONS)[number]['id']
 
+// Without the patrol screens (Tarmac's finance-only admin), alerts, patrol
+// reports and live tracking mean nothing: only appearance and the account show.
+const VISIBLE_SECTIONS = features.patrol ? SECTIONS : SECTIONS.filter((s) => s.id === 'account' || s.id === 'appearance')
+
 function latestSettings(rows: SettingRow[]) {
   const values = { ...defaultForm }
   for (const row of [...rows].reverse()) {
@@ -98,7 +103,7 @@ function latestSettings(rows: SettingRow[]) {
 export default function Settings() {
   const isAdmin = useIsAdmin()
   const { theme, toggleTheme } = useTheme()
-  const [section, setSection] = useState<SectionId>('alerts')
+  const [section, setSection] = useState<SectionId>(features.patrol ? 'alerts' : 'account')
   const [form, setForm] = useState<Record<FormKeys, string>>(defaultForm)
   // What was on the server when we loaded, so we can tell what actually
   // changed and save only that.
@@ -196,14 +201,14 @@ export default function Settings() {
       <div className="mb-5">
         <PageHeader
           title="Settings"
-          blurb="Who gets alerted, when reports go out, and how the dashboard behaves."
+          blurb={features.patrol ? 'Who gets alerted, when reports go out, and how the dashboard behaves.' : 'Your password and how the screen looks.'}
         />
       </div>
 
       <div className="flex flex-col gap-5 md:flex-row">
         {/* Section nav. Horizontal chips on a phone, a rail on desktop. */}
         <nav className="flex gap-1 overflow-x-auto md:w-52 md:shrink-0 md:flex-col md:overflow-visible">
-          {SECTIONS.map(({ id, label, icon: Icon }) => (
+          {VISIBLE_SECTIONS.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               onClick={() => setSection(id)}
