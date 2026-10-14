@@ -1,7 +1,9 @@
 /**
- * Money out: each shared Monnify payment becomes four payouts (Head Office, VAT,
- * partner, salaries) sent from Head Office's Monnify wallet to ordinary bank
- * accounts that were checked with the bank when they were added.
+ * Money out. Head Office's Monnify wallet is the pot every payment lands in.
+ * Each shared Monnify payment is cut four ways: the branch partner's and the
+ * branch salary shares are sent out to ordinary bank accounts (checked with the
+ * bank when added); Head Office's own share and VAT stay in the pot unless an
+ * admin names a separate account for them.
  *
  * Never pay twice: a payout is claimed ("sending") before Monnify is called,
  * and every retry of an attempt re-uses its reference, which Monnify refuses
@@ -30,7 +32,9 @@ export async function getSettings(ctx: QueryCtx) {
 }
 
 type Account = { toName: string; bankCode: string; bankName: string; accountNumber: string; accountName: string };
-type Destination = Account | { waitingFor: string };
+/** keep = the share stays in Head Office's Monnify wallet; nothing is sent. */
+type Destination = Account | { waitingFor: string } | { keep: true };
+const KEEP = { keep: true } as const;
 
 function hqAccount(settings: Doc<"finSettings"> | null, toName: string): Account | null {
   if (!settings?.hqBankCode || !settings.hqAccountNumber || !settings.hqAccountName) return null;
@@ -51,7 +55,7 @@ async function destinationFor(
   partnerId: Id<"finPartners"> | undefined,
   settings: Doc<"finSettings"> | null,
 ): Promise<Destination> {
-  if (share === "hq") return hqAccount(settings, "Head Office") ?? { waitingFor: "the Head Office bank account (Settings)" };
+  if (share === "hq") return hqAccount(settings, "Head Office's own account") ?? KEEP;
   if (share === "vat") {
     if (settings?.vatBankCode && settings.vatAccountNumber && settings.vatAccountName) {
       return {
@@ -62,8 +66,8 @@ async function destinationFor(
         accountName: settings.vatAccountName,
       };
     }
-    // Builder's call: VAT goes to Head Office's account until a VAT account is set.
-    return hqAccount(settings, "VAT (to the Head Office account)") ?? { waitingFor: "the Head Office bank account (Settings)" };
+    // Without a VAT account, VAT stays in Head Office's wallet, set aside for the tax office.
+    return KEEP;
   }
   if (share === "salary") {
     if (branch.salaryBankCode && branch.salaryAccountNumber && branch.salaryAccountName) {
@@ -91,12 +95,12 @@ async function destinationFor(
       accountName: partner.accountName,
     };
   }
-  // Builder's call: Head Office has no partner, so its partner share is Head Office's.
-  if (branch.isHq) return hqAccount(settings, "Head Office (no partner)") ?? { waitingFor: "the Head Office bank account (Settings)" };
+  // Head Office has no partner, so its partner share is Head Office's: it stays in the wallet.
+  if (branch.isHq) return KEEP;
   return { waitingFor: `an approved partner for ${branch.name}` };
 }
 
-function destinationPatch(dest: Destination) {
+function destinationPatch(dest: Exclude<Destination, { keep: true }>) {
   if ("waitingFor" in dest) {
     return {
       status: "waiting" as const,
@@ -134,6 +138,7 @@ export async function createPayouts(ctx: MutationCtx, payment: Doc<"finPayments"
     const amountKobo = payment.split[share];
     if (amountKobo <= 0) continue;
     const dest = await destinationFor(ctx, branch, share, payment.partnerId, settings);
+    if ("keep" in dest) continue;
     await ctx.db.insert("finPayouts", {
       paymentId: payment._id,
       branchId: branch._id,
@@ -162,6 +167,11 @@ export async function fillWaiting(ctx: MutationCtx) {
     const payment = await ctx.db.get(p.paymentId);
     if (!branch || !payment) continue;
     const dest = await destinationFor(ctx, branch, p.share, payment.partnerId, settings);
+    if ("keep" in dest) {
+      // Nothing to send any more: the share stays in Head Office's wallet.
+      await ctx.db.delete(p._id);
+      continue;
+    }
     if ("waitingFor" in dest) {
       if (dest.waitingFor !== p.waitingFor) await ctx.db.patch(p._id, { waitingFor: dest.waitingFor, updatedAt: Date.now() });
       continue;
@@ -264,7 +274,7 @@ export const sendReady = internalAction({
     const cfg = getMonnifyConfig();
     if (!cfg) return { sent: 0, waiting: 0, failed: 0, reason: "Monnify is not connected yet" };
     const settings = await ctx.runQuery(internal.finance.payouts.sendSettings, {});
-    if (!settings.walletAccountNumber) return { sent: 0, waiting: 0, failed: 0, reason: "Add the Monnify wallet number in Settings first" };
+    if (!settings.walletAccountNumber) return { sent: 0, waiting: 0, failed: 0, reason: "Add the Head Office (Monnify) account number on the Money out page first" };
     if (!args.manual && !settings.autoSend) return { sent: 0, waiting: 0, failed: 0, reason: "Automatic sending is off" };
     const ids = await ctx.runQuery(internal.finance.payouts.readyIds, { status: "ready" });
     if (!ids.length) return { sent: 0, waiting: 0, failed: 0 };
@@ -358,6 +368,11 @@ export const retry = internalMutation({
     const payment = await ctx.db.get(p.paymentId);
     if (!branch || !payment) fail("The payment for this payout is gone");
     const dest = await destinationFor(ctx, branch, p.share, payment.partnerId, await getSettings(ctx));
+    if ("keep" in dest) {
+      await ctx.db.delete(p._id);
+      await audit(ctx, args.actorId, "payout.kept", "finPayout", p._id, `${naira(p.amountKobo)} ${SHARE_LABEL[p.share]} share now stays in Head Office's account`);
+      return;
+    }
     // A new attempt gets a new reference; the failed one is finished at Monnify.
     await ctx.db.patch(p._id, { ...destinationPatch(dest), reference: undefined, error: undefined, updatedAt: Date.now() });
     await audit(ctx, args.actorId, "payout.retried", "finPayout", p._id, `Trying again: ${naira(p.amountKobo)} ${SHARE_LABEL[p.share]} share`);

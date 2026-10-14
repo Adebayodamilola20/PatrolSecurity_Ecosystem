@@ -294,6 +294,7 @@ export const finance = {
   banks: () => get<Bank[]>('banks'),
   checkAccount: (bankCode: string, accountNumber: string) => post<CheckedAccount>('banks/check', { bankCode, accountNumber }),
   settings: () => get<MoneySettings>('settings'),
+  balance: () => get<{ available: true; availableKobo: number; ledgerKobo: number; at: number } | { available: false; reason: string }>('balance'),
   setMoneyAccount: (which: 'hq' | 'vat', a: { bankCode?: string; accountNumber?: string; remove?: boolean }) => post('settings/account', { which, ...a }),
   setWallet: (walletAccountNumber: string) => post('settings/wallet', { walletAccountNumber }),
   setAutoSend: (autoSend: boolean) => post('settings/auto-send', { autoSend }),

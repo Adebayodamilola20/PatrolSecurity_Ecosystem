@@ -53,6 +53,10 @@ function fakeMonnify() {
     } else if (p === "/api/v2/disbursements/single/validate-otp") {
       const body = JSON.parse(String(init?.body));
       r = body.authorizationCode === "123456" ? ok({ status: "SUCCESS", totalFee: 10 }) : { status: 400, json: { requestSuccessful: false, responseMessage: "Invalid OTP" } };
+    } else if (p === "/api/v2/disbursements/wallet-balance") {
+      r = url.searchParams.get("accountNumber") === "8000000001"
+        ? ok({ availableBalance: 1_234_567.5, ledgerBalance: 1_300_000 })
+        : { status: 400, json: { requestSuccessful: false, responseMessage: "Supplied account number does not belong to merchant" } };
     } else if (p === "/api/v1/bank-transfer/reserved-accounts/transactions") {
       r = ok({ content: fake.accountTxns[url.searchParams.get("accountReference") ?? ""] ?? [] });
     } else if (p.startsWith("/api/v2/transactions/")) {
@@ -165,23 +169,37 @@ describe("bank account check", () => {
 });
 
 describe("payouts", () => {
-  test("a Monnify payment becomes four payouts; missing accounts wait, then fill in", async () => {
+  test("Head Office's share and VAT stay in the pot; branch shares wait for accounts, then fill in", async () => {
     await addClient(abuja);
     await monnifyPayment();
     let rows = await payouts();
     expect(rows.map((r) => [r.share, r.amountKobo, r.status])).toEqual([
-      ["hq", 8_600_000, "waiting"],
-      ["vat", 8_062_500, "waiting"],
       ["partner", 37_087_500, "waiting"],
       ["salary", 53_750_000, "waiting"],
     ]);
-    expect(rows.reduce((s, r) => s + r.amountKobo, 0)).toBe(107_500_000);
     await setUpAccounts();
     rows = await payouts();
     expect(rows.every((r) => r.status === "ready")).toBe(true);
-    expect(rows.find((r) => r.share === "vat")!.accountName).toBe("TARMAC SECURITY LIMITED"); // VAT → Head Office account
     expect(rows.find((r) => r.share === "partner")!.accountName).toBe("IBRAHIM DANLADI");
     expect(rows.find((r) => r.share === "salary")!.accountName).toBe("TARMAC SECURITY ABUJA SALARY");
+  });
+
+  test("with separate accounts set, Head Office's share and VAT are sent there too", async () => {
+    await setUpAccounts(); // includes a Head Office account
+    fake.accounts["058:0009998887"] = "TARMAC VAT ACCOUNT";
+    expect((await post("settings/account", { which: "vat", bankCode: "058", accountNumber: "0009998887" })).status).toBe(200);
+    await addClient(abuja);
+    await monnifyPayment();
+    const rows = await payouts();
+    expect(rows.map((r) => [r.share, r.amountKobo])).toEqual([
+      ["hq", 8_600_000],
+      ["vat", 8_062_500],
+      ["partner", 37_087_500],
+      ["salary", 53_750_000],
+    ]);
+    expect(rows.find((r) => r.share === "vat")!.accountName).toBe("TARMAC VAT ACCOUNT");
+    // Removing the VAT account: future VAT stays in the pot again.
+    expect((await post("settings/account", { which: "vat", remove: true })).status).toBe(200);
   });
 
   test("payments typed in by hand are never sent from Monnify", async () => {
@@ -195,14 +213,14 @@ describe("payouts", () => {
     await addClient(abuja);
     await monnifyPayment();
     const res = await post("payouts/send-now", {});
-    expect(await res.json()).toMatchObject({ sent: 4, failed: 0 });
-    expect(fake.transfers).toHaveLength(4);
+    expect(await res.json()).toMatchObject({ sent: 3, failed: 0 }); // Head Office, partner, salaries; VAT stays
+    expect(fake.transfers).toHaveLength(3);
     const partnerTransfer = fake.transfers.find((x) => x.destinationAccountNumber === "2081234541");
     expect(partnerTransfer).toMatchObject({ amount: 370_875, destinationAccountName: "IBRAHIM DANLADI", destinationBankCode: "057", sourceAccountNumber: "8000000001" });
     expect((await payouts()).every((r) => r.status === "sent")).toBe(true);
     await post("payouts/send-now", {});
-    expect(fake.transfers).toHaveLength(4);
-    expect(new Set(fake.transfers.map((x) => x.reference)).size).toBe(4);
+    expect(fake.transfers).toHaveLength(3);
+    expect(new Set(fake.transfers.map((x) => x.reference)).size).toBe(3);
   });
 
   test("automatic sending is off by default; nothing goes out on its own", async () => {
@@ -213,7 +231,7 @@ describe("payouts", () => {
     expect(fake.transfers).toHaveLength(0);
     expect((await post("settings/auto-send", { autoSend: true })).status).toBe(200);
     await t.action(f.payouts.tick, {});
-    expect(fake.transfers).toHaveLength(4);
+    expect(fake.transfers).toHaveLength(3);
   });
 
   test("an unclear answer is asked about, never blindly re-sent with a new reference", async () => {
@@ -230,12 +248,12 @@ describe("payouts", () => {
     await t.action(f.payouts.recheckSending, {});
     rows = await payouts();
     expect(rows.find((r) => r.reference === paidRef)!.status).toBe("sent");
-    expect(rows.filter((r) => r.status === "ready")).toHaveLength(3);
+    expect(rows.filter((r) => r.status === "ready")).toHaveLength(2);
     fake.transfer = () => ok({ status: "SUCCESS" });
     const before = fake.transfers.length;
     await post("payouts/send-now", {});
     const resent = fake.transfers.slice(before).map((x) => x.reference);
-    expect(resent).toHaveLength(3);
+    expect(resent).toHaveLength(2);
     expect(resent).not.toContain(paidRef);
     // Same references as the first try: Monnify would refuse a double payment.
     expect(resent.every((r: string) => fake.transfers.slice(0, before).some((x) => x.reference === r))).toBe(true);
@@ -292,13 +310,21 @@ describe("payouts", () => {
     expect(partnerPayout.accountName).toBe("AMINA YUSUF");
   });
 
-  test("Head Office's own partner share goes to the Head Office account", async () => {
+  test("Head Office has no partner, so its partner share stays in the pot", async () => {
     await setUpAccounts();
     await addClient(jos, "jos-ref");
     await monnifyPayment("MNFY|J", "jos-ref");
     const rows = await payouts();
-    expect(rows.find((r) => r.share === "partner")!.toName).toBe("Head Office (no partner)");
+    expect(rows.find((r) => r.share === "partner")).toBeUndefined();
     expect(rows.find((r) => r.share === "salary")!.status).toBe("waiting"); // Jos has no salary account yet
+  });
+});
+
+describe("Head Office balance", () => {
+  test("is read from the Monnify wallet once its number is set", async () => {
+    expect(await (await get("balance")).json()).toMatchObject({ available: false, reason: expect.stringContaining("Head Office account number") });
+    await post("settings/wallet", { walletAccountNumber: "8000000001" });
+    expect(await (await get("balance")).json()).toMatchObject({ available: true, availableKobo: 123_456_750, ledgerKobo: 130_000_000 });
   });
 });
 
@@ -313,7 +339,7 @@ describe("release on a set date", () => {
     await t.mutation(f.daily.releaseDue, {});
     expect(await payouts()).toHaveLength(0);
     await t.mutation(f.daily.releaseDue, { today: tomorrow });
-    expect(await payouts()).toHaveLength(4);
+    expect(await payouts()).toHaveLength(3);
     const branch = (await t.query(f.branches.list, {})).find((b) => b.id === abuja)!;
     expect(branch.onHold).toBe(false);
   });

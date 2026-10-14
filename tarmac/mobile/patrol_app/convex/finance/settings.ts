@@ -1,6 +1,7 @@
 /**
- * Head Office money settings: where the Head Office and VAT shares go, the
- * Monnify wallet money is sent from, and the "send automatically" switch.
+ * Head Office money settings: the Monnify wallet (Head Office's account, the pot
+ * every payment lands in and is sent from), optional separate accounts for
+ * Head Office's own share and for VAT, and the "send automatically" switch.
  * Bank accounts reach here only after the bank confirmed them (see routes.ts).
  */
 import { internalMutation, internalQuery } from "../_generated/server";
@@ -46,7 +47,6 @@ export const setAccount = internalMutation({
   args: { actorId: v.id("users"), which: v.union(v.literal("hq"), v.literal("vat")), account: v.optional(checkedAccount) },
   handler: async (ctx, args) => {
     const a = args.account;
-    if (args.which === "hq" && !a) fail("Head Office needs a bank account");
     const prefix = args.which;
     await upsert(ctx, args.actorId, {
       [`${prefix}BankCode`]: a?.bankCode,
@@ -61,7 +61,7 @@ export const setAccount = internalMutation({
       "settings.account",
       "finSettings",
       "money",
-      a ? `${label} account set to ${a.bankName} ${a.accountNumber} (${a.accountName})` : `${label} account removed — VAT now goes to the Head Office account`,
+      a ? `${label} share now goes to ${a.bankName} ${a.accountNumber} (${a.accountName})` : `${label} share now stays in Head Office's Monnify account`,
     );
     await fillWaiting(ctx);
   },
@@ -81,8 +81,7 @@ export const setAutoSend = internalMutation({
   handler: async (ctx, args) => {
     const s = await getSettings(ctx);
     if (args.autoSend) {
-      if (!s?.walletAccountNumber) fail("Add the Monnify wallet number first");
-      if (!s.hqAccountNumber) fail("Add the Head Office bank account first");
+      if (!s?.walletAccountNumber) fail("Add the Head Office (Monnify) account number first");
     }
     await upsert(ctx, args.actorId, { autoSend: args.autoSend });
     await audit(ctx, args.actorId, "settings.autosend", "finSettings", "money", args.autoSend ? "Turned automatic sending ON" : "Turned automatic sending OFF");

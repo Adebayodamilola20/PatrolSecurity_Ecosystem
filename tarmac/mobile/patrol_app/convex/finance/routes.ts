@@ -6,7 +6,7 @@ import { json, parseJson } from "../lib/http";
 import { requireAuth } from "../lib/httpAuth";
 import { badRequest, forbidden, serviceUnavailable, unauthorized } from "../lib/errors";
 import { getMonnifyConfig } from "../env";
-import { checkBankAccount, listBanks, monnifySignature, parsePaidOn, sameSignature, verifyTransaction } from "./monnify";
+import { checkBankAccount, listBanks, walletBalance, monnifySignature, parsePaidOn, sameSignature, verifyTransaction } from "./monnify";
 
 type User = { convexId: string; role: string };
 type Body = Record<string, unknown>;
@@ -80,9 +80,17 @@ export function registerFinanceRoutes(http: HttpRouter) {
 
   // Head Office money settings
   route("GET", "settings", (ctx) => ctx.runQuery(fin.settings.get, {}));
+  // Head Office's balance: the Monnify wallet every payment lands in.
+  route("GET", "balance", async (ctx) => {
+    const cfg = getMonnifyConfig();
+    if (!cfg) return { available: false, reason: "Monnify is not connected yet" };
+    const { walletAccountNumber } = await ctx.runQuery(fin.payouts.sendSettings, {});
+    if (!walletAccountNumber) return { available: false, reason: "Add the Head Office account number on the Money out page" };
+    return await walletBalance(cfg, walletAccountNumber);
+  });
   route("POST", "settings/account", async (ctx, { body, actorId }) => {
     const which = body.which === "vat" ? "vat" : "hq";
-    const account = body.remove && which === "vat" ? undefined : await bankChecked(body);
+    const account = body.remove ? undefined : await bankChecked(body);
     await ctx.runMutation(fin.settings.setAccount, { actorId, which, account });
     return account ?? { ok: true };
   });

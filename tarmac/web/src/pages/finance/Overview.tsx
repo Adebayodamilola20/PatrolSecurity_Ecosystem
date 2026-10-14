@@ -22,12 +22,13 @@ export default function FinanceOverview() {
   const navigate = useNavigate()
   const name = useAuthStore((s) => s.user?.name?.split(' ')[0])
   const { data, error, loading, reload } = useData(async () => {
-    const [overview, payments, payouts] = await Promise.all([
+    const [overview, payments, payouts, balance] = await Promise.all([
       finance.overview(),
       finance.payments(thisPeriod()),
       finance.payouts().catch(() => null),
+      finance.balance().catch(() => null),
     ])
-    return { ...overview, split: payments.sharedSplit, payouts }
+    return { ...overview, split: payments.sharedSplit, payouts, balance }
   })
   const s = data?.split
 
@@ -42,12 +43,12 @@ export default function FinanceOverview() {
       {data && s && (
         <>
           <Hero
-            label={`Received in ${data.periodLabel.split(' ')[0]}`}
-            value={naira(data.receivedKobo)}
+            label="Head Office balance (Monnify)"
+            value={data.balance?.available ? naira(data.balance.availableKobo) : '—'}
             sub={
-              data.owedKobo
-                ? `${naira(data.owedKobo)} still owed by clients${data.overdueKobo ? ` · ${naira(data.overdueKobo)} of it late` : ''}`
-                : 'No client owes anything'
+              data.balance?.available
+                ? `Right now · ${naira(data.receivedKobo)} came in during ${data.periodLabel.split(' ')[0]}${data.owedKobo ? ` · ${naira(data.owedKobo)} still owed by clients` : ''}`
+                : `${data.balance?.reason ?? 'Balance not available'} · ${naira(data.receivedKobo)} came in during ${data.periodLabel.split(' ')[0]}`
             }
             side={
               data.payouts ? (
@@ -77,8 +78,8 @@ export default function FinanceOverview() {
             title="How the money moves"
             steps={[
               { title: 'A client pays', text: 'into their own account number, printed on every invoice.' },
-              { title: 'It lands at Head Office', text: 'in the Monnify account, and the invoice is marked paid.' },
-              { title: 'It is shared and sent', text: 'to Head Office, VAT, the branch partner and the branch salary account.' },
+              { title: 'It lands at Head Office', text: "in Head Office's Monnify account — the balance above. The invoice is marked paid." },
+              { title: 'The branches get their share', text: "34.5% to the branch partner and 50% to the branch salary account. Head Office's 8% and VAT stay." },
             ]}
           />
 

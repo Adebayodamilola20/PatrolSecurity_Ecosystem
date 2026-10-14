@@ -190,6 +190,9 @@ function PaymentDialog({ payment: p, onClose, onDone }: { payment: Payment; onCl
                 value: (
                   <span className="flex flex-col items-end gap-1">
                     <span className="tabular-nums">{naira(p.split[share])}</span>
+                    {!out && p.source === 'monnify' && p.state === 'shared' && (
+                      <span className="text-sm font-normal text-muted-foreground">Stays in Head Office's account</span>
+                    )}
                     {out && (
                       <span className="text-sm font-normal text-muted-foreground">
                         {PAYOUT_WORD[out.status]}{out.toName && out.status !== 'waiting' ? ` · ${out.toName}` : out.waitingFor ? ` · ${out.waitingFor}` : ''}

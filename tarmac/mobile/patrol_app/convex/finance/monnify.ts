@@ -302,3 +302,16 @@ export async function accountTransactions(cfg: MonnifyConfig, token: string, acc
       paidOn: x.paidOn ?? x.completedOn ?? x.createdOn,
     }));
 }
+
+/** Head Office's balance in its Monnify wallet. Never throws: the screen just says why it is missing. */
+export async function walletBalance(cfg: MonnifyConfig, walletAccountNumber: string) {
+  try {
+    const token = await monnifyToken(cfg);
+    const r = await monnifyCall(cfg, token, `/api/v2/disbursements/wallet-balance?accountNumber=${encodeURIComponent(walletAccountNumber)}`);
+    if (!r.ok) return { available: false as const, reason: r.message ? `Monnify said: ${r.message}` : "Monnify did not give the balance" };
+    const kobo = (x: unknown) => Math.round(Number(x ?? 0) * 100);
+    return { available: true as const, availableKobo: kobo(r.body?.availableBalance), ledgerKobo: kobo(r.body?.ledgerBalance), at: Date.now() };
+  } catch {
+    return { available: false as const, reason: "Could not reach Monnify" };
+  }
+}

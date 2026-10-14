@@ -54,3 +54,12 @@ check, so one wrong digit would send money to a stranger.
 ## Not in scope
 Attendance, bulk transfers, Monnify sub-account settlement splits (they
 cannot hold or release money, so they don't fit the hold rule).
+
+## Change, 2026-10-14 (owner)
+Head Office's Monnify wallet is "the Head Office account" — the pot every
+payment lands in, and its balance is shown on the Overview. Head Office's 8%
+and VAT stay in it; only the branch partner (34.5%) and branch salary (50%)
+shares are sent out. A separate account for Head Office's share or for VAT is
+optional. This replaces the earlier calls "VAT defaults to the Head Office
+account" and "Head Office's partner share goes to the Head Office account":
+both now simply stay in the wallet.

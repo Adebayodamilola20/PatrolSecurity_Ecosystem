@@ -47,7 +47,7 @@ export default function MoneyOut() {
   return (
     <Page
       title="Money out"
-      help="Every payment that reaches Head Office's Monnify account is split four ways and sent to these bank accounts."
+      help="Every payment lands in Head Office's Monnify account. Each branch's share is sent from there to the branch partner and the branch salary account. Head Office's 8% and VAT stay."
       action={
         p && p.counts.ready > 0 ? (
           <Btn busy={send.busy} onClick={sendNow} disabled={!s?.walletAccountNumber}>
@@ -126,25 +126,25 @@ export default function MoneyOut() {
             </Panel>
           )}
 
-          <Panel title="Where Head Office money goes">
+          <Panel title="Head Office">
             <div className="divide-y divide-border">
               <SetupLine
-                label="Head Office account"
-                value={s.hq ? `${s.hq.bankName} · ${s.hq.accountNumber} · ${s.hq.accountName}` : null}
-                empty="Not added yet — the Head Office share waits until it is."
+                label="Head Office account (Monnify wallet)"
+                value={s.walletAccountNumber ? `${s.walletAccountNumber} — all money comes in here and is sent out from here` : null}
+                empty="Not added yet. Find its 10-digit number in the Monnify dashboard under Disbursements."
+                onEdit={() => setEditing('wallet')}
+              />
+              <SetupLine
+                label="Head Office's 8% share"
+                value={s.hq ? `Sent to ${s.hq.bankName} · ${s.hq.accountNumber} · ${s.hq.accountName}` : null}
+                empty="Stays in the Head Office account. Add an account only if it should be moved somewhere else."
                 onEdit={() => setEditing('hq')}
               />
               <SetupLine
-                label="VAT account"
-                value={s.vat ? `${s.vat.bankName} · ${s.vat.accountNumber} · ${s.vat.accountName}` : null}
-                empty="Uses the Head Office account."
+                label="VAT (7.5%)"
+                value={s.vat ? `Sent to ${s.vat.bankName} · ${s.vat.accountNumber} · ${s.vat.accountName}` : null}
+                empty="Stays in the Head Office account, set aside for the tax office. Add an account to keep it separate."
                 onEdit={() => setEditing('vat')}
-              />
-              <SetupLine
-                label="Monnify wallet (money is sent from here)"
-                value={s.walletAccountNumber}
-                empty="Not added yet. Find it in the Monnify dashboard under Disbursements."
-                onEdit={() => setEditing('wallet')}
               />
             </div>
           </Panel>
@@ -311,7 +311,7 @@ function AutoSend({ settings, onDone }: { settings: MoneySettings; onDone: (m: s
 function AccountForm({ which, settings, onClose, onDone }: { which: 'hq' | 'vat'; settings: MoneySettings; onClose: () => void; onDone: (m: string) => void }) {
   const [bank, setBank] = useState(emptyBankChoice())
   const save = useSave()
-  const label = which === 'hq' ? 'Head Office account' : 'VAT account'
+  const label = which === 'hq' ? "Head Office's 8% share" : 'VAT'
   return (
     <Modal title={label} onClose={onClose}>
       <form
@@ -320,20 +320,20 @@ function AccountForm({ which, settings, onClose, onDone }: { which: 'hq' | 'vat'
           e.preventDefault()
           if (!bank.checked) return
           const ok = await save.run(() => finance.setMoneyAccount(which, { bankCode: bank.checked!.bankCode, accountNumber: bank.checked!.accountNumber }))
-          if (ok) onDone(`${label} saved.`)
+          if (ok) onDone(`${label} will now be sent to that account.`)
         }}
       >
         {save.error && <Notice tone="bad">{save.error}</Notice>}
         <p className="text-[15px] text-muted-foreground">
           {which === 'hq'
-            ? 'The Head Office share of every payment is sent here (and VAT too, unless a separate VAT account is added).'
-            : 'The VAT share of every payment is sent here, ready to pay to the tax office.'}
+            ? "Only if Head Office's 8% should be moved out of the Head Office (Monnify) account. Otherwise it stays there."
+            : 'The VAT part of every payment is sent here, kept apart until it is paid to the tax office.'}
         </p>
-        <BankAccountFields value={bank} onChange={setBank} whose={`Tarmac's ${label}`} />
+        <BankAccountFields value={bank} onChange={setBank} whose={which === 'hq' ? "Tarmac's account" : "Tarmac's VAT account"} />
         {bank.checked && <FormButtons onCancel={onClose} saveLabel="Yes, save this account" busy={save.busy} />}
-        {which === 'vat' && settings.vat && !bank.checked && (
-          <Btn variant="quiet" onClick={() => save.run(() => finance.setMoneyAccount('vat', { remove: true })).then((ok) => ok && onDone('VAT now goes to the Head Office account.'))}>
-            Send VAT to the Head Office account instead
+        {settings[which] && !bank.checked && (
+          <Btn variant="quiet" onClick={() => save.run(() => finance.setMoneyAccount(which, { remove: true })).then((ok) => ok && onDone(`${label} will now stay in the Head Office account.`))}>
+            Keep it in the Head Office account instead
           </Btn>
         )}
       </form>
@@ -345,16 +345,16 @@ function WalletForm({ current, onClose, onDone }: { current: string | null; onCl
   const [number, setNumber] = useState(current ?? '')
   const save = useSave()
   return (
-    <Modal title="Monnify wallet" onClose={onClose}>
+    <Modal title="Head Office account (Monnify)" onClose={onClose}>
       <form
         className="space-y-4"
         onSubmit={async (e) => {
           e.preventDefault()
-          if (await save.run(() => finance.setWallet(number))) onDone('Monnify wallet saved.')
+          if (await save.run(() => finance.setWallet(number))) onDone('Head Office account saved.')
         }}
       >
         {save.error && <Notice tone="bad">{save.error}</Notice>}
-        <p className="text-[15px] text-muted-foreground">Money is sent out of this wallet. In the Monnify dashboard, open Disbursements to find its 10-digit account number.</p>
+        <p className="text-[15px] text-muted-foreground">This is Head Office's account on Monnify: every payment lands here and branch shares are sent from here. In the Monnify dashboard, open Disbursements to find its 10-digit number.</p>
         <Field label="Wallet account number"><TextInput value={number} onChange={(e) => setNumber(e.target.value.replace(/\D/g, ''))} inputMode="numeric" maxLength={10} required /></Field>
         <FormButtons onCancel={onClose} busy={save.busy} />
       </form>
@@ -405,7 +405,7 @@ function BranchAccounts({
             </>
           ) : (
             <>
-              <div className="mt-0.5 text-[15px] text-muted-foreground">{b.isHq ? 'The Head Office account (no partner)' : 'No partner yet'}</div>
+              <div className="mt-0.5 text-[15px] text-muted-foreground">{b.isHq ? 'Stays in the Head Office account (no partner)' : 'No partner yet'}</div>
               <Btn variant="quiet" onClick={() => onEdit('partner')}>Add a partner</Btn>
             </>
           )}
