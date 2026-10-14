@@ -58,7 +58,13 @@ async function nameTaken(ctx: { db: any }, name: string, except?: Id<"finBranche
 
 export const create = internalMutation({
   // The admin sets the branch's sharing percentages; the screen always sends them.
-  args: { actorId: v.id("users"), name: v.string(), isHq: v.optional(v.boolean()), splitBps: v.optional(splitValidator) },
+  args: {
+    actorId: v.id("users"),
+    name: v.string(),
+    isHq: v.optional(v.boolean()),
+    splitBps: v.optional(splitValidator),
+    salaryAccount: v.optional(checkedAccount),
+  },
   handler: async (ctx, args) => {
     const name = required(args.name, "Branch name", 60);
     if (args.splitBps) validateSplit(args.splitBps);
@@ -71,6 +77,14 @@ export const create = internalMutation({
       name,
       isHq: !!args.isHq,
       splitBps: args.splitBps ?? DEFAULT_SPLIT_BPS,
+      ...(args.salaryAccount
+        ? {
+            salaryBankCode: args.salaryAccount.bankCode,
+            salaryBankName: args.salaryAccount.bankName,
+            salaryAccountNumber: cleanAccountNumber(args.salaryAccount.accountNumber),
+            salaryAccountName: args.salaryAccount.accountName,
+          }
+        : {}),
       onHold: false,
       active: true,
       createdAt: Date.now(),

@@ -25,7 +25,7 @@ export default function FinanceBranches() {
   return (
     <Page
       title="Branches"
-      help="Add each branch, its salary account and how its money is shared. Click a branch to manage it."
+      help="Each branch, its bank account and how much it gets. Click a branch to change it."
       action={data?.branches.length ? <Btn onClick={() => setAdding(true)}>Add a branch</Btn> : undefined}
     >
       {node}
@@ -51,10 +51,10 @@ export default function FinanceBranches() {
                   b.partnerWaiting
                     ? `New partner ${b.partnerWaiting.name} is waiting for approval`
                     : !b.salaryAccountNumber
-                      ? 'No salary account yet'
+                      ? 'No bank account yet'
                       : b.splitBps.partner > 0 && !b.partner && !b.isHq
                         ? 'No partner yet'
-                        : `Salary account ${b.salaryBankName ?? ''} · ${b.salaryAccountNumber}`
+                        : `Gets ${pct(b.splitBps.salary)} · ${b.salaryBankName ?? ''} ${b.salaryAccountNumber}`
                 }
                 right={naira(b.collectedKobo)}
                 rightSub={`this month · ${b.clients} client${b.clients === 1 ? '' : 's'}`}
@@ -84,11 +84,14 @@ function AddBranch({ hasHq, onClose, onDone }: { hasHq: boolean; onClose: () => 
   const [isHq, setIsHq] = useState(false)
   const save = useSave()
   const [split, setSplit] = useState(emptySplit)
+  const [bank, setBank] = useState(emptyBankChoice())
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     const bps = toBps(split)
-    if (!bps) return save.setError('The percentages must add up to exactly 100%')
-    if (await save.run(() => finance.createBranch(name, isHq, bps))) onDone(name.trim())
+    if (!bps) return save.setError("The branch's percentages cannot be more than 100%")
+    if (bps.salary > 0 && !bank.checked) return save.setError("Add the branch's bank account and wait for the name to appear")
+    const account = bank.checked ? { bankCode: bank.checked.bankCode, accountNumber: bank.checked.accountNumber } : {}
+    if (await save.run(() => finance.createBranch({ name, isHq, splitBps: bps, ...account }))) onDone(name.trim())
   }
   return (
     <Modal title="Add a branch" onClose={onClose}>
@@ -98,9 +101,12 @@ function AddBranch({ hasHq, onClose, onDone }: { hasHq: boolean; onClose: () => 
           <TextInput value={name} onChange={(e) => setName(e.target.value)} required placeholder="e.g. Kaduna" />
         </Field>
         {!hasHq && <Check checked={isHq} onChange={setIsHq} label="This branch is the Head Office" />}
+        <div className="space-y-4 border-t border-border pt-4">
+          <h3 className="text-lg font-semibold">The branch's bank account</h3>
+          <BankAccountFields value={bank} onChange={setBank} whose={`the ${name || 'branch'}'s account`} />
+        </div>
         <div className="border-t border-border pt-4">
-          <h3 className="text-lg font-semibold">How this branch's money is shared</h3>
-          <p className="mb-3 mt-1 text-[15px] text-muted-foreground">For every payment for this branch. You decide the percentages; they must add up to 100%.</p>
+          <h3 className="text-lg font-semibold">How much the branch gets</h3>
           <SplitFields value={split} onChange={setSplit} />
         </div>
         <FormButtons onCancel={onClose} saveLabel="Add branch" busy={save.busy} />
@@ -349,7 +355,7 @@ function SplitForm({ branch, onClose, onDone }: SubForm) {
         onSubmit={async (e) => {
           e.preventDefault()
           const bps = toBps(v)
-          if (!bps) return save.setError('The percentages must add up to exactly 100%')
+          if (!bps) return save.setError('That is more than 100%')
           if (await save.run(() => finance.setSplit(branch.id, bps))) onDone('Sharing changed.')
         }}
       >
@@ -362,43 +368,52 @@ function SplitForm({ branch, onClose, onDone }: SubForm) {
   )
 }
 
-type SplitText = { hq: string; vat: string; partner: string; salary: string }
-const emptySplit: SplitText = { hq: '', vat: '', partner: '', salary: '' }
+type SplitText = { salary: string; partner: string; hasPartner: boolean }
+const emptySplit: SplitText = { salary: '', partner: '', hasPartner: false }
 const splitText = (b: Branch['splitBps']): SplitText => ({
-  hq: String(b.hq / 100),
-  vat: String(b.vat / 100),
-  partner: String(b.partner / 100),
-  salary: String(b.salary / 100),
+  salary: b.salary ? String(b.salary / 100) : '',
+  partner: b.partner ? String(b.partner / 100) : '',
+  hasPartner: b.partner > 0,
 })
 const toNum = (x: string) => (x.trim() === '' ? 0 : Math.round(Number(x) * 100))
-/** Basis points, or null unless every box is a number and they add up to 100%. */
+/**
+ * The admin says what the branch gets (and its partner, if any); whatever is
+ * left of each payment stays in the Head Office account.
+ */
 function toBps(v: SplitText) {
-  const bps = { hq: toNum(v.hq), vat: toNum(v.vat), partner: toNum(v.partner), salary: toNum(v.salary) }
-  const parts = Object.values(bps)
-  if (parts.some((n) => !Number.isFinite(n) || n < 0)) return null
-  return parts.reduce((a, b) => a + b, 0) === 10_000 ? bps : null
+  const salary = toNum(v.salary)
+  const partner = v.hasPartner ? toNum(v.partner) : 0
+  if (![salary, partner].every((n) => Number.isFinite(n) && n >= 0)) return null
+  const hq = 10_000 - salary - partner
+  return hq < 0 ? null : { salary, partner, hq, vat: 0 }
 }
 
 function SplitFields({ value: v, onChange }: { value: SplitText; onChange: (v: SplitText) => void }) {
-  const fields: [keyof SplitText, string, string][] = [
-    ['salary', "Branch's salary account %", 'Sent to the branch salary account'],
-    ['partner', 'Branch partner %', 'Leave empty if the branch has no partner'],
-    ['hq', 'Head Office keeps %', 'Stays in the Head Office account'],
-    ['vat', 'VAT %', 'Stays in the Head Office account, set aside for tax'],
-  ]
-  const total = (toNum(v.hq) + toNum(v.vat) + toNum(v.partner) + toNum(v.salary)) / 100
+  const num = (x: string) => x.replace(/[^\d.]/g, '')
+  const bps = toBps(v)
+  const example = 1_000_000
+  const share = (b: number) => naira(Math.round((example * b) / 10_000) * 100)
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
-        {fields.map(([k, label, hint]) => (
-          <Field key={k} label={label} hint={hint}>
-            <TextInput value={v[k]} inputMode="decimal" placeholder="0" onChange={(e) => onChange({ ...v, [k]: e.target.value.replace(/[^\d.]/g, '') })} />
-          </Field>
-        ))}
-      </div>
-      <p className={total === 100 ? 'text-base font-medium text-emerald-700 dark:text-emerald-300' : 'text-base font-semibold text-red-700 dark:text-red-300'}>
-        Total: {total}% {total === 100 ? '✓' : `— ${total < 100 ? `${Math.round((100 - total) * 100) / 100}% still to share` : 'too much, must be 100%'}`}
-      </p>
+      <Field label="The branch gets (%)" hint="Of every payment, sent to the branch's bank account.">
+        <TextInput value={v.salary} inputMode="decimal" placeholder="e.g. 50" onChange={(e) => onChange({ ...v, salary: num(e.target.value) })} />
+      </Field>
+      <Check checked={v.hasPartner} onChange={(hasPartner) => onChange({ ...v, hasPartner })} label="This branch also has a partner who gets a share" />
+      {v.hasPartner && (
+        <Field label="The partner gets (%)" hint="Sent to the partner's own bank account, added after the branch is saved.">
+          <TextInput value={v.partner} inputMode="decimal" placeholder="e.g. 34.5" onChange={(e) => onChange({ ...v, partner: num(e.target.value) })} />
+        </Field>
+      )}
+      {bps ? (
+        <div className="rounded-xl bg-muted px-4 py-3 text-[15px]">
+          <div className="font-semibold">Example: if ₦1,000,000 comes in for this branch</div>
+          <div className="mt-1">The branch gets <b>{share(bps.salary)}</b></div>
+          {v.hasPartner && <div>The partner gets <b>{share(bps.partner)}</b></div>}
+          <div>Head Office keeps <b>{share(bps.hq)}</b> (what is left)</div>
+        </div>
+      ) : (
+        <p className="text-base font-semibold text-red-700 dark:text-red-300">That is more than 100%.</p>
+      )}
     </div>
   )
 }

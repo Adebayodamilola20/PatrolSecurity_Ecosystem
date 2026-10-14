@@ -94,7 +94,17 @@ export function registerFinanceRoutes(http: HttpRouter) {
     await ctx.runMutation(fin.settings.setAccount, { actorId, which, account });
     return account ?? { ok: true };
   });
-  route("POST", "settings/wallet", (ctx, { body, actorId }) => ctx.runMutation(fin.settings.setWallet, { actorId, ...pick(body, ["walletAccountNumber"]) } as any));
+  route("POST", "settings/wallet", async (ctx, { body, actorId }) => {
+    // Only Tarmac's own Monnify account is accepted: Monnify must recognise it.
+    const cfg = getMonnifyConfig();
+    if (!cfg) throw new ConvexError("Monnify is not connected yet");
+    const number = String(body.walletAccountNumber ?? "").replace(/\D/g, "");
+    const check = await walletBalance(cfg, number);
+    if (!check.available) {
+      throw new ConvexError(`Monnify does not recognise ${number || "that number"} as Tarmac's Monnify account. Copy the number from the Monnify dashboard (Disbursements → wallet).`);
+    }
+    return await ctx.runMutation(fin.settings.setWallet, { actorId, walletAccountNumber: number });
+  });
   route("POST", "settings/auto-send", (ctx, { body, actorId }) => ctx.runMutation(fin.settings.setAutoSend, { actorId, autoSend: body.autoSend === true }));
 
   // Money out
@@ -113,9 +123,11 @@ export function registerFinanceRoutes(http: HttpRouter) {
 
   // Branches
   route("GET", "branches", (ctx) => ctx.runQuery(fin.branches.list, {}));
-  route("POST", "branches/create", (ctx, { body, actorId }) => {
+  route("POST", "branches/create", async (ctx, { body, actorId }) => {
     if (!body.splitBps) throw new ConvexError("Set how the branch's money is shared");
-    return ctx.runMutation(fin.branches.create, { actorId, ...pick(body, ["name", "isHq", "splitBps"]) } as any);
+    // The branch's own bank account can be given at once; the bank confirms the name.
+    const salaryAccount = body.accountNumber ? await bankChecked(body) : undefined;
+    return await ctx.runMutation(fin.branches.create, { actorId, ...pick(body, ["name", "isHq", "splitBps"]), salaryAccount } as any);
   });
   route("POST", "branches/update", async (ctx, { body, actorId }) => {
     const salaryAccount = body.removeSalaryAccount ? null : body.accountNumber ? await bankChecked(body) : undefined;

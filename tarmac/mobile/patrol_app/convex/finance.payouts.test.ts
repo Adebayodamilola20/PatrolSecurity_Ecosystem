@@ -15,6 +15,7 @@ const SPLIT = { hq: 800, vat: 750, partner: 3450, salary: 5000 };
 const f = internal.finance;
 
 let t: ReturnType<typeof convexTest>;
+let balanceKobo = 123_456_750;
 let admin: Id<"users">;
 let token: string;
 let jos: Id<"finBranches">;
@@ -56,7 +57,7 @@ function fakeMonnify() {
       r = body.authorizationCode === "123456" ? ok({ status: "SUCCESS", totalFee: 10 }) : { status: 400, json: { requestSuccessful: false, responseMessage: "Invalid OTP" } };
     } else if (p === "/api/v2/disbursements/wallet-balance") {
       r = url.searchParams.get("accountNumber") === "8000000001"
-        ? ok({ availableBalance: 1_234_567.5, ledgerBalance: 1_300_000 })
+        ? ok({ availableBalance: balanceKobo / 100, ledgerBalance: 1_300_000 })
         : { status: 400, json: { requestSuccessful: false, responseMessage: "Supplied account number does not belong to merchant" } };
     } else if (p === "/api/v1/bank-transfer/reserved-accounts/transactions") {
       r = ok({ content: fake.accountTxns[url.searchParams.get("accountReference") ?? ""] ?? [] });
@@ -121,6 +122,7 @@ beforeEach(async () => {
     paid: {},
     transfers: [],
   };
+  balanceKobo = 123_456_750;
   fakeMonnify();
   t = convexTest(schema, modules);
   admin = await t.run(async (ctx) =>
@@ -318,6 +320,33 @@ describe("payouts", () => {
     const rows = await payouts();
     expect(rows.find((r) => r.share === "partner")).toBeUndefined();
     expect(rows.find((r) => r.share === "salary")!.status).toBe("waiting"); // Jos has no salary account yet
+  });
+});
+
+describe("Head Office account checks", () => {
+  test("a number Monnify does not recognise is refused as the Head Office account", async () => {
+    const res = await post("settings/wallet", { walletAccountNumber: "9032950785" });
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(await res.json())).toContain("does not recognise");
+  });
+
+  test("only what the Head Office account can cover is sent; the rest waits", async () => {
+    await setUpAccounts();
+    await addClient(abuja);
+    await monnifyPayment();
+    balanceKobo = 40_000_000; // ₦400,000: enough for Head Office (₦86,000) and the partner (₦370,875)? No — one at a time
+    const res = await (await post("payouts/send-now", {})).json();
+    expect(res.reason).toMatch(/Not enough money/);
+    const rows = await payouts();
+    expect(rows.filter((r) => r.status === "sent").reduce((s, r) => s + r.amountKobo, 0)).toBeLessThanOrEqual(40_000_000);
+    expect(rows.some((r) => r.status === "ready")).toBe(true);
+  });
+
+  test("a branch can be added with its bank account in one go", async () => {
+    const res = await post("branches/create", { name: "Kano", splitBps: SPLIT, bankCode: "057", accountNumber: "1012345678" });
+    expect(res.status).toBe(200);
+    const kano = (await t.query(f.branches.list, {})).find((b) => b.name === "Kano")!;
+    expect(kano.salaryAccountName).toBe("TARMAC SECURITY ABUJA SALARY");
   });
 });
 

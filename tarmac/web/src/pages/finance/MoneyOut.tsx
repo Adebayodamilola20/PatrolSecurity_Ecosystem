@@ -137,7 +137,7 @@ export default function MoneyOut() {
 
           <Panel title="Branch accounts">
             <p className="px-6 pt-4 text-[15px] text-muted-foreground">
-              Add each branch's salary account here (and its partner's account, if the branch has a partner). Then money starts going out to that branch.
+              Each branch's share is sent to its bank account (and its partner's, if it has one).
             </p>
             {data.branches.length === 0 ? (
               <Empty title="No branches yet" text="Add your branches on the Branches page first." />
@@ -366,7 +366,7 @@ function BranchAccounts({
         </div>
         )}
         <div className="rounded-xl border border-border px-4 py-3">
-          <div className="text-sm text-muted-foreground">Salary account's {pct(b.splitBps.salary)} goes to</div>
+          <div className="text-sm text-muted-foreground">Branch's {pct(b.splitBps.salary)} goes to</div>
           {b.salaryAccountNumber ? (
             <>
               <div className="mt-0.5 font-medium">{b.salaryAccountName ?? 'Salary account'}</div>
@@ -375,8 +375,8 @@ function BranchAccounts({
             </>
           ) : (
             <>
-              <div className="mt-0.5 text-[15px] text-muted-foreground">No salary account yet</div>
-              <Btn variant="quiet" onClick={() => onEdit('salary')}>Add the salary account</Btn>
+              <div className="mt-0.5 text-[15px] text-muted-foreground">No bank account yet</div>
+              <Btn variant="quiet" onClick={() => onEdit('salary')}>Add the bank account</Btn>
             </>
           )}
         </div>

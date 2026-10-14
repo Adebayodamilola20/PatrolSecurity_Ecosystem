@@ -15,7 +15,7 @@ import { internal } from "../_generated/api";
 import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import { getMonnifyConfig } from "../env";
-import { authorizeTransfer, monnifyToken, sendTransfer, transferStatus, type TransferResult } from "./monnify";
+import { authorizeTransfer, monnifyToken, sendTransfer, transferStatus, walletBalance, type TransferResult } from "./monnify";
 import { audit, fail, nextNumber, periodOf, periodRange } from "./shared";
 
 export const SHARES = ["hq", "vat", "partner", "salary"] as const;
@@ -280,14 +280,30 @@ export const sendReady = internalAction({
     if (!ids.length) return { sent: 0, waiting: 0, failed: 0 };
     const token = await monnifyToken(cfg);
     const count = { sent: 0, waiting: 0, failed: 0 };
+    // Never ask Monnify to send more than the Head Office account holds: what
+    // does not fit stays "ready" and goes out once more money comes in.
+    const balance = await walletBalance(cfg, settings.walletAccountNumber);
+    let left = balance.available ? balance.availableKobo : Infinity;
+    let short = 0;
     for (const id of ids) {
+      const p = await ctx.runQuery(internal.finance.payouts.one, { payoutId: id });
+      if (!p) continue;
+      if (p.amountKobo > left) {
+        short += p.amountKobo;
+        continue;
+      }
       const t = await ctx.runMutation(internal.finance.payouts.claim, { payoutId: id });
       if (!t) continue;
       const result = await sendTransfer(cfg, token, { ...t, walletAccountNumber: settings.walletAccountNumber });
       await ctx.runMutation(internal.finance.payouts.settle, { payoutId: id, result: plain(result) });
+      if (result.state !== "failed") left -= p.amountKobo;
       if (result.state === "sent") count.sent++;
       else if (result.state === "failed") count.failed++;
       else count.waiting++;
+    }
+    if (short) {
+      const n = (k: number) => `₦${(k / 100).toLocaleString("en-NG", { maximumFractionDigits: 2 })}`;
+      return { ...count, reason: `Not enough money in the Head Office account for everything: ${n(short)} is still waiting and will go out when more money comes in.` };
     }
     if (ids.length === 25) await ctx.scheduler.runAfter(0, internal.finance.payouts.sendReady, { manual: args.manual });
     return count;
