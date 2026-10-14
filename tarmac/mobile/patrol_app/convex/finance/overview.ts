@@ -32,7 +32,7 @@ export const overview = internalQuery({
     const overdue = open.filter((i) => i.dueDate < today).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 
     const todo: { kind: string; text: string; detail: string; to: string; urgent: boolean }[] = [];
-    if (!branches.length) todo.push({ kind: "setup", text: "Add your branches", detail: "Start here", to: "/finance/branches", urgent: false });
+    if (!branches.length) todo.push({ kind: "setup", text: "Add your branches", detail: "Start here", to: "/finance/money-out", urgent: false });
     else if (!clients.length) todo.push({ kind: "setup", text: "Add your first client", detail: "Next step", to: "/finance/clients", urgent: false });
     for (const i of overdue.slice(0, 5)) {
       const late = daysLate(i.dueDate, today);
@@ -49,7 +49,7 @@ export const overview = internalQuery({
       todo.push({ kind: "held", text: `Payment from ${nameOf(p.clientId)} is on hold`, detail: branchName(p.branchId), to: "/finance/payments", urgent: false });
     }
     for (const p of partners.filter((x) => x.status === "pending")) {
-      todo.push({ kind: "partner", text: `New partner ${p.name} needs approval`, detail: branchName(p.branchId), to: "/finance/branches", urgent: false });
+      todo.push({ kind: "partner", text: `New partner ${p.name} needs approval`, detail: branchName(p.branchId), to: "/finance/money-out", urgent: false });
     }
     for (const r of runs.filter((x) => x.status === "draft")) {
       todo.push({ kind: "payroll", text: `${branchName(r.branchId)} payroll for ${periodLabel(r.period)} needs approval`, detail: "", to: "/finance/payroll", urgent: false });

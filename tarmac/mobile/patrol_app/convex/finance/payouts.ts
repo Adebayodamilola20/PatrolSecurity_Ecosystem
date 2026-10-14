@@ -417,7 +417,7 @@ export const list = internalQuery({
       .query("finPayouts")
       .withIndex("by_status", (q) => q.eq("status", "sent"))
       .order("desc")
-      .take(30);
+      .take(300);
     const branches = await ctx.db.query("finBranches").collect();
     const clients = await ctx.db.query("finClients").collect();
     const settings = await getSettings(ctx);

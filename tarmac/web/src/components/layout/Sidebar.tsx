@@ -17,7 +17,6 @@ import {
   Bot,
   Activity,
   BarChart3,
-  Landmark,
   Receipt,
   ArrowDownLeft,
   ArrowUpRight,
@@ -36,9 +35,9 @@ import { useAlertStore } from '../../stores/useAlertStore'
 const FINANCE_NAV = [
   { to: '/finance/payments', label: 'Money in', icon: ArrowDownLeft },
   { to: '/finance/money-out', label: 'Money out', icon: ArrowUpRight },
+  { to: '/finance/history', label: 'History', icon: Clock },
   { to: '/finance/invoices', label: 'Invoices', icon: Receipt },
   { to: '/finance/clients', label: 'Clients', icon: Building2 },
-  { to: '/finance/branches', label: 'Branches', icon: Landmark },
   { to: '/finance/staff', label: 'Staff', icon: IdCard },
   { to: '/finance/recruitment', label: 'Applicants', icon: UserPlus },
   { to: '/finance/rosters', label: 'Rosters', icon: CalendarDays },

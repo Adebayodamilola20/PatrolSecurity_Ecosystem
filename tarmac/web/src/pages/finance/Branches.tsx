@@ -1,85 +1,19 @@
 import { useState, type FormEvent } from 'react'
+import { Navigate } from 'react-router-dom'
 import { finance, type Branch, type Partner } from '../../services/finance'
 import { dateLabel, naira, pct, todayWat } from './format'
 import { BankAccountFields, emptyBankChoice } from './BankAccount'
 import {
-  Btn, Check, Empty, Facts, Failed, Field, FormButtons, Loading, Modal, Notice, Page, Panel, Row, Rows, Status, TextArea, TextInput,
+  Btn, Check, Facts, Field, FormButtons, Modal, Notice, TextArea, TextInput,
 } from './ui'
-import { useData, useFlash, useSave } from './hooks'
+import { useSave } from './hooks'
 
+/** Branches are managed on the Money out page now. Old links land there. */
 export default function FinanceBranches() {
-  const { data, error, loading, reload } = useData(async () => {
-    const [branches, partners] = await Promise.all([finance.branches(), finance.partners()])
-    return { branches, partners }
-  })
-  const [openId, setOpenId] = useState<string | null>(null)
-  const [adding, setAdding] = useState(false)
-  const { flash, node } = useFlash()
-
-  const open = data?.branches.find((b) => b.id === openId) ?? null
-  const done = (message: string) => {
-    flash(message)
-    void reload()
-  }
-
-  return (
-    <Page
-      title="Branches"
-      help="Each branch, its bank account and how much it gets. Click a branch to change it."
-      action={data?.branches.length ? <Btn onClick={() => setAdding(true)}>Add a branch</Btn> : undefined}
-    >
-      {node}
-      {loading && !data && <Loading />}
-      {error && <Failed message={error} onRetry={reload} />}
-      {data && data.branches.length === 0 && (
-        <Panel>
-          <Empty
-            title="No branches yet"
-            text="Add each branch your company runs. You can add as many as you need, now or later."
-            action={<Btn onClick={() => setAdding(true)}>Add a branch</Btn>}
-          />
-        </Panel>
-      )}
-      {data && data.branches.length > 0 && (
-        <Panel>
-          <Rows>
-            {data.branches.map((b) => (
-              <Row
-                key={b.id}
-                title={b.isHq ? `${b.name} (Head Office)` : b.name}
-                sub={
-                  b.partnerWaiting
-                    ? `New partner ${b.partnerWaiting.name} is waiting for approval`
-                    : !b.salaryAccountNumber
-                      ? 'No bank account yet'
-                      : b.splitBps.partner > 0 && !b.partner && !b.isHq
-                        ? 'No partner yet'
-                        : `Gets ${pct(b.splitBps.salary)} · ${b.salaryBankName ?? ''} ${b.salaryAccountNumber}`
-                }
-                right={naira(b.collectedKobo)}
-                rightSub={`this month · ${b.clients} client${b.clients === 1 ? '' : 's'}`}
-                status={b.onHold ? <Status tone="wait">{b.holdReleaseOn ? `On hold until ${dateLabel(b.holdReleaseOn)}` : 'On hold'}</Status> : b.partnerWaiting ? <Status tone="wait">Needs approval</Status> : undefined}
-                onClick={() => setOpenId(b.id)}
-              />
-            ))}
-          </Rows>
-        </Panel>
-      )}
-
-      {adding && data && <AddBranch hasHq={data.branches.some((b) => b.isHq)} onClose={() => setAdding(false)} onDone={(name) => { setAdding(false); done(`${name} branch added.`) }} />}
-      {open && data && (
-        <BranchDialog
-          branch={open}
-          partners={data.partners.filter((p) => p.branchId === open.id)}
-          onClose={() => setOpenId(null)}
-          onDone={done}
-        />
-      )}
-    </Page>
-  )
+  return <Navigate to="/finance/money-out" replace />
 }
 
-function AddBranch({ hasHq, onClose, onDone }: { hasHq: boolean; onClose: () => void; onDone: (name: string) => void }) {
+export function AddBranch({ hasHq, onClose, onDone }: { hasHq: boolean; onClose: () => void; onDone: (name: string) => void }) {
   const [name, setName] = useState('')
   const [isHq, setIsHq] = useState(false)
   const save = useSave()
@@ -117,7 +51,7 @@ function AddBranch({ hasHq, onClose, onDone }: { hasHq: boolean; onClose: () => 
 
 type Form = null | 'rename' | 'salary' | 'hold' | 'split' | 'partner' | 'editPartner'
 
-function BranchDialog({
+export function BranchDialog({
   branch,
   partners,
   onClose,

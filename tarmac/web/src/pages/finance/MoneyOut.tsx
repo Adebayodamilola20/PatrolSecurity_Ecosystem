@@ -1,11 +1,11 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { finance, type Branch, type MoneySettings, type Partner, type Payout } from '../../services/finance'
-import { dateTimeLabel, naira, pct } from './format'
+import { naira, pct } from './format'
 import { Btn, Empty, Failed, Field, FormButtons, Loading, Modal, Notice, Page, Panel, Stats, Status, TextInput } from './ui'
 import { useData, useFlash, useSave } from './hooks'
 
-import { PartnerForm, SalaryForm } from './Branches'
+import { AddBranch, BranchDialog, PartnerForm, SalaryForm } from './Branches'
 
 /**
  * Money leaving Head Office's Monnify account: what was sent, what is waiting
@@ -13,18 +13,27 @@ import { PartnerForm, SalaryForm } from './Branches'
  */
 export default function MoneyOut() {
   const { data, error, loading, reload } = useData(async () => {
-    const [payouts, settings, branches, partners] = await Promise.all([finance.payouts(), finance.settings(), finance.branches(), finance.partners()])
-    return { payouts, settings, branches, partners }
+    const [payouts, settings, branches, partners, balance] = await Promise.all([
+      finance.payouts(),
+      finance.settings(),
+      finance.branches(),
+      finance.partners(),
+      finance.balance().catch(() => null),
+    ])
+    return { payouts, settings, branches, partners, balance }
   })
   const { flash, node } = useFlash()
   const send = useSave()
   const [editing, setEditing] = useState<null | 'wallet'>(null)
   const [branchForm, setBranchForm] = useState<null | { kind: 'partner' | 'salary'; branch: Branch }>(null)
+  const [adding, setAdding] = useState(false)
+  const [openId, setOpenId] = useState<string | null>(null)
 
   const done = (message: string) => {
     flash(message)
     setEditing(null)
     setBranchForm(null)
+    setAdding(false)
     void reload()
   }
 
@@ -97,7 +106,7 @@ export default function MoneyOut() {
                           return branch ? (
                             <Btn variant="quiet" onClick={() => setBranchForm({ kind: x.share === 'salary' ? 'salary' : 'partner', branch })}>Add the account</Btn>
                           ) : (
-                            <Link to="/finance/branches" className="inline-flex h-12 items-center px-3 font-medium text-primary hover:underline">Add the account</Link>
+                            <Link to="/finance/money-out" className="inline-flex h-12 items-center px-3 font-medium text-primary hover:underline">Add the account</Link>
                           )
                         })()
                       )
@@ -128,19 +137,25 @@ export default function MoneyOut() {
             <div className="divide-y divide-border">
               <SetupLine
                 label="Monnify account number"
-                value={s.walletAccountNumber ? `${s.walletAccountNumber} — all money comes in here and is sent out from here` : null}
+                value={
+                  s.walletAccountNumber
+                    ? data.balance?.available
+                      ? `${s.walletAccountNumber} · balance ${naira(data.balance.availableKobo)}`
+                      : `${s.walletAccountNumber} — not recognised by Monnify. Change it to the number shown in Monnify → Disbursements.`
+                    : null
+                }
                 empty="Not added yet. Find its 10-digit number in the Monnify dashboard under Disbursements."
                 onEdit={() => setEditing('wallet')}
               />
             </div>
           </Panel>
 
-          <Panel title="Branch accounts">
+          <Panel title="Branches" action={<Btn onClick={() => setAdding(true)}>Add a branch</Btn>}>
             <p className="px-6 pt-4 text-[15px] text-muted-foreground">
-              Each branch's share is sent to its bank account (and its partner's, if it has one).
+              Each branch gets its percentage of every payment, sent to its bank account. Click Manage to change one.
             </p>
             {data.branches.length === 0 ? (
-              <Empty title="No branches yet" text="Add your branches on the Branches page first." />
+              <Empty title="No branches yet" text="Add each branch with its bank account and how much it gets." action={<Btn onClick={() => setAdding(true)}>Add a branch</Btn>} />
             ) : (
               <div className="divide-y divide-border">
                 {data.branches.map((b) => (
@@ -149,6 +164,7 @@ export default function MoneyOut() {
                     branch={b}
                     partners={data.partners.filter((x) => x.branchId === b.id)}
                     onEdit={(kind) => setBranchForm({ kind, branch: b })}
+                    onManage={() => setOpenId(b.id)}
                     onDone={done}
                   />
                 ))}
@@ -156,26 +172,21 @@ export default function MoneyOut() {
             )}
           </Panel>
 
-          <Panel title="Sent">
-            {p.sent.length === 0 ? (
-              <Empty title="Nothing sent yet" text="Money appears here once it has reached the bank account." />
-            ) : (
-              <div className="divide-y divide-border">
-                {p.sent.map((x) => (
-                  <PayoutLine
-                    key={x.id}
-                    payout={x}
-                    title={x.toName ?? x.shareLabel}
-                    sub={`${x.bankName ?? ''} · ${x.accountName ?? ''} · ref ${x.reference ?? ''} · ${x.sentAt ? dateTimeLabel(x.sentAt) : ''}`}
-                    right={<Status tone="good">Sent</Status>}
-                  />
-                ))}
-              </div>
-            )}
-          </Panel>
         </>
       )}
 
+      {adding && data && <AddBranch hasHq={data.branches.some((b) => b.isHq)} onClose={() => setAdding(false)} onDone={(name) => done(`${name} added.`)} />}
+      {openId && data?.branches.find((b) => b.id === openId) && (
+        <BranchDialog
+          branch={data.branches.find((b) => b.id === openId)!}
+          partners={data.partners.filter((x) => x.branchId === openId)}
+          onClose={() => setOpenId(null)}
+          onDone={(m) => {
+            if (/removed\.$/.test(m)) setOpenId(null)
+            done(m)
+          }}
+        />
+      )}
       {branchForm?.kind === 'salary' && <SalaryForm branch={branchForm.branch} onClose={() => setBranchForm(null)} onDone={done} />}
       {branchForm?.kind === 'partner' && (
         <PartnerForm
@@ -318,11 +329,13 @@ function BranchAccounts({
   branch: b,
   partners,
   onEdit,
+  onManage,
   onDone,
 }: {
   branch: Branch
   partners: Partner[]
   onEdit: (kind: 'partner' | 'salary') => void
+  onManage: () => void
   onDone: (m: string) => void
 }) {
   const approve = useSave()
@@ -333,8 +346,17 @@ function BranchAccounts({
   return (
     <div className="space-y-3 px-6 py-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-lg font-semibold">{b.isHq ? `${b.name} (Head Office)` : b.name}</div>
-        {ok ? <Status tone="good">Ready to receive</Status> : <Status tone="wait">Accounts missing</Status>}
+        <div>
+          <div className="text-lg font-semibold">{b.isHq ? `${b.name} (Head Office)` : b.name}</div>
+          <div className="text-[15px] text-muted-foreground">
+            Gets {pct(b.splitBps.salary)}{hasPartner ? ` · partner ${pct(b.splitBps.partner)}` : ''} · Head Office keeps {pct(b.splitBps.hq + b.splitBps.vat)}
+            {b.onHold ? ' · on hold' : ''}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {ok ? <Status tone="good">Ready to receive</Status> : <Status tone="wait">Bank account missing</Status>}
+          <Btn variant="secondary" onClick={onManage}>Manage</Btn>
+        </div>
       </div>
       <div className={hasPartner ? 'grid gap-3 sm:grid-cols-2' : 'grid gap-3'}>
         {hasPartner && (
