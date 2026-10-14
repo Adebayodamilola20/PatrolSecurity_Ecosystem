@@ -16,7 +16,7 @@ import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import { getMonnifyConfig } from "../env";
 import { authorizeTransfer, monnifyToken, sendTransfer, transferStatus, walletBalance, type TransferResult } from "./monnify";
-import { audit, fail, nextNumber, periodOf, periodRange } from "./shared";
+import { audit, fail, nextNumber, periodOf, periodRange, todayWat } from "./shared";
 
 export const SHARES = ["hq", "vat", "partner", "salary"] as const;
 export type Share = (typeof SHARES)[number];
@@ -198,7 +198,7 @@ export const sendSettings = internalQuery({
   args: {},
   handler: async (ctx) => {
     const s = await getSettings(ctx);
-    return { autoSend: !!s?.autoSend, walletAccountNumber: s?.walletAccountNumber ?? null };
+    return { autoSend: !!s?.autoSend, sendDay: s?.sendDay ?? null, walletAccountNumber: s?.walletAccountNumber ?? null };
   },
 });
 
@@ -276,6 +276,10 @@ export const sendReady = internalAction({
     const settings = await ctx.runQuery(internal.finance.payouts.sendSettings, {});
     if (!settings.walletAccountNumber) return { sent: 0, waiting: 0, failed: 0, reason: "Add the Head Office (Monnify) account number on the Money out page first" };
     if (!args.manual && !settings.autoSend) return { sent: 0, waiting: 0, failed: 0, reason: "Automatic sending is off" };
+    // Paid monthly: on any other day, automatic sending waits (Send now still works).
+    if (!args.manual && settings.sendDay && Number(todayWat().slice(8, 10)) !== settings.sendDay) {
+      return { sent: 0, waiting: 0, failed: 0, reason: `Branches are paid on day ${settings.sendDay} of the month` };
+    }
     const ids = await ctx.runQuery(internal.finance.payouts.readyIds, { status: "ready" });
     if (!ids.length) return { sent: 0, waiting: 0, failed: 0 };
     const token = await monnifyToken(cfg);

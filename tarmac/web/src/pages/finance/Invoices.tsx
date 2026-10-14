@@ -6,6 +6,7 @@ import {
   Btn, Empty, Facts, Failed, Field, FormButtons, Loading, Modal, MoneyInput, Notice, Page, Panel, Row, Rows, SelectInput, Status, TextArea, TextInput,
 } from './ui'
 import { useData, useFlash, useSave } from './hooks'
+import { downloadInvoicePdf } from './invoicePdf'
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function invoiceStatus(i: Pick<Invoice, 'status' | 'overdue' | 'balanceKobo'>) {
@@ -21,8 +22,8 @@ type Filter = 'open' | 'paid' | 'all'
 
 export default function FinanceInvoices() {
   const { data, error, loading, reload } = useData(async () => {
-    const [invoices, clients] = await Promise.all([finance.invoices(), finance.clients()])
-    return { invoices, clients }
+    const [invoices, clients, settings] = await Promise.all([finance.invoices(), finance.clients(), finance.settings()])
+    return { invoices, clients, vatOn: settings.vatOnInvoices }
   })
   const [filter, setFilter] = useState<Filter>('open')
   const [form, setForm] = useState<null | 'new' | 'month'>(null)
@@ -45,17 +46,18 @@ export default function FinanceInvoices() {
   return (
     <Page
       title="Invoices"
-      help="Monthly bills to clients. Each invoice shows the client's own account number, and payments mark it paid by themselves."
+      help="Bills to clients. Each invoice shows the account number the client pays into; when they pay, it is marked paid by itself. Download it as a PDF to send to them."
       action={
         data?.clients.length ? (
           <>
-            <Btn variant="secondary" onClick={() => setForm('month')}>Bill all clients for a month</Btn>
+            <Btn variant="secondary" onClick={() => setForm('month')}>Make this month's bills for everyone</Btn>
             <Btn onClick={() => setForm('new')}>New invoice</Btn>
           </>
         ) : undefined
       }
     >
       {node}
+      {data && <VatSwitch on={data.vatOn} onDone={done} />}
       {loading && !data && <Loading />}
       {error && <Failed message={error} onRetry={reload} />}
       {data && data.clients.length === 0 && <Notice tone="info">Add a client first (Clients page). Then you can bill them here.</Notice>}
@@ -96,7 +98,7 @@ export default function FinanceInvoices() {
         </Panel>
       )}
 
-      {form === 'new' && data && <NewInvoice clients={data.clients} onClose={() => setForm(null)} onDone={(m) => { setForm(null); done(m) }} />}
+      {form === 'new' && data && <NewInvoice vatOn={data.vatOn} clients={data.clients} onClose={() => setForm(null)} onDone={(m) => { setForm(null); done(m) }} />}
       {form === 'month' && <BillMonth onClose={() => setForm(null)} onDone={(m) => { setForm(null); done(m) }} />}
       {openId && <InvoiceDialog id={openId} onClose={() => setOpenId(null)} onDone={done} />}
     </Page>
@@ -107,7 +109,7 @@ function BillMonth({ onClose, onDone }: { onClose: () => void; onDone: (m: strin
   const [period, setPeriod] = useState(thisPeriod())
   const save = useSave()
   return (
-    <Modal title="Bill all clients for a month" onClose={onClose}>
+    <Modal title="Make this month's bills for everyone" onClose={onClose}>
       <form
         className="space-y-4"
         onSubmit={async (e) => {
@@ -123,7 +125,7 @@ function BillMonth({ onClose, onDone }: { onClose: () => void; onDone: (m: strin
         }}
       >
         {save.error && <Notice tone="bad">{save.error}</Notice>}
-        <p className="text-base">Creates one invoice for every active client, using their monthly fee. Clients already billed for that month are skipped.</p>
+        <p className="text-base">Instead of making invoices one by one: this makes one invoice for every client, for their usual monthly fee. Anyone who already has an invoice for that month is skipped.</p>
         <Field label="Month"><SelectInput value={period} onChange={setPeriod} options={monthOptions()} /></Field>
         <FormButtons onCancel={onClose} saveLabel="Create invoices" busy={save.busy} />
       </form>
@@ -172,12 +174,13 @@ function toLines(lines: LineText[]): InvoiceLine[] | string {
   return out
 }
 
-/** What the total will be, before saving — VAT is 7.5% on top. */
-function Preview({ lines }: { lines: LineText[] }) {
+/** What the total will be, before saving (with 7.5% VAT on top when it is switched on). */
+function Preview({ lines, vatOn = true }: { lines: LineText[]; vatOn?: boolean }) {
   const parsed = toLines(lines)
   if (typeof parsed === 'string') return null
   const subtotal = parsed.reduce((s, l) => s + Math.round(l.quantity * l.unitKobo), 0)
-  const vat = Math.round((subtotal * 750) / 10_000)
+  const vat = vatOn ? Math.round((subtotal * 750) / 10_000) : 0
+  if (!vatOn) return <div className="rounded-xl bg-muted/60 px-4 py-1"><Facts items={[{ label: 'Total', value: <b>{naira(subtotal)}</b> }]} /></div>
   return (
     <div className="rounded-xl bg-muted/60 px-4 py-1">
       <Facts items={[{ label: 'Before VAT', value: naira(subtotal) }, { label: 'VAT (7.5%)', value: naira(vat) }, { label: 'Total', value: <b>{naira(subtotal + vat)}</b> }]} />
@@ -185,7 +188,7 @@ function Preview({ lines }: { lines: LineText[] }) {
   )
 }
 
-function NewInvoice({ clients, onClose, onDone }: { clients: Client[]; onClose: () => void; onDone: (m: string) => void }) {
+function NewInvoice({ clients, vatOn, onClose, onDone }: { clients: Client[]; vatOn: boolean; onClose: () => void; onDone: (m: string) => void }) {
   const active = clients.filter((c) => c.status === 'active')
   const [clientId, setClientId] = useState('')
   const [period, setPeriod] = useState(thisPeriod())
@@ -220,7 +223,7 @@ function NewInvoice({ clients, onClose, onDone }: { clients: Client[]; onClose: 
         {clientId && (
           <>
             <LinesEditor lines={lines} onChange={setLines} />
-            <Preview lines={lines} />
+            <Preview lines={lines} vatOn={vatOn} />
             <Field label="Note on the invoice (optional)"><TextArea value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
           </>
         )}
@@ -248,7 +251,7 @@ function EditInvoice({ invoice, onClose, onDone }: { invoice: InvoiceDetail; onC
       >
         {save.error && <Notice tone="bad">{save.error}</Notice>}
         <LinesEditor lines={lines} onChange={setLines} />
-        <Preview lines={lines} />
+        <Preview lines={lines} vatOn={invoice.vatKobo > 0} />
         <Field label="Due date"><TextInput type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required /></Field>
         <Field label="Note on the invoice (optional)"><TextArea value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
         <FormButtons onCancel={onClose} busy={save.busy} />
@@ -297,7 +300,7 @@ function InvoiceDialog({ id, onClose, onDone }: { id: string; onClose: () => voi
           <Facts
             items={[
               { label: 'Before VAT', value: naira(inv.subtotalKobo) },
-              { label: 'VAT (7.5%)', value: naira(inv.vatKobo) },
+              ...(inv.vatKobo > 0 ? [{ label: 'VAT (7.5%)', value: naira(inv.vatKobo) }] : []),
               { label: 'Total', value: <b className="text-lg">{naira(inv.totalKobo)}</b> },
               { label: 'Paid so far', value: naira(inv.paidKobo) },
               { label: 'Still to pay', value: inv.balanceKobo > 0 ? <span className="text-destructive">{naira(inv.balanceKobo)}</span> : 'Nothing' },
@@ -312,6 +315,7 @@ function InvoiceDialog({ id, onClose, onDone }: { id: string; onClose: () => voi
           )}
 
           <div className="flex flex-wrap gap-2 border-t border-border pt-4">
+            <Btn onClick={() => void downloadInvoicePdf(inv)}>Download PDF</Btn>
             <Btn variant="secondary" onClick={() => printInvoice(inv)}><Printer className="h-4 w-4" /> Print</Btn>
             {inv.status === 'draft' && <Btn busy={action.busy} onClick={() => act(() => finance.markSent(inv.id), `${inv.number} marked as sent.`)}>Mark as sent</Btn>}
             {inv.status !== 'paid' && inv.status !== 'cancelled' && <Btn variant="secondary" onClick={() => setEditing(true)}>Edit</Btn>}
@@ -351,7 +355,7 @@ function printInvoice(inv: InvoiceDetail) {
     <div style="text-align:right"><h1>INVOICE</h1><div>${esc(inv.number)}</div><div>${esc(inv.periodLabel)}</div><div>Due ${esc(dateLabel(inv.dueDate))}</div></div></div>
     <p><b>Bill to:</b> ${esc(c?.name ?? inv.clientName)}${c?.address ? `<br>${esc(c.address)}` : ''}${c?.contactName ? `<br>Attn: ${esc(c.contactName)}` : ''}</p>
     <table><tr><th>Description</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Amount</th></tr>${lines}</table>
-    <div class="tot"><div><span>Before VAT</span><span>${naira(inv.subtotalKobo)}</span></div><div><span>VAT (7.5%)</span><span>${naira(inv.vatKobo)}</span></div>
+    <div class="tot">${inv.vatKobo > 0 ? `<div><span>Before VAT</span><span>${naira(inv.subtotalKobo)}</span></div><div><span>VAT (7.5%)</span><span>${naira(inv.vatKobo)}</span></div>` : ''}
     <div class="grand"><span>Total</span><span>${naira(inv.totalKobo)}</span></div>${inv.paidKobo ? `<div><span>Paid</span><span>${naira(inv.paidKobo)}</span></div><div><b>Balance</b><b>${naira(inv.balanceKobo)}</b></div>` : ''}</div>
     ${c?.payAccountNumber ? `<div class="pay">Please pay into your Tarmac account:<div class="big">${esc(c.payAccountNumber)}</div>${esc(c.payBankName ?? '')} · ${esc(c.payAccountName ?? '')}</div>` : ''}
     ${inv.notes ? `<p style="margin-top:20px">${esc(inv.notes)}</p>` : ''}
@@ -361,4 +365,23 @@ function printInvoice(inv: InvoiceDetail) {
   // policy blocks inline scripts, and the blank window inherits it.
   w.focus()
   w.print()
+}
+
+/** VAT is a government tax some companies must add to their bills. Tarmac decides. */
+function VatSwitch({ on, onDone }: { on: boolean; onDone: (m: string) => void }) {
+  const save = useSave()
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card px-5 py-4">
+      <div className="max-w-2xl">
+        <div className="font-semibold">Add 7.5% VAT to new invoices: {on ? 'Yes' : 'No'}</div>
+        <div className="text-[15px] text-muted-foreground">
+          VAT is a government tax. If Tarmac is registered for VAT, the law says it must be added to every bill and paid to FIRS. Ask Tarmac's accountant if unsure.
+        </div>
+        {save.error && <div className="text-[15px] text-destructive">{save.error}</div>}
+      </div>
+      <Btn variant="secondary" busy={save.busy} onClick={() => save.run(() => finance.setVat(!on)).then((ok) => ok && onDone(on ? 'New invoices will not add VAT.' : 'New invoices will add 7.5% VAT.'))}>
+        {on ? 'Stop adding VAT' : 'Add VAT'}
+      </Btn>
+    </div>
+  )
 }

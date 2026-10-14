@@ -105,6 +105,10 @@ export function registerFinanceRoutes(http: HttpRouter) {
     }
     return await ctx.runMutation(fin.settings.setWallet, { actorId, walletAccountNumber: number });
   });
+  route("POST", "settings/send-day", (ctx, { body, actorId }) =>
+    ctx.runMutation(fin.settings.setSendDay, { actorId, sendDay: body.sendDay === null || body.sendDay === undefined || body.sendDay === "" ? null : Number(body.sendDay) }),
+  );
+  route("POST", "settings/vat", (ctx, { body, actorId }) => ctx.runMutation(fin.settings.setVatOnInvoices, { actorId, on: body.on !== false }));
   route("POST", "settings/auto-send", (ctx, { body, actorId }) => ctx.runMutation(fin.settings.setAutoSend, { actorId, autoSend: body.autoSend === true }));
 
   // Money out

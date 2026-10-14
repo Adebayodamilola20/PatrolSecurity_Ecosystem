@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { Copy } from 'lucide-react'
 import { finance, type Branch, type Client } from '../../services/finance'
 import { dateLabel, dateTimeLabel, naira, periodLabel, thisPeriod, toKobo, toNairaText } from './format'
 import {
@@ -163,9 +164,13 @@ function ClientDialog({ id, branches, monnify, onClose, onDone }: { id: string; 
             <h3 className="text-lg font-semibold">Payment account</h3>
             {c.payAccountNumber ? (
               <div className="rounded-xl border border-primary/30 bg-primary/5 px-5 py-4">
-                <div className="text-[15px] text-muted-foreground">{c.name} pays into</div>
-                <div className="mt-1 text-2xl font-bold tabular-nums tracking-wide">{c.payAccountNumber}</div>
+                <div className="text-[15px] text-muted-foreground">Send this to {c.name}. They pay into:</div>
+                <div className="mt-1 flex flex-wrap items-center gap-3">
+                  <span className="text-2xl font-bold tabular-nums tracking-wide">{c.payAccountNumber}</span>
+                  <CopyButton text={`${c.payAccountNumber}\n${c.payBankName ?? ''}\n${c.payAccountName ?? ''}`} />
+                </div>
                 <div className="text-base">{c.payBankName} · {c.payAccountName}</div>
+                <div className="mt-1 text-sm text-muted-foreground">The money lands in the Head Office account and is marked as {c.name}'s payment.</div>
               </div>
             ) : (
               <Notice tone="warn">
@@ -176,7 +181,6 @@ function ClientDialog({ id, branches, monnify, onClose, onDone }: { id: string; 
                       Get an account number from Monnify
                     </Btn>
                   )}
-                  <Btn variant="secondary" onClick={() => setForm('account')}>Type in an account number</Btn>
                 </div>
               </Notice>
             )}
@@ -284,5 +288,27 @@ function AccountForm({ client, onClose, onDone }: { client: Client; onClose: () 
         <FormButtons onCancel={onClose} busy={save.busy} />
       </form>
     </Modal>
+  )
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(text)
+          setCopied(true)
+          window.setTimeout(() => setCopied(false), 2000)
+        } catch {
+          window.prompt('Copy the account details:', text)
+        }
+      }}
+      className="inline-flex h-10 items-center gap-2 rounded-lg border border-border bg-card px-3 text-sm font-medium hover:bg-muted"
+      aria-label="Copy account details"
+    >
+      <Copy className="h-4 w-4" /> {copied ? 'Copied' : 'Copy'}
+    </button>
   )
 }

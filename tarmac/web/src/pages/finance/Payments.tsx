@@ -76,10 +76,10 @@ export default function FinancePayments() {
             {s && (
               <SplitBar
                 parts={[
-                  { key: 'hq', label: 'Head Office', amount: naira(s.hq), weight: s.hq },
+                  { key: 'hq', label: 'Head Office keeps', amount: naira(s.hq), weight: s.hq },
                   { key: 'vat', label: 'VAT', amount: naira(s.vat), weight: s.vat },
                   { key: 'partner', label: 'Partners', amount: naira(s.partner), weight: s.partner },
-                  { key: 'salary', label: 'Salaries', amount: naira(s.salary), weight: s.salary },
+                  { key: 'salary', label: 'Branches', amount: naira(s.salary), weight: s.salary },
                 ]}
               />
             )}

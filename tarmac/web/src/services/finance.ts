@@ -162,6 +162,8 @@ export type CheckedAccount = { bankCode: string; bankName: string; accountNumber
 
 export type MoneySettings = {
   autoSend: boolean
+  sendDay: number | null
+  vatOnInvoices: boolean
   walletAccountNumber: string | null
   hq: CheckedAccount | null
   vat: CheckedAccount | null
@@ -298,6 +300,8 @@ export const finance = {
   setMoneyAccount: (which: 'hq' | 'vat', a: { bankCode?: string; accountNumber?: string; remove?: boolean }) => post('settings/account', { which, ...a }),
   setWallet: (walletAccountNumber: string) => post('settings/wallet', { walletAccountNumber }),
   setAutoSend: (autoSend: boolean) => post('settings/auto-send', { autoSend }),
+  setSendDay: (sendDay: number | null) => post('settings/send-day', { sendDay }),
+  setVat: (on: boolean) => post('settings/vat', { on }),
   payouts: () => get<Payouts>('payouts'),
   sendNow: () => post<{ sent: number; waiting: number; failed: number; reason?: string }>('payouts/send-now'),
   enterCode: (payoutId: string, code: string) => post<{ state: string }>('payouts/code', { payoutId, code }),

@@ -358,6 +358,32 @@ describe("Head Office balance", () => {
   });
 });
 
+describe("sending day and VAT switch", () => {
+  test("paid monthly: automatic sending waits for the day; Send now still works", async () => {
+    await setUpAccounts();
+    await addClient(abuja);
+    await monnifyPayment();
+    await post("settings/auto-send", { autoSend: true });
+    const today = Number(new Date(Date.now() + 3600_000).toISOString().slice(8, 10));
+    const other = today === 28 ? 1 : Math.min(today + 1, 28);
+    expect((await post("settings/send-day", { sendDay: other })).status).toBe(200);
+    fake.transfers = [];
+    await t.action(f.payouts.tick, {});
+    expect(fake.transfers).toHaveLength(0);
+    await post("payouts/send-now", {});
+    expect(fake.transfers.length).toBeGreaterThan(0);
+    expect(JSON.stringify(await (await post("settings/send-day", { sendDay: 31 })).json())).toContain("1 to 28");
+  });
+
+  test("with VAT switched off, new invoices have no VAT", async () => {
+    const clientId = await addClient(abuja);
+    await post("settings/vat", { on: false });
+    const inv = await t.mutation(f.invoices.create, { actorId: admin, clientId, period: "2026-10" });
+    const saved = await t.run(async (ctx) => ctx.db.get(inv.id as any));
+    expect(saved).toMatchObject({ subtotalKobo: 100_000_000, vatKobo: 0, totalKobo: 100_000_000 });
+  });
+});
+
 describe("release on a set date", () => {
   test("held money is shared and sent on its date, not before", async () => {
     await setUpAccounts();

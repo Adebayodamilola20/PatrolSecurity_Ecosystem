@@ -278,18 +278,36 @@ function AutoSend({ settings, onDone }: { settings: MoneySettings; onDone: (m: s
   const save = useSave()
   const on = settings.autoSend
   const toggle = () => {
-    if (!on && !window.confirm('Turn on automatic sending? From now on, money is sent to the bank accounts by itself as soon as it arrives.')) return
+    if (!on && !window.confirm('Turn on automatic payments to the branches?')) return
     void save.run(() => finance.setAutoSend(!on)).then((ok) => ok && onDone(on ? 'Automatic sending is off.' : 'Automatic sending is on.'))
   }
   return (
     <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-[#111318] px-6 py-5 text-[#F2F3F6] sm:px-7">
       <div className="max-w-2xl">
-        <div className="text-[17px] font-semibold">Send money out automatically: {on ? 'On' : 'Off'}</div>
+        <div className="text-[17px] font-semibold">Pay the branches automatically: {on ? 'On' : 'Off'}</div>
         <div className="mt-1 text-[15px] text-[#A9AFBF]">
           {on
-            ? 'Money is sent to the bank accounts by itself as soon as it arrives.'
+            ? settings.sendDay
+              ? `Branches are paid by themselves on day ${settings.sendDay} of every month.`
+              : 'Branches are paid by themselves as soon as money arrives.'
             : "Money waits here until someone presses Send. Turn this on once Tarmac's live Monnify account can make transfers."}
         </div>
+        <label className="mt-3 flex flex-wrap items-center gap-3 text-[15px]">
+          When:
+          <select
+            value={settings.sendDay ?? ''}
+            onChange={(e) => {
+              const day = e.target.value ? Number(e.target.value) : null
+              void save.run(() => finance.setSendDay(day)).then((ok) => ok && onDone(day ? `Branches will be paid on day ${day} of every month.` : 'Branches will be paid as soon as money arrives.'))
+            }}
+            className="h-11 rounded-lg border border-white/20 bg-[#1C1F27] px-3 text-[#F2F3F6]"
+          >
+            <option value="">As soon as money arrives</option>
+            {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+              <option key={d} value={d}>Once a month, on day {d}</option>
+            ))}
+          </select>
+        </label>
         {save.error && <div className="mt-2 text-[15px] text-[#F5A3A3]">{save.error}</div>}
       </div>
       <button

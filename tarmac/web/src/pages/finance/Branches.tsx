@@ -4,7 +4,7 @@ import { finance, type Branch, type Partner } from '../../services/finance'
 import { dateLabel, naira, pct, todayWat } from './format'
 import { BankAccountFields, emptyBankChoice } from './BankAccount'
 import {
-  Btn, Check, Facts, Field, FormButtons, Modal, Notice, TextArea, TextInput,
+  Btn, Check, MoneyInput, Facts, Field, FormButtons, Modal, Notice, TextArea, TextInput,
 } from './ui'
 import { useSave } from './hooks'
 
@@ -22,7 +22,7 @@ export function AddBranch({ hasHq, onClose, onDone }: { hasHq: boolean; onClose:
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     const bps = toBps(split)
-    if (!bps) return save.setError("The branch's percentages cannot be more than 100%")
+    if (!bps) return save.setError('The amount cannot be more than ₦1,000,000')
     if (bps.salary > 0 && !bank.checked) return save.setError("Add the branch's bank account and wait for the name to appear")
     const account = bank.checked ? { bankCode: bank.checked.bankCode, accountNumber: bank.checked.accountNumber } : {}
     if (await save.run(() => finance.createBranch({ name, isHq, splitBps: bps, ...account }))) onDone(name.trim())
@@ -289,7 +289,7 @@ function SplitForm({ branch, onClose, onDone }: SubForm) {
         onSubmit={async (e) => {
           e.preventDefault()
           const bps = toBps(v)
-          if (!bps) return save.setError('That is more than 100%')
+          if (!bps) return save.setError('The amount cannot be more than ₦1,000,000')
           if (await save.run(() => finance.setSplit(branch.id, bps))) onDone('Sharing changed.')
         }}
       >
@@ -302,51 +302,34 @@ function SplitForm({ branch, onClose, onDone }: SubForm) {
   )
 }
 
-type SplitText = { salary: string; partner: string; hasPartner: boolean }
-const emptySplit: SplitText = { salary: '', partner: '', hasPartner: false }
-const splitText = (b: Branch['splitBps']): SplitText => ({
-  salary: b.salary ? String(b.salary / 100) : '',
-  partner: b.partner ? String(b.partner / 100) : '',
-  hasPartner: b.partner > 0,
-})
-const toNum = (x: string) => (x.trim() === '' ? 0 : Math.round(Number(x) * 100))
-/**
- * The admin says what the branch gets (and its partner, if any); whatever is
- * left of each payment stays in the Head Office account.
- */
+/** The admin types what the branch gets out of every ₦1,000,000; the percentage follows. */
+type SplitText = { amount: string }
+const BASE_NAIRA = 1_000_000
+const emptySplit: SplitText = { amount: '' }
+const splitText = (b: Branch['splitBps']): SplitText => ({ amount: b.salary ? String((BASE_NAIRA * b.salary) / 10_000) : '' })
+/** Whatever the branch does not get stays in the Head Office account. */
 function toBps(v: SplitText) {
-  const salary = toNum(v.salary)
-  const partner = v.hasPartner ? toNum(v.partner) : 0
-  if (![salary, partner].every((n) => Number.isFinite(n) && n >= 0)) return null
-  const hq = 10_000 - salary - partner
-  return hq < 0 ? null : { salary, partner, hq, vat: 0 }
+  const naira = Number(v.amount.replace(/[^\d.]/g, '') || 0)
+  if (!Number.isFinite(naira) || naira < 0 || naira > BASE_NAIRA) return null
+  const salary = Math.round((naira / BASE_NAIRA) * 10_000)
+  return { salary, partner: 0, hq: 10_000 - salary, vat: 0 }
 }
 
 function SplitFields({ value: v, onChange }: { value: SplitText; onChange: (v: SplitText) => void }) {
-  const num = (x: string) => x.replace(/[^\d.]/g, '')
   const bps = toBps(v)
-  const example = 1_000_000
-  const share = (b: number) => naira(Math.round((example * b) / 10_000) * 100)
+  const amount = Number(v.amount.replace(/[^\d.]/g, '') || 0)
   return (
-    <div className="space-y-4">
-      <Field label="The branch gets (%)" hint="Of every payment, sent to the branch's bank account.">
-        <TextInput value={v.salary} inputMode="decimal" placeholder="e.g. 50" onChange={(e) => onChange({ ...v, salary: num(e.target.value) })} />
+    <div className="space-y-3">
+      <Field label="Out of every ₦1,000,000 that comes in, the branch gets" hint="Type an amount in naira. The percentage is worked out for you.">
+        <MoneyInput value={v.amount} onChange={(amount) => onChange({ amount })} placeholder="e.g. 500,000" />
       </Field>
-      <Check checked={v.hasPartner} onChange={(hasPartner) => onChange({ ...v, hasPartner })} label="This branch also has a partner who gets a share" />
-      {v.hasPartner && (
-        <Field label="The partner gets (%)" hint="Sent to the partner's own bank account, added after the branch is saved.">
-          <TextInput value={v.partner} inputMode="decimal" placeholder="e.g. 34.5" onChange={(e) => onChange({ ...v, partner: num(e.target.value) })} />
-        </Field>
-      )}
       {bps ? (
         <div className="rounded-xl bg-muted px-4 py-3 text-[15px]">
-          <div className="font-semibold">Example: if ₦1,000,000 comes in for this branch</div>
-          <div className="mt-1">The branch gets <b>{share(bps.salary)}</b></div>
-          {v.hasPartner && <div>The partner gets <b>{share(bps.partner)}</b></div>}
-          <div>Head Office keeps <b>{share(bps.hq)}</b> (what is left)</div>
+          That is <b>{pct(bps.salary)}</b> of every payment. If ₦1,000,000 comes in, the branch gets <b>{naira(amount * 100)}</b> and Head Office keeps{' '}
+          <b>{naira((BASE_NAIRA - amount) * 100)}</b>.
         </div>
       ) : (
-        <p className="text-base font-semibold text-red-700 dark:text-red-300">That is more than 100%.</p>
+        <p className="text-base font-semibold text-red-700 dark:text-red-300">That is more than ₦1,000,000.</p>
       )}
     </div>
   )

@@ -407,7 +407,9 @@ export function HeroFigure({ label, value, tone }: { label: string; value: strin
 }
 
 /** Head Office / VAT / partner / salaries as one bar with the amounts under it. */
-export function SplitBar({ parts }: { parts: { key: keyof typeof SHARE_COLORS; label: string; amount: string; weight: number }[] }) {
+export function SplitBar({ parts: all }: { parts: { key: keyof typeof SHARE_COLORS; label: string; amount: string; weight: number }[] }) {
+  // Partner and VAT only show when a branch actually uses them.
+  const parts = all.filter((p) => p.weight > 0 || p.key === 'hq' || p.key === 'salary')
   const total = parts.reduce((s, p) => s + p.weight, 0)
   return (
     <div>

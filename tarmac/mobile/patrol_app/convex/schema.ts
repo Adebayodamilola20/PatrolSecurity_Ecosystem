@@ -522,6 +522,10 @@ export default defineSchema({
   finSettings: defineTable({
     key: v.string(),
     autoSend: v.boolean(),
+    // Day of the month (1–28) automatic sending happens; missing = as money arrives.
+    sendDay: v.optional(v.number()),
+    // Missing = true: invoices add 7.5% VAT unless Tarmac switches it off.
+    vatOnInvoices: v.optional(v.boolean()),
     walletAccountNumber: v.optional(v.string()),
     hqBankCode: v.optional(v.string()),
     hqBankName: v.optional(v.string()),

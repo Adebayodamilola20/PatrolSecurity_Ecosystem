@@ -36,6 +36,8 @@ export const get = internalQuery({
       code && number && name ? { bankCode: code, bankName: bank ?? "", accountNumber: number, accountName: name } : null;
     return {
       autoSend: !!s?.autoSend,
+      sendDay: s?.sendDay ?? null,
+      vatOnInvoices: s?.vatOnInvoices !== false,
       walletAccountNumber: s?.walletAccountNumber ?? null,
       hq: account(s?.hqBankCode, s?.hqBankName, s?.hqAccountNumber, s?.hqAccountName),
       vat: account(s?.vatBankCode, s?.vatBankName, s?.vatAccountNumber, s?.vatAccountName),
@@ -73,6 +75,25 @@ export const setWallet = internalMutation({
     const number = cleanAccountNumber(args.walletAccountNumber);
     await upsert(ctx, args.actorId, { walletAccountNumber: number });
     await audit(ctx, args.actorId, "settings.wallet", "finSettings", "money", `Monnify wallet set to ${number}`);
+  },
+});
+
+/** When automatic sending happens: as money arrives (null) or once a month on a day. */
+export const setSendDay = internalMutation({
+  args: { actorId: v.id("users"), sendDay: v.union(v.number(), v.null()) },
+  handler: async (ctx, args) => {
+    const day = args.sendDay;
+    if (day !== null && (!Number.isInteger(day) || day < 1 || day > 28)) fail("Choose a day from 1 to 28");
+    await upsert(ctx, args.actorId, { sendDay: day ?? undefined });
+    await audit(ctx, args.actorId, "settings.sendday", "finSettings", "money", day ? `Branches are paid on day ${day} of each month` : "Branches are paid as soon as money arrives");
+  },
+});
+
+export const setVatOnInvoices = internalMutation({
+  args: { actorId: v.id("users"), on: v.boolean() },
+  handler: async (ctx, args) => {
+    await upsert(ctx, args.actorId, { vatOnInvoices: args.on });
+    await audit(ctx, args.actorId, "settings.vat", "finSettings", "money", args.on ? "New invoices add 7.5% VAT" : "New invoices no longer add VAT");
   },
 });
 
