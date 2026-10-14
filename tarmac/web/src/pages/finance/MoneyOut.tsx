@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { finance, type Branch, type MoneySettings, type Partner, type Payout } from '../../services/finance'
 import { naira, pct } from './format'
-import { Btn, Empty, Failed, Field, FormButtons, Loading, Modal, Notice, Page, Panel, Stats, Status, TextInput } from './ui'
+import { Btn, Empty, Failed, Loading, Notice, Page, Panel, Stats, Status } from './ui'
 import { useData, useFlash, useSave } from './hooks'
 
 import { AddBranch, BranchDialog, PartnerForm, SalaryForm } from './Branches'
@@ -24,14 +24,12 @@ export default function MoneyOut() {
   })
   const { flash, node } = useFlash()
   const send = useSave()
-  const [editing, setEditing] = useState<null | 'wallet'>(null)
   const [branchForm, setBranchForm] = useState<null | { kind: 'partner' | 'salary'; branch: Branch }>(null)
   const [adding, setAdding] = useState(false)
   const [openId, setOpenId] = useState<string | null>(null)
 
   const done = (message: string) => {
     flash(message)
-    setEditing(null)
     setBranchForm(null)
     setAdding(false)
     void reload()
@@ -135,18 +133,17 @@ export default function MoneyOut() {
 
           <Panel title="Head Office account">
             <div className="divide-y divide-border">
-              <SetupLine
-                label="Monnify account number"
-                value={
-                  s.walletAccountNumber
+              <div className="px-6 py-4">
+                <div className="font-semibold">Tarmac's Monnify account</div>
+                <div className="mt-0.5 text-[15px]">
+                  {s.walletAccountNumber
                     ? data.balance?.available
                       ? `${s.walletAccountNumber} · balance ${naira(data.balance.availableKobo)}`
-                      : `${s.walletAccountNumber} — not recognised by Monnify. Change it to the number shown in Monnify → Disbursements.`
-                    : null
-                }
-                empty="Not added yet. Find its 10-digit number in the Monnify dashboard under Disbursements."
-                onEdit={() => setEditing('wallet')}
-              />
+                      : `${s.walletAccountNumber} · ${data.balance?.reason ?? 'balance not available right now'}`
+                    : 'Not set up yet. Andril sets this once, when Tarmac’s Monnify account is ready.'}
+                </div>
+                <div className="mt-1 text-sm text-muted-foreground">All client payments land here, and branches are paid from here. Clients never see this number.</div>
+              </div>
             </div>
           </Panel>
 
@@ -196,7 +193,6 @@ export default function MoneyOut() {
           onDone={done}
         />
       )}
-      {editing === 'wallet' && s && <WalletForm current={s.walletAccountNumber} onClose={() => setEditing(null)} onDone={done} />}
     </Page>
   )
 }
@@ -262,18 +258,6 @@ function NeedsYou({ payout, onDone }: { payout: Payout; onDone: (m: string) => v
   )
 }
 
-function SetupLine({ label, value, empty, onEdit }: { label: string; value: string | null; empty: string; onEdit: () => void }) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-4">
-      <div className="min-w-0">
-        <div className="font-semibold">{label}</div>
-        <div className={value ? 'mt-0.5 text-[15px]' : 'mt-0.5 text-[15px] text-muted-foreground'}>{value ?? empty}</div>
-      </div>
-      <Btn variant="secondary" onClick={onEdit}>{value ? 'Change' : 'Add'}</Btn>
-    </div>
-  )
-}
-
 function AutoSend({ settings, onDone }: { settings: MoneySettings; onDone: (m: string) => void }) {
   const save = useSave()
   const on = settings.autoSend
@@ -319,27 +303,6 @@ function AutoSend({ settings, onDone }: { settings: MoneySettings; onDone: (m: s
         {on ? 'Turn off' : 'Turn on'}
       </button>
     </section>
-  )
-}
-
-function WalletForm({ current, onClose, onDone }: { current: string | null; onClose: () => void; onDone: (m: string) => void }) {
-  const [number, setNumber] = useState(current ?? '')
-  const save = useSave()
-  return (
-    <Modal title="Head Office account (Monnify)" onClose={onClose}>
-      <form
-        className="space-y-4"
-        onSubmit={async (e) => {
-          e.preventDefault()
-          if (await save.run(() => finance.setWallet(number))) onDone('Head Office account saved.')
-        }}
-      >
-        {save.error && <Notice tone="bad">{save.error}</Notice>}
-        <p className="text-[15px] text-muted-foreground">This is Head Office's account on Monnify: every payment lands here and branch shares are sent from here. In the Monnify dashboard, open Disbursements to find its 10-digit number.</p>
-        <Field label="Wallet account number"><TextInput value={number} onChange={(e) => setNumber(e.target.value.replace(/\D/g, ''))} inputMode="numeric" maxLength={10} required /></Field>
-        <FormButtons onCancel={onClose} busy={save.busy} />
-      </form>
-    </Modal>
   )
 }
 

@@ -298,7 +298,6 @@ export const finance = {
   settings: () => get<MoneySettings>('settings'),
   balance: () => get<{ available: true; availableKobo: number; ledgerKobo: number; at: number } | { available: false; reason: string }>('balance'),
   setMoneyAccount: (which: 'hq' | 'vat', a: { bankCode?: string; accountNumber?: string; remove?: boolean }) => post('settings/account', { which, ...a }),
-  setWallet: (walletAccountNumber: string) => post('settings/wallet', { walletAccountNumber }),
   setAutoSend: (autoSend: boolean) => post('settings/auto-send', { autoSend }),
   setSendDay: (sendDay: number | null) => post('settings/send-day', { sendDay }),
   setVat: (on: boolean) => post('settings/vat', { on }),

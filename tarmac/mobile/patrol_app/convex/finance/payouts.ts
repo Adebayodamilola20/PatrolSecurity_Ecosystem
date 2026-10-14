@@ -14,7 +14,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
-import { getMonnifyConfig } from "../env";
+import { getMonnifyConfig, getMonnifyWallet } from "../env";
 import { authorizeTransfer, monnifyToken, sendTransfer, transferStatus, walletBalance, type TransferResult } from "./monnify";
 import { audit, fail, nextNumber, periodOf, periodRange, todayWat } from "./shared";
 
@@ -198,7 +198,7 @@ export const sendSettings = internalQuery({
   args: {},
   handler: async (ctx) => {
     const s = await getSettings(ctx);
-    return { autoSend: !!s?.autoSend, sendDay: s?.sendDay ?? null, walletAccountNumber: s?.walletAccountNumber ?? null };
+    return { autoSend: !!s?.autoSend, sendDay: s?.sendDay ?? null, walletAccountNumber: getMonnifyWallet() };
   },
 });
 
@@ -274,7 +274,7 @@ export const sendReady = internalAction({
     const cfg = getMonnifyConfig();
     if (!cfg) return { sent: 0, waiting: 0, failed: 0, reason: "Monnify is not connected yet" };
     const settings = await ctx.runQuery(internal.finance.payouts.sendSettings, {});
-    if (!settings.walletAccountNumber) return { sent: 0, waiting: 0, failed: 0, reason: "Add the Head Office (Monnify) account number on the Money out page first" };
+    if (!settings.walletAccountNumber) return { sent: 0, waiting: 0, failed: 0, reason: "The Head Office Monnify account is not set up yet" };
     if (!args.manual && !settings.autoSend) return { sent: 0, waiting: 0, failed: 0, reason: "Automatic sending is off" };
     // Paid monthly: on any other day, automatic sending waits (Send now still works).
     if (!args.manual && settings.sendDay && Number(todayWat().slice(8, 10)) !== settings.sendDay) {
@@ -456,7 +456,7 @@ export const list = internalQuery({
     }
     return {
       autoSend: !!settings?.autoSend,
-      ready: settings?.walletAccountNumber ? true : false,
+      ready: !!getMonnifyWallet(),
       counts: { waiting: waiting.length, ready: ready.length, sending: sending.length, needsCode: needsCode.length, failed: failed.length },
       readyKobo: ready.reduce((s, p) => s + p.amountKobo, 0),
       waitingKobo: waiting.reduce((s, p) => s + p.amountKobo, 0),

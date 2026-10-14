@@ -85,7 +85,7 @@ export function registerFinanceRoutes(http: HttpRouter) {
     const cfg = getMonnifyConfig();
     if (!cfg) return { available: false, reason: "Monnify is not connected yet" };
     const { walletAccountNumber } = await ctx.runQuery(fin.payouts.sendSettings, {});
-    if (!walletAccountNumber) return { available: false, reason: "Add the Head Office account number on the Money out page" };
+    if (!walletAccountNumber) return { available: false, reason: "The Head Office Monnify account is not set up yet" };
     return await walletBalance(cfg, walletAccountNumber);
   });
   route("POST", "settings/account", async (ctx, { body, actorId }) => {
@@ -93,17 +93,6 @@ export function registerFinanceRoutes(http: HttpRouter) {
     const account = body.remove ? undefined : await bankChecked(body);
     await ctx.runMutation(fin.settings.setAccount, { actorId, which, account });
     return account ?? { ok: true };
-  });
-  route("POST", "settings/wallet", async (ctx, { body, actorId }) => {
-    // Only Tarmac's own Monnify account is accepted: Monnify must recognise it.
-    const cfg = getMonnifyConfig();
-    if (!cfg) throw new ConvexError("Monnify is not connected yet");
-    const number = String(body.walletAccountNumber ?? "").replace(/\D/g, "");
-    const check = await walletBalance(cfg, number);
-    if (!check.available) {
-      throw new ConvexError(`Monnify does not recognise ${number || "that number"} as Tarmac's Monnify account. Copy the number from the Monnify dashboard (Disbursements → wallet).`);
-    }
-    return await ctx.runMutation(fin.settings.setWallet, { actorId, walletAccountNumber: number });
   });
   route("POST", "settings/send-day", (ctx, { body, actorId }) =>
     ctx.runMutation(fin.settings.setSendDay, { actorId, sendDay: body.sendDay === null || body.sendDay === undefined || body.sendDay === "" ? null : Number(body.sendDay) }),

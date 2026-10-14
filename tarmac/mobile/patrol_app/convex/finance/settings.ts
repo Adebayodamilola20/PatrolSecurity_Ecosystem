@@ -1,6 +1,6 @@
 /**
- * Head Office money settings: the Monnify wallet (Head Office's account, the pot
- * every payment lands in and is sent from), optional separate accounts for
+ * Head Office money settings (the Monnify wallet itself is fixed in env.ts):
+ * optional separate accounts for
  * Head Office's own share and for VAT, and the "send automatically" switch.
  * Bank accounts reach here only after the bank confirmed them (see routes.ts).
  */
@@ -9,6 +9,7 @@ import type { MutationCtx } from "../_generated/server";
 import { v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import { cleanAccountNumber } from "../lib/finance";
+import { getMonnifyWallet } from "../env";
 import { fillWaiting, getSettings } from "./payouts";
 import { audit, fail } from "./shared";
 
@@ -38,7 +39,7 @@ export const get = internalQuery({
       autoSend: !!s?.autoSend,
       sendDay: s?.sendDay ?? null,
       vatOnInvoices: s?.vatOnInvoices !== false,
-      walletAccountNumber: s?.walletAccountNumber ?? null,
+      walletAccountNumber: getMonnifyWallet(),
       hq: account(s?.hqBankCode, s?.hqBankName, s?.hqAccountNumber, s?.hqAccountName),
       vat: account(s?.vatBankCode, s?.vatBankName, s?.vatAccountNumber, s?.vatAccountName),
     };
@@ -69,15 +70,6 @@ export const setAccount = internalMutation({
   },
 });
 
-export const setWallet = internalMutation({
-  args: { actorId: v.id("users"), walletAccountNumber: v.string() },
-  handler: async (ctx, args) => {
-    const number = cleanAccountNumber(args.walletAccountNumber);
-    await upsert(ctx, args.actorId, { walletAccountNumber: number });
-    await audit(ctx, args.actorId, "settings.wallet", "finSettings", "money", `Monnify wallet set to ${number}`);
-  },
-});
-
 /** When automatic sending happens: as money arrives (null) or once a month on a day. */
 export const setSendDay = internalMutation({
   args: { actorId: v.id("users"), sendDay: v.union(v.number(), v.null()) },
@@ -102,7 +94,7 @@ export const setAutoSend = internalMutation({
   handler: async (ctx, args) => {
     const s = await getSettings(ctx);
     if (args.autoSend) {
-      if (!s?.walletAccountNumber) fail("Add the Head Office (Monnify) account number first");
+      if (!getMonnifyWallet()) fail("The Head Office Monnify account is not set up yet");
     }
     await upsert(ctx, args.actorId, { autoSend: args.autoSend });
     await audit(ctx, args.actorId, "settings.autosend", "finSettings", "money", args.autoSend ? "Turned automatic sending ON" : "Turned automatic sending OFF");

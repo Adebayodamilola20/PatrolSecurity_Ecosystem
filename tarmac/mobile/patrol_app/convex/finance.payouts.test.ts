@@ -102,7 +102,7 @@ async function setUpAccounts() {
   const res = await post("partners/create", { branchId: abuja, name: "Ibrahim Danladi", phone: "0803", bankCode: "057", accountNumber: "2081234541" });
   expect(res.status).toBe(200);
   await t.mutation(f.branches.approvePartner, { actorId: admin, partnerId: await res.json() });
-  expect((await post("settings/wallet", { walletAccountNumber: "8000000001" })).status).toBe(200);
+  process.env.MONNIFY_WALLET_ACCOUNT = "8000000001";
 }
 
 beforeEach(async () => {
@@ -138,6 +138,7 @@ afterEach(() => {
   delete process.env.MONNIFY_API_KEY;
   delete process.env.MONNIFY_SECRET_KEY;
   delete process.env.MONNIFY_CONTRACT_CODE;
+  delete process.env.MONNIFY_WALLET_ACCOUNT;
 });
 
 describe("bank account check", () => {
@@ -324,12 +325,6 @@ describe("payouts", () => {
 });
 
 describe("Head Office account checks", () => {
-  test("a number Monnify does not recognise is refused as the Head Office account", async () => {
-    const res = await post("settings/wallet", { walletAccountNumber: "9032950785" });
-    expect(res.status).toBe(400);
-    expect(JSON.stringify(await res.json())).toContain("does not recognise");
-  });
-
   test("only what the Head Office account can cover is sent; the rest waits", async () => {
     await setUpAccounts();
     await addClient(abuja);
@@ -351,9 +346,9 @@ describe("Head Office account checks", () => {
 });
 
 describe("Head Office balance", () => {
-  test("is read from the Monnify wallet once its number is set", async () => {
-    expect(await (await get("balance")).json()).toMatchObject({ available: false, reason: expect.stringContaining("Head Office account number") });
-    await post("settings/wallet", { walletAccountNumber: "8000000001" });
+  test("is read from the Monnify wallet once it is set up", async () => {
+    expect(await (await get("balance")).json()).toMatchObject({ available: false, reason: expect.stringContaining("not set up yet") });
+    process.env.MONNIFY_WALLET_ACCOUNT = "8000000001";
     expect(await (await get("balance")).json()).toMatchObject({ available: true, availableKobo: 123_456_750, ledgerKobo: 130_000_000 });
   });
 });
