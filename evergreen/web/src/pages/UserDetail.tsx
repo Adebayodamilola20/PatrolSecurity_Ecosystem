@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Clock3, KeyRound, Mail, Pencil, Phone, ShieldCheck, User2, AlertTriangle, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Clock3, KeyRound, Mail, Pencil, Phone, QrCode, ShieldCheck, User2, AlertTriangle, Trash2, X } from 'lucide-react'
 import { api } from '../services/api'
 import { subscribeToScans, subscribeToShiftUpdates } from '../services/websocket'
 import { useCanManageUsers } from '../stores/useAuthStore'
@@ -508,7 +508,15 @@ export default function UserDetail() {
               return (
                 <div key={shift.id} className="rounded-lg border border-border/60 bg-background/40 p-3 text-sm">
                   <div className="flex items-center justify-between">
-                    <span className="font-medium">{formatDate(shift.clockIn)}</span>
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{formatDate(shift.clockIn)}</span>
+                      {/* Only "qr" earns a badge; GPS and older shifts are unchanged. */}
+                      {shift.checkInMethod === 'qr' && (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-success/15 px-1.5 py-0.5 text-[10px] font-semibold text-success">
+                          <QrCode className="h-3 w-3" /> Verified by QR
+                        </span>
+                      )}
+                    </span>
                     <span className={`flex items-center gap-1 text-xs font-semibold uppercase ${shift.status === 'active' ? 'text-success' : 'text-muted-foreground'}`}>
                       {late.late && <AlertTriangle className="h-3 w-3 text-warning" />}
                       {shift.status}

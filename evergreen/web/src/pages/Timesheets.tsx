@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { User, MapPin, Camera, CheckCircle, XCircle, Clock } from 'lucide-react'
+import { User, MapPin, Camera, CheckCircle, XCircle, Clock, QrCode } from 'lucide-react'
 import { api } from '../services/api'
 import { Skeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
@@ -93,6 +93,7 @@ export default function Timesheets() {
       clockOutLatitude: shift.clockOutLatitude ?? shift.clockoutlatitude ?? null,
       clockOutLongitude: shift.clockOutLongitude ?? shift.clockoutlongitude ?? null,
       status: shift.status ?? 'completed',
+      checkInMethod: shift.checkInMethod,
       scans: [],
       scanCount: 0,
       verifiedScans: 0,
@@ -321,6 +322,13 @@ export default function Timesheets() {
                       <div>
                         <div className="text-muted-foreground">Clock In</div>
                         <div className="text-sm font-medium">{t.clockIn ? formatDate(t.clockIn) : '-'}</div>
+                        {/* Only "qr" earns a badge. "gps" and shifts from before
+                            QR clock-in existed look exactly as they always did. */}
+                        {t.checkInMethod === 'qr' && (
+                          <span className="mt-0.5 inline-flex items-center gap-1 rounded-md bg-success/15 px-1.5 py-0.5 text-[10px] font-semibold text-success">
+                            <QrCode className="h-3 w-3" /> Verified by QR
+                          </span>
+                        )}
                         {mapsLink(t.clockInLatitude, t.clockInLongitude) ? (
                           <a
                             href={mapsLink(t.clockInLatitude, t.clockInLongitude)!}
