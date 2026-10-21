@@ -9,6 +9,7 @@ import {
   subscribeToShiftUpdates,
   subscribeToPositionUpdates,
 } from '../services/websocket'
+import { useCanManageUsers } from '../stores/useAuthStore'
 import type { Checkpoint, Scan, User } from '../types'
 
 type OfficerStatus = 'responding' | 'patrol' | 'onduty' | 'stale'
@@ -193,6 +194,25 @@ export function PatrolMap() {
   // view back out to the whole country.
   const didFitRef = useRef(false)
 
+  // GET /users is admin-only on the server. Asking for it as a supervisor only
+  // earns a 403 (and the app-wide error banner) on every refresh, and the
+  // rejection used to take the whole map down with it. Supervisors skip the
+  // roster and still get checkpoints and incidents.
+  const canListUsers = useCanManageUsers()
+  // Read inside the once-only map effect, so it travels by ref.
+  const canListUsersRef = useRef(canListUsers)
+  useEffect(() => {
+    canListUsersRef.current = canListUsers
+  }, [canListUsers])
+  // The last roster that loaded, so one failed /users refresh keeps the guards
+  // on screen instead of wiping them all until the next success.
+  const lastRosterRef = useRef<User[] | null>(null)
+  const rosterAvailableRef = useRef(true)
+  // 'adminOnly': this role cannot read the roster. 'failed': an admin whose
+  // first /users load failed — worth saying differently, it is not a policy.
+  const [rosterState, setRosterState] = useState<'ok' | 'adminOnly' | 'failed'>('ok')
+  const rosterAvailable = rosterState === 'ok'
+
   const [officers, setOfficers] = useState<OfficerRow[]>([])
   const [counts, setCounts] = useState({
     onDuty: 0,
@@ -304,6 +324,7 @@ export function PatrolMap() {
     if (!ref.current || mapRef.current || !ref.current.isConnected) return
 
     let disposed = false
+    let teardownLive: (() => void) | null = null
 
     const clearMarkers = (markers: any[]) => {
       markers.forEach((marker) => marker.setMap(null))
@@ -411,7 +432,11 @@ export function PatrolMap() {
         .filter((user) => user.role === 'guard' && user.onDuty)
         .forEach((user) => {
           const lastScan = latestByOfficer.get(user.id)
-          const siteName = user.sites?.[0]?.name ?? null
+          // GET /users carries assignedSiteNames, not site objects or ids —
+          // reading `sites` here labelled every guard "Unassigned area".
+          const siteName = user.assignedSiteNames?.length
+            ? user.assignedSiteNames.join(', ')
+            : null
           const existing = liveOfficersRef.current.get(user.id)
 
           // Where they are, in order of how much it is worth trusting: the
@@ -505,7 +530,7 @@ export function PatrolMap() {
         onDuty: onDutyGuards.length,
         responding: respondingCount,
         available: onDutyGuards.length - respondingCount,
-        unassigned: guards.filter((user) => !user.siteIds?.length && !user.sites?.length).length,
+        unassigned: guards.filter((user) => !user.assignedSiteNames?.length).length,
       })
       publishOfficers()
     }
@@ -530,23 +555,58 @@ export function PatrolMap() {
         mapRef.current = map
 
         const fetchAll = async () => {
-          const [checkpoints, users, scans, incidents] = await Promise.all([
+          const canList = canListUsersRef.current
+          const [checkpoints, fetchedUsers, scans, incidents] = await Promise.all([
             api.checkpoints.list(),
-            api.users.list(),
+            canList
+              ? (api.users.list() as Promise<User[]>).catch(() => null)
+              : Promise.resolve(null),
             api.scans.recent(),
             api.incidents.list({ status: 'open' }).catch(() => [] as any[]),
           ])
-          renderMapData(maps, checkpoints, users, scans, incidents)
+          // Unmounted (or re-initialised) while this was in flight: drawing
+          // now would paint onto a map that is gone or belongs to a newer run.
+          if (disposed) return
+          if (fetchedUsers) lastRosterRef.current = fetchedUsers
+          const users = canList ? (fetchedUsers ?? lastRosterRef.current) : null
+          rosterAvailableRef.current = users != null
+          setRosterState(users != null ? 'ok' : canList ? 'failed' : 'adminOnly')
+          renderMapData(maps, checkpoints, users ?? [], scans, incidents)
+        }
+
+        // Coalesced: several scans landing in one poll each ask for a refresh,
+        // and each refresh is four requests. One runs at a time; anything that
+        // asks meanwhile gets a single follow-up run, not one apiece.
+        let refreshing = false
+        let refreshQueued = false
+        const refresh = () => {
+          if (disposed) return
+          if (refreshing) {
+            refreshQueued = true
+            return
+          }
+          refreshing = true
+          // Live refreshes are best-effort: a failed refetch keeps the last
+          // good picture on screen rather than throwing an unhandled rejection.
+          void fetchAll()
+            .catch(() => {})
+            .finally(() => {
+              refreshing = false
+              if (refreshQueued) {
+                refreshQueued = false
+                refresh()
+              }
+            })
         }
 
         await fetchAll()
+        // Navigated away during the first load. The cleanup already ran, so
+        // subscribing now would leak four subscriptions and the interval
+        // below until a full page reload.
+        if (disposed) return
 
-        const unsubScans = subscribeToScans(async () => {
-          await fetchAll()
-        })
-        const unsubShifts = subscribeToShiftUpdates(async () => {
-          await fetchAll()
-        })
+        const unsubScans = subscribeToScans(refresh)
+        const unsubShifts = subscribeToShiftUpdates(refresh)
         const unsubIncidents = subscribeToIncidents((incident: any) => {
           setLatestIncident({
             id: incident.id,
@@ -558,11 +618,14 @@ export function PatrolMap() {
           })
           // A fresh incident may flip a guard to "responding" — refetch so the
           // panel and pins reflect it.
-          void fetchAll()
+          refresh()
         })
         const unsubPositions = subscribeToPositionUpdates((data: any) => {
           const map = mapRef.current
           if (!map || !maps) return
+          // Without the roster there is no on-duty list to keep a pin honest
+          // against; the next refresh would only remove it again.
+          if (!rosterAvailableRef.current) return
 
           const existing = liveOfficersRef.current.get(data.userId)
           if (existing) {
@@ -584,9 +647,11 @@ export function PatrolMap() {
           publishOfficers()
         })
 
-        const poll = window.setInterval(fetchAll, 30000)
+        const poll = window.setInterval(refresh, 30000)
 
-        ;(mapRef.current as any).__cleanup = () => {
+        // Held in this effect's closure, not on the map object: the cleanup
+        // below nulls mapRef, so anything parked there could be orphaned.
+        teardownLive = () => {
           unsubScans()
           unsubShifts()
           unsubIncidents()
@@ -594,6 +659,7 @@ export function PatrolMap() {
           window.clearInterval(poll)
         }
       } catch (error) {
+        if (disposed) return
         setMapError(
           error instanceof Error
             ? error.message
@@ -606,9 +672,8 @@ export function PatrolMap() {
 
     return () => {
       disposed = true
-      if (mapRef.current?.__cleanup) {
-        mapRef.current.__cleanup()
-      }
+      teardownLive?.()
+      teardownLive = null
       clearMarkers(checkpointMarkersRef.current)
       clearMarkers(scanMarkersRef.current)
       officerMarkersRef.current.forEach((marker) => marker.setMap(null))
@@ -679,7 +744,10 @@ export function PatrolMap() {
               { label: 'Unassn', value: counts.unassigned, tone: 'text-muted-foreground' },
             ].map((stat) => (
               <div key={stat.label} className="px-1 py-2.5">
-                <div className={`text-lg font-semibold ${stat.tone}`}>{stat.value}</div>
+                <div className={`text-lg font-semibold ${stat.tone}`}>
+                  {/* Zeros would read as "nobody on duty", which is not known. */}
+                  {rosterAvailable ? stat.value : '—'}
+                </div>
                 <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{stat.label}</div>
               </div>
             ))}
@@ -689,7 +757,15 @@ export function PatrolMap() {
             <div className="px-4 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
               Guards ({officers.length})
             </div>
-            {officers.length === 0 ? (
+            {rosterState === 'adminOnly' ? (
+              <div className="px-4 py-6 text-center text-xs text-muted-foreground">
+                Guard locations are shown to admins only.
+              </div>
+            ) : rosterState === 'failed' ? (
+              <div className="px-4 py-6 text-center text-xs text-muted-foreground">
+                Could not load guards. Retrying shortly.
+              </div>
+            ) : officers.length === 0 ? (
               <div className="px-4 py-6 text-center text-xs text-muted-foreground">
                 No guards on duty right now.
               </div>
@@ -738,7 +814,7 @@ export function PatrolMap() {
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
           </span>
-          Guard Tracking · {counts.onDuty}
+          Guard Tracking · {rosterAvailable ? counts.onDuty : '—'}
         </button>
       )}
 
