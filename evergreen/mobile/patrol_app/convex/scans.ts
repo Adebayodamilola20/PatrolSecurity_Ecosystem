@@ -303,14 +303,30 @@ export function scanRefusal(details: string, message: string): Error {
   return new Error(SCAN_REFUSED_PREFIX + JSON.stringify({ details, message }));
 }
 
+/**
+ * The JSON a refusal marker carries, wherever it sits in the message.
+ *
+ * A deployed Convex hands a mutation's error to the calling action as
+ * "Uncaught Error: <message>" followed by a stack line, so the marker is not at
+ * the start. This used to require it there, which only the test harness
+ * satisfies: in production every refusal fell through to a bare 500 and the
+ * guard saw "Failed to submit scan" instead of the reason. JSON.stringify
+ * escapes newlines, so the payload always ends at the first real one.
+ */
+export function markedPayload(error: unknown, prefix: string): string | null {
+  if (!(error instanceof Error)) return null;
+  const at = error.message.indexOf(prefix);
+  if (at === -1) return null;
+  return error.message.slice(at + prefix.length).split("\n")[0].trim();
+}
+
 export function parseScanRefusal(
   error: unknown,
 ): { details: string; message: string } | null {
-  if (!(error instanceof Error) || !error.message.startsWith(SCAN_REFUSED_PREFIX)) {
-    return null;
-  }
+  const payload = markedPayload(error, SCAN_REFUSED_PREFIX);
+  if (payload === null) return null;
   try {
-    return JSON.parse(error.message.slice(SCAN_REFUSED_PREFIX.length));
+    return JSON.parse(payload);
   } catch {
     return { details: "Scan refused", message: "This scan could not be accepted." };
   }

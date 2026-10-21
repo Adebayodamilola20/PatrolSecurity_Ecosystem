@@ -5,6 +5,7 @@ import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { distanceMeters } from "./lib/geo";
 import { deletedNamesByType } from "./lib/tombstones";
+import { markedPayload } from "./scans";
 
 /**
  * Was this clock-in taken inside the geofence of a location the guard is
@@ -153,11 +154,11 @@ export function clockInRefusal(details: string, message: string): Error {
 export function parseClockInRefusal(
   error: unknown,
 ): { details: string; message: string } | null {
-  if (!(error instanceof Error) || !error.message.startsWith(CLOCK_IN_REFUSED_PREFIX)) {
-    return null;
-  }
+  // Same production error shape as scans; see markedPayload.
+  const payload = markedPayload(error, CLOCK_IN_REFUSED_PREFIX);
+  if (payload === null) return null;
   try {
-    return JSON.parse(error.message.slice(CLOCK_IN_REFUSED_PREFIX.length));
+    return JSON.parse(payload);
   } catch {
     return {
       details: "Clock-in refused",

@@ -19,7 +19,8 @@ import schema from "./schema";
 import { internal } from "./_generated/api";
 import { signPatrolToken } from "./lib/jwt";
 import { signPhotoToken } from "./lib/photoRefs";
-import { resolveScannedAt } from "./scans";
+import { parseScanRefusal, resolveScannedAt, scanRefusal } from "./scans";
+import { clockInRefusal, parseClockInRefusal } from "./shifts";
 import { getRateLimit } from "./lib/rateLimiter";
 import bcrypt from "bcryptjs";
 import type { Id } from "./_generated/dataModel";
@@ -2942,5 +2943,38 @@ describe("login locks an account after five wrong passwords", () => {
       body: JSON.stringify({ email: "someone.else@example.test", password: "wrong" }),
     });
     expect(other.status).toBe(401);
+  });
+});
+
+describe("refusals survive the error shape a deployed Convex produces", () => {
+  // A deployed backend passes a mutation's error to the calling action as
+  // "Uncaught Error: <message>" plus a stack line. The test harness does not, so
+  // every other test here passes the bare message and would never notice.
+  const deployed = (inner: Error) =>
+    new Error(`Uncaught Error: ${inner.message}\n    at handler (../convex/scans.ts:435:6)\n`);
+
+  test("a scan refusal is still read, so the guard gets the reason and not a 500", () => {
+    const err = deployed(scanRefusal("Outside geofence", "You are 240m away from Training Class."));
+    expect(parseScanRefusal(err)).toEqual({
+      details: "Outside geofence",
+      message: "You are 240m away from Training Class.",
+    });
+  });
+
+  test("a clock-in refusal is still read", () => {
+    const err = deployed(clockInRefusal("Outside fence", "You are 3.2km from Head Office."));
+    expect(parseClockInRefusal(err)).toEqual({
+      details: "Outside fence",
+      message: "You are 3.2km from Head Office.",
+    });
+  });
+
+  test("the bare form still works", () => {
+    expect(parseScanRefusal(scanRefusal("d", "m"))).toEqual({ details: "d", message: "m" });
+  });
+
+  test("an unrelated failure is not mistaken for a refusal", () => {
+    expect(parseScanRefusal(new Error("Uncaught Error: Checkpoint not found"))).toBeNull();
+    expect(parseClockInRefusal(new Error("Uncaught Error: boom"))).toBeNull();
   });
 });
