@@ -2978,3 +2978,37 @@ describe("refusals survive the error shape a deployed Convex produces", () => {
     expect(parseClockInRefusal(new Error("Uncaught Error: boom"))).toBeNull();
   });
 });
+
+describe("Sentry rejections say why", () => {
+  test("the response body is logged, without the DSN or key", async () => {
+    const { reportException } = await import("./lib/sentry");
+    const key = "abcdef0123456789abcdef0123456789";
+    const savedDsn = process.env.SENTRY_DSN;
+    const savedFetch = globalThis.fetch;
+    const logged: string[] = [];
+    const savedError = console.error;
+    process.env.SENTRY_DSN = `https://${key}@o1.ingest.sentry.io/42`;
+    globalThis.fetch = (async () =>
+      new Response(
+        `{"detail":"event submission rejected with_reason: ProjectId",\n"key":"${key}"}`,
+        { status: 403, statusText: "Forbidden" },
+      )) as typeof fetch;
+    console.error = (...args: unknown[]) => {
+      logged.push(args.map(String).join(" "));
+    };
+    try {
+      expect(await reportException(new Error("boom"))).toBe("failed");
+    } finally {
+      console.error = savedError;
+      globalThis.fetch = savedFetch;
+      if (savedDsn === undefined) delete process.env.SENTRY_DSN;
+      else process.env.SENTRY_DSN = savedDsn;
+    }
+    const line = logged.find((l) => l.includes("Sentry rejected an event"));
+    expect(line).toBeDefined();
+    expect(line).toContain("403");
+    expect(line).toContain("event submission rejected with_reason: ProjectId");
+    expect(line).not.toContain(key);
+    expect(line).not.toContain("\n");
+  });
+});
