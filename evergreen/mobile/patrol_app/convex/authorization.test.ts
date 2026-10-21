@@ -3521,6 +3521,180 @@ describe("the QR check-in setting is admin-controlled", () => {
   });
 });
 
+describe("every authenticated write is rate limited", () => {
+  /** Fills an actor's bucket for the current window, as a burst would. */
+  const exhaust = (action: string, actorId: Id<"users">) => {
+    const { maxRequests, windowMs } = getRateLimit(action);
+    const windowStart = Math.floor(Date.now() / windowMs) * windowMs;
+    const bucketKey = `${action}:${actorId}:${windowStart}`;
+    return t.run(async (ctx) => {
+      // Topped up in place if a request already opened this window's row:
+      // the limiter reads it with unique(), so a second row would be a fault.
+      const existing = await ctx.db
+        .query("rateLimits")
+        .filter((q) => q.eq(q.field("bucketKey"), bucketKey))
+        .first();
+      if (existing) return await ctx.db.patch(existing._id, { count: maxRequests });
+      await ctx.db.insert("rateLimits", {
+        bucketKey,
+        count: maxRequests,
+        windowStart,
+        expiresAt: windowStart + windowMs + 5000,
+      });
+    });
+  };
+
+  test("change-password allows five attempts in fifteen minutes, then 429", async () => {
+    const password = "Correct-Horse-1";
+    const userId = await t.run((ctx) =>
+      ctx.db.insert("users", {
+        name: "Password Target", email: "pw.target@example.test",
+        passwordHash: bcrypt.hashSync(password, 4), role: "admin",
+        phone: "+2348000000000", active: true, liveTracking: false, createdAt: Date.now(),
+      }),
+    );
+    const token = await signPatrolToken({ userId, email: "pw.target@example.test", role: "admin" });
+    const attempt = (currentPassword: string) =>
+      t.fetch("/auth/change-password", {
+        method: "POST",
+        headers: auth(token),
+        body: JSON.stringify({ currentPassword, newPassword: "Brand-New-Pass-9" }),
+      });
+    for (let i = 0; i < 5; i++) {
+      expect((await attempt("wrong-guess")).status).toBe(401);
+    }
+    expect((await attempt("wrong-guess")).status).toBe(429);
+    // Capped means capped: the right password does not get through either.
+    expect((await attempt(password)).status).toBe(429);
+    expect(getRateLimit("changePassword")).toEqual({ windowMs: 15 * 60 * 1000, maxRequests: 5 });
+  });
+
+  test("a guard past the write limit cannot clock in, and nothing is written", async () => {
+    await exhaust("write", w.alphaGuard);
+    const res = await t.fetch("/shifts/clock-in", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({ gpsLatitude: 6.6018, gpsLongitude: 3.3515 }),
+    });
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).not.toBeNull();
+    expect(await t.run((ctx) => ctx.db.query("shifts").collect())).toHaveLength(0);
+  });
+
+  test("an admin past the write limit cannot edit locations or settings", async () => {
+    await exhaust("write", w.admin);
+    const site = await t.fetch("/sites", {
+      method: "POST",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({ name: "New Site", clientId: w.alphaClient, location: "Ikeja" }),
+    });
+    expect(site.status).toBe(429);
+    const setting = await t.fetch("/settings/check-in", {
+      method: "PUT",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({ requireQrCheckIn: true }),
+    });
+    expect(setting.status).toBe(429);
+  });
+
+  test("the limit is per person: another guard is unaffected", async () => {
+    await exhaust("write", w.alphaGuard);
+    const res = await t.fetch("/shifts/clock-in", {
+      method: "POST",
+      headers: auth(w.tokens.alphaRelief),
+      body: JSON.stringify({ gpsLatitude: 6.6018, gpsLongitude: 3.3515 }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  test("the daily export is charged to the export bucket, not the write bucket", async () => {
+    const exportDaily = () =>
+      t.fetch("/scans/export/daily", {
+        method: "POST",
+        headers: auth(w.tokens.admin),
+        body: JSON.stringify({ date: "2026-10-01" }),
+      });
+    // A full write bucket does not stop it...
+    await exhaust("write", w.admin);
+    expect((await exportDaily()).status).toBe(200);
+    // ...a full export bucket does.
+    await exhaust("export", w.admin);
+    expect((await exportDaily()).status).toBe(429);
+  });
+
+  test("report generation is charged to the report bucket", async () => {
+    await exhaust("report", w.admin);
+    const res = await t.fetch("/reports/generate", {
+      method: "POST",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(429);
+  });
+
+  test("every authenticated write route is limited exactly once", async () => {
+    // A structural check, so the next route added without a limit fails here
+    // rather than in production. Exempt: /auth/* (own buckets, pre-auth),
+    // /dev/seed (secret-protected, no user), and the two AI chat routes, which
+    // run their own per-user minute and day caps (ai.checkAndIncrementRateLimit).
+    const source = (await import("./http.ts?raw")).default as string;
+    const exempt = new Set(["POST /dev/seed", "POST /ai/chat", "POST /api/v1/ai/chat"]);
+    const offenders: string[] = [];
+    let checked = 0;
+    for (const block of source.split(/\nhttp\.route\(\{/).slice(1)) {
+      const head = block.slice(0, 300);
+      const method = head.match(/\bmethod:\s*"([^"]+)"/)?.[1] ?? "";
+      if (!["POST", "PUT", "PATCH", "DELETE"].includes(method)) continue;
+      const route = head.match(/\bpath:\s*"([^"]+)"/)?.[1] ?? `${head.match(/\bpathPrefix:\s*"([^"]+)"/)?.[1]}*`;
+      const key = `${method} ${route}`;
+      if (exempt.has(key) || route.startsWith("/auth/")) continue;
+      checked++;
+      const limits = block.match(/enforceLimit\(/g)?.length ?? 0;
+      if (limits !== 1) offenders.push(`${key} (${limits})`);
+    }
+    expect(checked).toBeGreaterThan(50);
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("GET /scans honours ?limit=", () => {
+  beforeEach(async () => {
+    await t.run(async (ctx) => {
+      const base = Date.now() - 60 * 60 * 1000;
+      for (let i = 0; i < 3; i++) {
+        await ctx.db.insert("scans", {
+          clientId: w.alphaClient, siteId: w.alphaSite, officerId: w.alphaGuard,
+          checkpointId: w.alphaCheckpoint, scannedAt: base + i * 60000,
+          receivedAt: base + i * 60000, gpsValid: true, notes: "",
+        });
+      }
+    });
+  });
+  const count = async (query: string) => {
+    const res = await t.fetch(`/scans${query}`, { headers: auth(w.tokens.admin) });
+    expect(res.status).toBe(200);
+    return (await res.json()).length;
+  };
+
+  test("a smaller limit returns fewer rows, newest first", async () => {
+    expect(await count("?limit=2")).toBe(2);
+    expect(await count("?limit=1")).toBe(1);
+  });
+
+  test("absent or unusable values keep the old default", async () => {
+    expect(await count("")).toBe(3);
+    expect(await count("?limit=abc")).toBe(3);
+    expect(await count("?limit=")).toBe(3);
+  });
+
+  test("values are clamped to 1..1000 rather than refused", async () => {
+    expect(await count("?limit=0")).toBe(1);
+    expect(await count("?limit=-5")).toBe(1);
+    expect(await count("?limit=2.9")).toBe(2);
+    expect(await count("?limit=999999")).toBe(3);
+  });
+});
+
 describe("Sentry rejections say why", () => {
   test("the response body is logged, without the DSN or key", async () => {
     const { reportException } = await import("./lib/sentry");

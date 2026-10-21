@@ -1122,6 +1122,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+    if (writeLimited) return writeLimited;
     const roleErr = requireRole(user, ["admin"]);
     if (roleErr) return roleErr;
 
@@ -1510,6 +1512,8 @@ http.route({
     // SECURITY: requires a real authenticated admin session.
     const user = await requireAuth(ctx, request)
     if (!user) return unauthorized()
+    const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true })
+    if (writeLimited) return writeLimited
     if (user.role !== "admin") {
       return forbidden("Admin access required")
     }
@@ -1645,6 +1649,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const passwordLimited = await enforceLimit(ctx, "changePassword", user.convexId, { skipGlobal: true });
+    if (passwordLimited) return passwordLimited;
     const pendingPassOn = await requireNoPendingPassOnLogs(ctx, user);
     if (pendingPassOn) return pendingPassOn;
     const body = await parseJson(request);
@@ -1803,6 +1809,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+    if (writeLimited) return writeLimited;
     const pendingPassOn = await requireNoPendingPassOnLogs(ctx, user);
     if (pendingPassOn) return pendingPassOn;
     const id = lastPathPart(request, 1);
@@ -1946,6 +1954,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+    if (writeLimited) return writeLimited;
     const action = lastPathPart(request);
     const id = lastPathPart(request, 1);
     // /resolve is kept as a shorthand for the last step so existing callers
@@ -1989,6 +1999,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+    if (writeLimited) return writeLimited;
     if (user.role !== "admin") {
       return forbidden("Admin access required");
     }
@@ -2200,6 +2212,25 @@ http.route({
   }),
 });
 
+/**
+ * How many scans GET /scans returns: `?limit=` when it is a usable number,
+ * clamped to 1..1000, else the 1000 this route has always returned.
+ *
+ * The parameter used to be ignored outright, so a screen that wanted the last
+ * ten scans was sent a thousand rows with guard, checkpoint and tombstone
+ * names joined onto each. The ceiling stays where it was — this lets callers
+ * ask for less, never for more — and anything unparseable falls back to the
+ * old behaviour rather than to an error a released client cannot handle.
+ */
+const SCAN_LIST_MAX = 1000;
+
+function scanListLimit(raw: string | null): number {
+  if (raw == null || raw.trim() === "") return SCAN_LIST_MAX;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return SCAN_LIST_MAX;
+  return Math.min(SCAN_LIST_MAX, Math.max(1, Math.floor(parsed)));
+}
+
 http.route({
   path: "/scans",
   method: "GET",
@@ -2229,7 +2260,7 @@ http.route({
         checkpointId,
         startDate: startDate != null && !Number.isNaN(startDate) ? startDate : undefined,
         endDate: endDate != null && !Number.isNaN(endDate) ? endDate : undefined,
-        limit: 1000,
+        limit: scanListLimit(url.searchParams.get("limit")),
       }),
     );
   }),
@@ -2241,6 +2272,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+    if (writeLimited) return writeLimited;
     if (user.role === "guard") {
       return forbidden("Supervisor access required");
     }
@@ -2367,6 +2400,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const exportLimited = await enforceLimit(ctx, "export", user.convexId);
+    if (exportLimited) return exportLimited;
     if (!isExportRole(user.role)) {
       return forbidden("Only Admin and Main Account can request exports");
     }
@@ -2465,6 +2500,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+    if (writeLimited) return writeLimited;
     const roleErr = requireRole(user, ["guard", "supervisor"]);
     if (roleErr) return roleErr;
     const body = await parseJson(request);
@@ -2536,6 +2573,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+    if (writeLimited) return writeLimited;
     const roleErr = requireRole(user, ["guard", "supervisor"]);
     if (roleErr) return roleErr;
     const activeShift = await ctx.runQuery(internal.shifts.getActiveForUser, { userId: _uid(user.convexId) });
@@ -2892,6 +2931,8 @@ http.route({
     // recipient — this route resolves ids, it does not vouch for them.
     const user = await requireAuth(ctx, request, { allowClientPortal: true });
     if (!user) return unauthorized();
+    const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+    if (writeLimited) return writeLimited;
     const roleErr = requireRole(user, ["admin", "main_account", "supervisor"]);
     if (roleErr) return roleErr;
     const body = await parseJson(request);
@@ -2965,6 +3006,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+    if (writeLimited) return writeLimited;
     const id = lastPathPart(request, 1);
     const action = lastPathPart(request);
     if (!id || action !== "acknowledge") {
@@ -3031,6 +3074,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+    if (writeLimited) return writeLimited;
     const roleErr = requireRole(user, ["admin", "main_account", "supervisor"]);
     if (roleErr) return roleErr;
     const id = lastPathPart(request);
@@ -3053,6 +3098,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+    if (writeLimited) return writeLimited;
     const id = lastPathPart(request, 1);
     const action = lastPathPart(request);
     if (!id) return notFound("Post order route not found");
@@ -3134,6 +3181,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+    if (writeLimited) return writeLimited;
     const roleErr = requireRole(user, ["guard"]);
     if (roleErr) return roleErr;
     const body = await parseJson(request);
@@ -3185,6 +3234,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+    if (writeLimited) return writeLimited;
     const id = lastPathPart(request, 1);
     const action = lastPathPart(request);
     if (!id) return badRequest("Handover ID required");
@@ -3251,6 +3302,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+    if (writeLimited) return writeLimited;
     const roleErr = requireRole(user, ["guard"]);
     if (roleErr) return roleErr;
     const body = await parseJson(request);
@@ -3278,6 +3331,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+    if (writeLimited) return writeLimited;
     const id = lastPathPart(request, 1);
     const action = lastPathPart(request);
     if (!id || action !== "check-out") return notFound("Visitor route not found");
@@ -3310,6 +3365,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+    if (writeLimited) return writeLimited;
     const roleErr = requireRole(user, ["guard"]);
     if (roleErr) return roleErr;
     const body = await parseJson(request);
@@ -3336,6 +3393,8 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const user = await requireAuth(ctx, request);
     if (!user) return unauthorized();
+    const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+    if (writeLimited) return writeLimited;
     const id = lastPathPart(request, 1);
     const action = lastPathPart(request);
     if (!id || action !== "check-out") return notFound("Truck route not found");
@@ -3407,6 +3466,8 @@ http.route({ pathPrefix: "/scans/", method: "GET", handler: httpAction(async (ct
 http.route({ path: "/checkpoints", method: "POST", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const roleErr = requireRole(user, ["admin", "main_account", "supervisor"]);
   if (roleErr) return roleErr;
   const body = await parseJson(request);
@@ -3446,6 +3507,8 @@ http.route({ path: "/checkpoints", method: "POST", handler: httpAction(async (ct
 http.route({ pathPrefix: "/checkpoints/", method: "PUT", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const roleErr = requireRole(user, ["admin", "main_account"]);
   if (roleErr) return roleErr;
   const id = lastPathPart(request);
@@ -3473,6 +3536,8 @@ http.route({ pathPrefix: "/checkpoints/", method: "PUT", handler: httpAction(asy
 http.route({ pathPrefix: "/checkpoints/", method: "DELETE", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const roleErr = requireRole(user, ["admin"]);
   if (roleErr) return roleErr;
   const id = lastPathPart(request);
@@ -3519,6 +3584,8 @@ http.route({ path: "/reports", method: "GET", handler: httpAction(async (ctx, re
 http.route({ path: "/reports", method: "POST", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const roleErr = requireRole(user, ["admin", "supervisor"]);
   if (roleErr) return roleErr;
   const body = await parseJson(request);
@@ -3558,6 +3625,8 @@ http.route({ path: "/reports", method: "POST", handler: httpAction(async (ctx, r
 http.route({ path: "/reports/generate", method: "POST", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const reportLimited = await enforceLimit(ctx, "report", user.convexId);
+  if (reportLimited) return reportLimited;
   const body = await parseJson(request);
   return json(await ctx.runMutation(internal.reports.generate, {
     userId: _uid(user.convexId), type: body?.type, dateRange: body?.dateRange,
@@ -3570,6 +3639,8 @@ http.route({ path: "/reports/generate", method: "POST", handler: httpAction(asyn
 http.route({ pathPrefix: "/reports/", method: "POST", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const id = lastPathPart(request, 1);
   const action = lastPathPart(request);
   if (!id || (action !== "send" && action !== "resend")) {
@@ -3669,6 +3740,8 @@ http.route({ path: "/users", method: "GET", handler: httpAction(async (ctx, requ
 http.route({ path: "/users", method: "POST", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const roleErr = requireRole(user, ["admin"]);
   if (roleErr) return roleErr;
   const body = await parseJson(request);
@@ -3704,6 +3777,8 @@ http.route({ path: "/users", method: "POST", handler: httpAction(async (ctx, req
 http.route({ pathPrefix: "/users/", method: "PUT", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const roleErr = requireRole(user, ["admin"]);
   if (roleErr) return roleErr;
   const id = lastPathPart(request);
@@ -3741,6 +3816,8 @@ http.route({ pathPrefix: "/users/", method: "PUT", handler: httpAction(async (ct
 http.route({ path: "/users/reset-password", method: "POST", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const roleErr = requireRole(user, ["admin"]);
   if (roleErr) return roleErr;
   const body = await parseJson(request);
@@ -3807,6 +3884,8 @@ http.route({ path: "/deletion-impact", method: "GET", handler: httpAction(async 
 http.route({ pathPrefix: "/users/", method: "DELETE", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const roleErr = requireRole(user, ["admin"]);
   if (roleErr) return roleErr;
   const id = lastPathPart(request);
@@ -3881,6 +3960,8 @@ http.route({ path: "/incidents", method: "GET", handler: httpAction(async (ctx, 
 http.route({ pathPrefix: "/incidents/", method: "PATCH", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const id = lastPathPart(request, 1);
   const action = lastPathPart(request);
   if (!id || action !== "status") return notFound("Incident route not found");
@@ -4016,6 +4097,8 @@ http.route({ path: "/post-orders/completions", method: "GET", handler: httpActio
 http.route({ path: "/post-orders", method: "POST", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const roleErr = requireRole(user, ["admin", "main_account", "supervisor"]);
   if (roleErr) return roleErr;
   const body = await parseJson(request);
@@ -4069,6 +4152,8 @@ http.route({ path: "/post-orders", method: "POST", handler: httpAction(async (ct
 http.route({ pathPrefix: "/post-orders/", method: "PUT", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const roleErr = requireRole(user, ["admin", "main_account", "supervisor"]);
   if (roleErr) return roleErr;
   const id = lastPathPart(request);
@@ -4129,6 +4214,8 @@ http.route({ pathPrefix: "/post-orders/", method: "PUT", handler: httpAction(asy
 http.route({ pathPrefix: "/post-orders/completions/", method: "PATCH", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const roleErr = requireRole(user, ["admin", "supervisor"]);
   if (roleErr) return roleErr;
   const id = lastPathPart(request, 1);
@@ -4180,6 +4267,8 @@ http.route({ path: "/clients", method: "GET", handler: httpAction(async (ctx, re
 http.route({ path: "/clients", method: "POST", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const roleErr = requireRole(user, ["admin"]);
   if (roleErr) return roleErr;
   const body = await parseJson(request);
@@ -4235,6 +4324,8 @@ http.route({ pathPrefix: "/clients/", method: "GET", handler: httpAction(async (
 http.route({ pathPrefix: "/clients/", method: "PUT", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const roleErr = requireRole(user, ["admin"]);
   if (roleErr) return roleErr;
   const id = lastPathPart(request);
@@ -4281,6 +4372,8 @@ http.route({ path: "/client/sites", method: "GET", handler: httpAction(async (ct
 http.route({ path: "/site-assignments", method: "POST", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const roleErr = requireRole(user, ["admin", "supervisor"]);
   if (roleErr) return roleErr;
   const body = await parseJson(request);
@@ -4299,6 +4392,8 @@ http.route({ path: "/site-assignments", method: "POST", handler: httpAction(asyn
 http.route({ path: "/site-assignments", method: "DELETE", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const roleErr = requireRole(user, ["admin", "supervisor"]);
   if (roleErr) return roleErr;
   const body = await parseJson(request);
@@ -4319,6 +4414,8 @@ http.route({ path: "/site-assignments", method: "DELETE", handler: httpAction(as
 http.route({ path: "/observations", method: "POST", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const body = await parseJson(request);
   const checkpointId = await maybeResolveCheckpointId(ctx, body?.checkpointId);
   const siteId = body?.siteId
@@ -4360,6 +4457,8 @@ http.route({ path: "/observations", method: "GET", handler: httpAction(async (ct
 http.route({ pathPrefix: "/observations/", method: "POST", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const roleErr = requireRole(user, ["admin", "supervisor"]);
   if (roleErr) return roleErr;
   const action = lastPathPart(request);
@@ -4394,6 +4493,8 @@ http.route({ path: "/clients/deletion-impact", method: "GET", handler: httpActio
 http.route({ pathPrefix: "/clients/", method: "DELETE", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const roleErr = requireRole(user, ["admin"]);
   if (roleErr) return roleErr;
   const clientId = await ctx.runQuery(internal.clients.resolveId, { id: lastPathPart(request) });
@@ -4432,6 +4533,8 @@ http.route({ path: "/checkpoint-assignments", method: "GET", handler: httpAction
 http.route({ path: "/checkpoint-assignments", method: "POST", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const roleErr = requireRole(user, ["admin", "supervisor"]);
   if (roleErr) return roleErr;
   const body = await parseJson(request);
@@ -4450,6 +4553,8 @@ http.route({ path: "/checkpoint-assignments", method: "POST", handler: httpActio
 http.route({ path: "/checkpoint-assignments", method: "DELETE", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const roleErr = requireRole(user, ["admin", "supervisor"]);
   if (roleErr) return roleErr;
   const body = await parseJson(request);
@@ -4537,6 +4642,8 @@ http.route({ path: "/client/reports", method: "GET", handler: httpAction(async (
 http.route({ pathPrefix: "/sites/", method: "DELETE", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const roleErr = requireRole(user, ["admin"]);
   if (roleErr) return roleErr;
   const id = lastPathPart(request);
@@ -4632,6 +4739,8 @@ http.route({ path: "/sites", method: "GET", handler: httpAction(async (ctx, requ
 http.route({ path: "/sites", method: "POST", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   const roleErr = requireRole(user, ["admin", "main_account"]);
   if (roleErr) return roleErr;
   const body = await parseJson(request);
@@ -4692,6 +4801,8 @@ http.route({ path: "/ai/architecture", method: "GET", handler: httpAction(async 
 http.route({ pathPrefix: "/sites/", method: "PUT", handler: httpAction(async (ctx, request) => {
   const user = await requireAuth(ctx, request);
   if (!user) return unauthorized();
+  const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+  if (writeLimited) return writeLimited;
   if (user.role === "guard") return forbidden("Supervisor access required");
   const id = lastPathPart(request);
   if (!id) return badRequest("Site ID required");
