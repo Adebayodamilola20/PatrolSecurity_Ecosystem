@@ -1,4 +1,6 @@
 import { internalMutation, internalQuery } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { findDeletedCheckpoint, recordTombstone } from "./lib/tombstones";
 import { isAssignedToSite, isAssignedUnderClient } from "./lib/authHelpers";
@@ -507,19 +509,34 @@ export const resolveId = internalQuery({
     id: v.string(),
   },
   handler: async (ctx, args) => {
-    const byLegacyId = await ctx.db
-      .query("checkpoints")
-      .withIndex("by_legacyId", (q) => q.eq("legacyId", args.id))
-      .unique();
-    if (byLegacyId) {
-      return byLegacyId._id;
-    }
-
-    // On the scan hot path: every scan the app submits comes through here.
-    // Reading every checkpoint in the system to confirm one id exists made
-    // this cost grow with the number of QR points deployed.
-    const normalized = ctx.db.normalizeId("checkpoints", args.id);
-    if (!normalized) return null;
-    return (await ctx.db.get(normalized)) ? normalized : null;
+    return await resolveCheckpointRef(ctx, args.id);
   },
 });
+
+/**
+ * The checkpoint a scanned id refers to: a legacy id first, then a Convex id.
+ *
+ * The one resolver behind both doors a QR comes through — POST /scans (via
+ * `resolveId` above) and the QR clock-in, which runs inside its mutation. If
+ * the two ever disagreed, a code accepted at the gate for clock-in would be
+ * "not recognised" a minute later when scanned on patrol, or the reverse.
+ */
+export async function resolveCheckpointRef(
+  ctx: QueryCtx | MutationCtx,
+  id: string,
+): Promise<Id<"checkpoints"> | null> {
+  const byLegacyId = await ctx.db
+    .query("checkpoints")
+    .withIndex("by_legacyId", (q) => q.eq("legacyId", id))
+    .unique();
+  if (byLegacyId) {
+    return byLegacyId._id;
+  }
+
+  // On the scan hot path: every scan the app submits comes through here.
+  // Reading every checkpoint in the system to confirm one id exists made
+  // this cost grow with the number of QR points deployed.
+  const normalized = ctx.db.normalizeId("checkpoints", id);
+  if (!normalized) return null;
+  return (await ctx.db.get(normalized)) ? normalized : null;
+}

@@ -427,6 +427,7 @@ export const getDetail = internalQuery({
         status: s.status,
         scheduledStart: s.scheduledStart ? new Date(s.scheduledStart).toISOString() : null,
         scheduledEnd: s.scheduledEnd ? new Date(s.scheduledEnd).toISOString() : null,
+        checkInMethod: s.checkInMethod,
         createdAt: new Date(s.createdAt).toISOString(),
       })),
       scans: scans.map((s) => ({

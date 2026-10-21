@@ -20,6 +20,7 @@ import { reportException } from "./lib/sentry";
 import { scopeFor, scopeArgs } from "./lib/scope";
 import { parseScanRefusal } from "./scans";
 import { parseClockInRefusal } from "./shifts";
+import { REQUIRE_QR_CHECK_IN_KEY } from "./settings";
 import { autocompletePlaces, hasPlacesKey, isPlaceId, placeLocation } from "./lib/places";
 
 const _uid = (s: string): Id<"users"> => s as Id<"users">;
@@ -2010,6 +2011,52 @@ http.route({
   }),
 });
 
+// Whether guards must scan the entrance QR to clock in. Supervisors may read
+// it — their app and the dashboard both need to know which clock-in to expect —
+// but only an admin may change it: switching it on changes how every guard in
+// the company starts work.
+http.route({
+  path: "/settings/check-in",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    const roleErr = requireRole(user, ["admin", "supervisor"]);
+    if (roleErr) return roleErr;
+    return json(await ctx.runQuery(internal.settings.getCheckIn, {}));
+  }),
+});
+
+http.route({
+  path: "/settings/check-in",
+  method: "PUT",
+  handler: httpAction(async (ctx, request) => {
+    const user = await requireAuth(ctx, request);
+    if (!user) return unauthorized();
+    const writeLimited = await enforceLimit(ctx, "write", user.convexId, { skipGlobal: true });
+    if (writeLimited) return writeLimited;
+    const roleErr = requireRole(user, ["admin"]);
+    if (roleErr) return roleErr;
+    const body = await parseJson(request);
+    // A boolean and nothing else. "false" as a string is truthy, and a switch
+    // that turns on when someone sends "false" is how a lock-out ships.
+    if (typeof body?.requireQrCheckIn !== "boolean") {
+      return badRequest("requireQrCheckIn must be true or false");
+    }
+    const before = await ctx.runQuery(internal.settings.getCheckIn, {});
+    const after = await ctx.runMutation(internal.settings.setCheckIn, {
+      requireQrCheckIn: body.requireQrCheckIn,
+      updatedBy: _uid(user.convexId),
+    });
+    await recordAudit(ctx, user, "settings.changed", {
+      targetType: "setting",
+      targetId: REQUIRE_QR_CHECK_IN_KEY,
+      details: `QR check-in requirement ${after.requireQrCheckIn ? "turned on" : "turned off"} (was ${before.requireQrCheckIn ? "on" : "off"})`,
+    });
+    return json(after);
+  }),
+});
+
 http.route({
   path: "/checkpoints",
   method: "GET",
@@ -2421,6 +2468,13 @@ http.route({
     const roleErr = requireRole(user, ["guard", "supervisor"]);
     if (roleErr) return roleErr;
     const body = await parseJson(request);
+    // The text the phone decoded from the entrance QR. Optional — older builds
+    // and the "Can't scan?" fallback send none — but if it is sent it must be
+    // text: quietly dropping a malformed one would fall back to a GPS clock-in
+    // the guard never asked for.
+    if (body?.locationCode != null && typeof body.locationCode !== "string") {
+      return badRequest("locationCode must be the text read from the QR code");
+    }
     // Direct upload: the phone has already put the bytes in storage and hands
     // us the id to validate and claim.
     let clockInPhotoRef: string | undefined;
@@ -2438,6 +2492,7 @@ http.route({
         gpsMocked: body?.gpsMocked === true,
         siteLabel: typeof body?.siteLabel === "string" ? body.siteLabel : undefined,
         clockInPhoto: clockInPhotoRef,
+        locationCode: typeof body?.locationCode === "string" ? body.locationCode : undefined,
       });
     } catch (err) {
       if (err instanceof Error && err.message.includes("Already clocked in")) {
@@ -2447,7 +2502,9 @@ http.route({
       // mutation threw to abort the shift, which rolled back anything it had
       // written — so the attempt is recorded here, outside that transaction,
       // where it actually commits. A guard repeatedly trying from home is
-      // precisely what this trail is for.
+      // precisely what this trail is for. Every QR check-in refusal (unknown
+      // code, patrol point, not posted, switched off, QR required) arrives
+      // through the same marker and lands here too.
       const refused = parseClockInRefusal(err);
       if (refused) {
         await recordAudit(ctx, user, "clock_in.refused", { details: refused.details });
@@ -2464,7 +2521,10 @@ http.route({
       await attachPhotos(ctx, user, [clockInPhotoRef], "shifts", String(result.shift.id));
     }
     await recordAudit(ctx, user, "clock_in.created", {
-      details: `Clock in at ${body?.siteLabel ?? "unknown site"}`,
+      details:
+        result.checkIn.method === "qr"
+          ? `Clock in at ${result.checkIn.siteName} by location QR`
+          : `Clock in at ${body?.siteLabel ?? "unknown site"}`,
     });
     return json(result, { status: 201 });
   }),
