@@ -8,6 +8,7 @@ import 'package:vibration/vibration.dart';
 
 import '../providers/shift_provider.dart';
 import '../utils/app_time.dart';
+import '../utils/routes.dart';
 import '../utils/theme.dart';
 
 /// Prompts around going on and off duty.
@@ -72,27 +73,35 @@ Widget _riseFromBottom(Animation<double> animation, Widget child) {
 
 /// Runs the duty toggle and reports the outcome.
 ///
-/// Clocking in gets the confirmation card, because the time the shift started
-/// is the thing an officer wants to be certain of and a snackbar was too small
-/// and too brief to carry it. Clocking out, and any failure, stays a snackbar —
-/// a card in the middle of the screen would be in the way of someone who is
-/// leaving.
+/// Clocking in goes through the location QR at the main entrance: the scanner
+/// screen does the clock-in and shows any failure itself, with the server's
+/// reason and a retry. Only a successful clock-in comes back here, and it gets
+/// the confirmation card, because the time the shift started is the thing an
+/// officer wants to be certain of and a snackbar was too small and too brief
+/// to carry it. Clocking out, and its failures, stay a snackbar — a card in the
+/// middle of the screen would be in the way of someone who is leaving.
 Future<void> handleDutyToggle(BuildContext context) async {
   final shift = context.read<ShiftProvider>();
-  final wasOnDuty = shift.onDuty;
-  final ok = wasOnDuty ? await shift.clockOut() : await shift.clockIn();
-  if (!context.mounted) return;
-
-  if (ok && !wasOnDuty) {
+  if (!shift.onDuty) {
+    final clockedIn = await Navigator.of(
+      context,
+    ).pushNamed<bool>(AppRoutes.clockIn);
+    if (clockedIn != true || !context.mounted) return;
+    final check = shift.lastCheckIn;
     // clockIn() reloads the shift, so the time here is the server's, not the
     // handset's. The fallback only covers a payload that never carried one.
     await showClockInConfirmation(
       context,
       clockInTime: shift.clockInTime ?? DateTime.now(),
       siteLabel: shift.siteLabel,
+      siteName: check?.siteName,
+      verified: check?.verified == true,
     );
     return;
   }
+
+  final ok = await shift.clockOut();
+  if (!context.mounted) return;
 
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
@@ -107,8 +116,12 @@ Future<void> handleDutyToggle(BuildContext context) async {
   );
 }
 
-/// Confirms a clock-in: rises to the centre, names the time the shift started,
-/// and chimes.
+/// Confirms a clock-in: rises to the centre, names where and when the shift
+/// started, and chimes.
+///
+/// [siteName] and [verified] come from the server's check-in details. An older
+/// server sends neither, and the card then just says "Clocked in" — it never
+/// claims a verification the server did not make.
 ///
 /// It closes itself after a few seconds so an officer who is already walking
 /// doesn't have to dismiss it, but stays tappable so anyone who wants it gone
@@ -117,6 +130,8 @@ Future<void> showClockInConfirmation(
   BuildContext context, {
   required DateTime clockInTime,
   String? siteLabel,
+  String? siteName,
+  bool verified = false,
 }) async {
   unawaited(_playChime('sounds/success.wav'));
   unawaited(() async {
@@ -183,23 +198,60 @@ Future<void> showClockInConfirmation(
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    "You're on duty",
+                    siteName != null && siteName.trim().isNotEmpty
+                        ? 'Clocked in at ${siteName.trim()}'
+                        : 'Clocked in',
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
                       color: AppTheme.text,
                     ),
                   ),
+                  if (verified) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.verified.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.verified_rounded,
+                            size: 16,
+                            color: AppTheme.verified,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Verified',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.verified,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 6),
                   Text(
-                    'Clocked in at ${AppTime.time(clockInTime)}',
+                    'Shift started at ${AppTime.time(clockInTime)}',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 15,
                       color: AppTheme.text,
                     ),
                   ),
-                  if (siteLabel != null && siteLabel.trim().isNotEmpty) ...[
+                  if ((siteName == null || siteName.trim().isEmpty) &&
+                      siteLabel != null &&
+                      siteLabel.trim().isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Text(
                       siteLabel,
