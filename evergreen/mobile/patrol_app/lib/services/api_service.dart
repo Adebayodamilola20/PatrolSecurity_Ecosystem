@@ -341,13 +341,18 @@ class ApiService {
         )
         .timeout(_timeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
+      // The server says why ("Invalid credentials", "Mobile access is
+      // restricted to guard accounts", a lockout). The throw used to sit inside
+      // the try, so its own catch swallowed it and every failure read "Unable
+      // to sign in", leaving guards and support with nothing to go on.
+      String? message;
       try {
         final body = jsonDecode(res.body);
         if (body is Map<String, dynamic> && body['message'] is String) {
-          throw Exception(body['message']);
+          message = body['message'] as String;
         }
       } catch (_) {}
-      throw Exception('Unable to sign in');
+      throw Exception(message ?? 'Unable to sign in');
     }
     final data = await _decodeBody<Map<String, dynamic>>(res.body);
     await _storage.write(key: 'patrol_token', value: data['token']);
