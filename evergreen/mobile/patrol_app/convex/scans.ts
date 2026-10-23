@@ -1,7 +1,8 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 import { distanceMeters } from "./lib/geo";
 import { deletedNamesByType } from "./lib/tombstones";
 
@@ -408,7 +409,6 @@ export const create = internalMutation({
       throw new Error("Checkpoint not found");
     }
     const officer = await ctx.db.get(args.officerId);
-    const clientId = checkpoint.clientId ?? officer?.clientId;
     const siteId = checkpoint.siteId;
 
     const receivedAt = Date.now();
@@ -567,22 +567,7 @@ export const create = internalMutation({
     }
 
     const scanSite = siteId ? await ctx.db.get(siteId) : null;
-    const fence =
-      checkpoint.latitude != null && checkpoint.longitude != null
-        ? {
-            lat: checkpoint.latitude,
-            lng: checkpoint.longitude,
-            radius: checkpoint.radiusMeters ?? 50,
-            label: checkpoint.name,
-          }
-        : scanSite?.latitude != null && scanSite?.longitude != null
-          ? {
-              lat: scanSite.latitude,
-              lng: scanSite.longitude,
-              radius: scanSite.radiusMeters ?? 150,
-              label: scanSite.name,
-            }
-          : null;
+    const fence = scanFence(checkpoint, scanSite);
 
     let computedDistance: number | undefined;
     let gpsValid = false;
@@ -607,34 +592,16 @@ export const create = internalMutation({
           `You are ${Math.round(computedDistance)}m away from ${fence.label}. Move within ${fence.radius}m of it and scan again.`,
         );
       }
-    } else {
-      // No geofence exists to check against. Blocking here would make a
-      // whole location unscannable over an admin's missing map pin, so the
-      // scan is kept but never counted as verified, and audited so the
-      // misconfiguration is visible rather than silent.
-      await ctx.runMutation(internal.audit.record, {
-        action: "scan.unverified",
-        actorId: args.officerId,
-        actorRole: officer?.role ?? "guard",
-        targetType: "checkpoint",
-        targetId: args.checkpointId,
-        details:
-          "Scan could not be GPS-verified: neither the sub-location nor its location has map coordinates",
-        clientId,
-        siteId,
-        success: true,
-      });
     }
+    // With no fence the scan is kept but never counted as verified — see
+    // recordAcceptedScan, which audits it so the gap is visible.
 
-    const scanId = await ctx.db.insert("scans", {
-      clientId,
-      siteId,
+    return await recordAcceptedScan(ctx, {
       officerId: args.officerId,
-      checkpointId: args.checkpointId,
+      officer,
+      checkpoint,
       shiftId: activeShift._id,
       scannedAt,
-      // Was `receivedAt: scannedAt`, which made the two identical on every row
-      // and quietly removed the only signal that a scan had been held back.
       receivedAt,
       deviceReportedAt: args.capturedAt,
       gpsLatitude: args.gpsLatitude,
@@ -642,131 +609,244 @@ export const create = internalMutation({
       gpsMocked: args.gpsMocked,
       gpsValid,
       distanceMeters: computedDistance,
-      notes: args.notes ?? "",
-      postOrdersRequired: false,
-      workflowStatus: "completed",
+      unverifiable: fence === null,
+      notes: args.notes,
     });
+  },
+});
 
-    const triggeredPostOrders = await postOrdersTriggeredByScan(
-      ctx,
-      args.checkpointId,
-      siteId,
-      args.officerId,
-    );
-    const requiredPostOrders = triggeredPostOrders.filter(
-      (order) => order.requiresAcknowledgement,
-    );
-    if (requiredPostOrders.length > 0) {
-      await ctx.db.patch(scanId, {
-        postOrdersRequired: true,
-        workflowStatus: "pending_post_order_ack",
-      });
-    }
+/**
+ * The geofence a scan of this checkpoint is measured against: the point's own
+ * coordinates when it has them, else its location's, else none at all.
+ *
+ * Shared with the QR clock-in, which records a scan of the location QR and has
+ * to measure it exactly as a normal scan would — two copies of this rule would
+ * drift, and the same QR would then be "verified" or not depending on which
+ * door the guard came through.
+ */
+export function scanFence(
+  checkpoint: Doc<"checkpoints">,
+  site: Doc<"sites"> | null,
+): { lat: number; lng: number; radius: number; label: string } | null {
+  if (checkpoint.latitude != null && checkpoint.longitude != null) {
+    return {
+      lat: checkpoint.latitude,
+      lng: checkpoint.longitude,
+      radius: checkpoint.radiusMeters ?? 50,
+      label: checkpoint.name,
+    };
+  }
+  if (site?.latitude != null && site?.longitude != null) {
+    return {
+      lat: site.latitude,
+      lng: site.longitude,
+      radius: site.radiusMeters ?? 150,
+      label: site.name,
+    };
+  }
+  return null;
+}
 
-    // No officerPositions row is written here. The scan itself already stores
-    // gpsLatitude/gpsLongitude/scannedAt, and the on-duty tracker records the
-    // guard's position independently — inserting a third copy of the same fix
-    // only inflated the largest table in the system.
+/**
+ * Writes a scan that has already passed every check, and everything that
+ * hangs off it: the scan row, its post-order workflow, the burst warning, the
+ * activity feed entry, the audit row and the missed-patrol alert it closes.
+ *
+ * Split out of `create` so the QR clock-in can record its location scan
+ * through the very same code. That scan has to be indistinguishable from one
+ * taken through POST /scans — the "location QR first" rule above looks for it,
+ * and reports, analytics and missed-patrol tracking all count it — and a hand
+ * copy of this list would be one forgotten side effect away from a scan that
+ * reads differently depending on how it was taken.
+ *
+ * Callers decide whether the scan may exist; this only records it.
+ */
+export async function recordAcceptedScan(
+  ctx: MutationCtx,
+  args: {
+    officerId: Id<"users">;
+    officer: Doc<"users"> | null;
+    checkpoint: Doc<"checkpoints">;
+    shiftId: Id<"shifts">;
+    scannedAt: number;
+    receivedAt: number;
+    deviceReportedAt?: number;
+    gpsLatitude?: number;
+    gpsLongitude?: number;
+    gpsMocked?: boolean;
+    gpsValid: boolean;
+    distanceMeters?: number;
+    /** No fence exists to measure against (see scanFence). */
+    unverifiable: boolean;
+    notes?: string;
+  },
+) {
+  const { officer, checkpoint, scannedAt } = args;
+  const checkpointId = checkpoint._id;
+  const clientId = checkpoint.clientId ?? officer?.clientId;
+  const siteId = checkpoint.siteId;
+  const gpsValid = args.gpsValid;
+  const computedDistance = args.distanceMeters;
 
-    const recentScans = await ctx.db
-      .query("scans")
-      .withIndex("by_officerId_scannedAt", (q) =>
-        q.eq("officerId", args.officerId).gte("scannedAt", scannedAt - 300000),
-      )
-      .collect();
-    if (recentScans.length > 10) {
-      await ctx.runMutation(internal.audit.record, {
-        action: "scan.suspicious",
-        actorId: args.officerId,
-        actorRole: officer?.role ?? "guard",
-        targetType: "scan",
-        targetId: scanId,
-        details: `Officer submitted ${recentScans.length} scans in the last 5 minutes`,
-        clientId,
-        siteId,
-        success: true,
-      });
-    }
-
-    await ctx.runMutation(internal.activity.record, {
-      clientId,
-      siteId,
-      checkpointId: args.checkpointId,
-      officerId: args.officerId,
-      activityType: "patrol_scan",
-      sourceTable: "scans",
-      sourceId: scanId,
-      locationLabel: checkpoint.name,
-      activityLabel: `Patrol scan: ${checkpoint.name}`,
-      gpsLatitude: args.gpsLatitude,
-      gpsLongitude: args.gpsLongitude,
-      gpsValid,
-      distanceMeters: computedDistance,
-      occurredAt: scannedAt,
-    });
-
+  if (args.unverifiable) {
+    // No geofence exists to check against. Blocking here would make a
+    // whole location unscannable over an admin's missing map pin, so the
+    // scan is kept but never counted as verified, and audited so the
+    // misconfiguration is visible rather than silent.
     await ctx.runMutation(internal.audit.record, {
-      action: "scan.submitted",
+      action: "scan.unverified",
       actorId: args.officerId,
       actorRole: officer?.role ?? "guard",
-      targetType: "scan",
-      targetId: scanId,
-      details: requiredPostOrders.length
-        ? `Scan submitted; ${requiredPostOrders.length} checkpoint post order(s) require acknowledgement`
-        : "Scan submitted",
+      targetType: "checkpoint",
+      targetId: checkpointId,
+      details:
+        "Scan could not be GPS-verified: neither the sub-location nor its location has map coordinates",
       clientId,
       siteId,
       success: true,
     });
+  }
 
-    const openAlert = await ctx.db
-      .query("missedPatrolAlerts")
-      .withIndex("by_checkpointId_status", (q) =>
-        q.eq("checkpointId", args.checkpointId).eq("status", "open"),
-      )
-      .first();
-    if (openAlert) {
-      await ctx.db.patch(openAlert._id, {
-        status: "resolved",
-        // The scan time, not now: this is the moment the gap actually closed.
-        resolvedAt: scannedAt,
-        notificationStatus: openAlert.notificationStatus || "resolved_by_scan",
-      });
-    }
+  const scanId = await ctx.db.insert("scans", {
+    clientId,
+    siteId,
+    officerId: args.officerId,
+    checkpointId,
+    shiftId: args.shiftId,
+    scannedAt,
+    // Was `receivedAt: scannedAt`, which made the two identical on every row
+    // and quietly removed the only signal that a scan had been held back.
+    receivedAt: args.receivedAt,
+    deviceReportedAt: args.deviceReportedAt,
+    gpsLatitude: args.gpsLatitude,
+    gpsLongitude: args.gpsLongitude,
+    gpsMocked: args.gpsMocked,
+    gpsValid,
+    distanceMeters: computedDistance,
+    notes: args.notes ?? "",
+    postOrdersRequired: false,
+    workflowStatus: "completed",
+  });
 
-    return {
-      id: scanId,
-      officerId: officer?.legacyId ?? officer?._id ?? "",
-      officerName: officer?.name ?? "",
-      checkpointId: checkpoint.legacyId ?? checkpoint._id,
-      checkpointName: checkpoint.name,
-      checkpointCode: checkpoint.code,
-      scannedAt: new Date(scannedAt).toISOString(),
-      receivedAt: new Date(scannedAt).toISOString(),
-      gpsLatitude: args.gpsLatitude ?? 0,
-      gpsLongitude: args.gpsLongitude ?? 0,
-      gpsValid,
-      distanceMeters: computedDistance ?? 0,
-      notes: args.notes ?? "",
-      postOrdersRequired: requiredPostOrders.length > 0,
-      workflowStatus:
-        requiredPostOrders.length > 0 ? "pending_post_order_ack" : "completed",
-      // The duties triggered by THIS scan (sub-location + whole-location
-      // orders) so the app can pop them up immediately after a successful
-      // scan without re-deriving the match client-side.
-      postOrders: triggeredPostOrders.map((order) => ({
-        id: order.legacyId ?? order._id,
-        title: order.title,
-        summary: order.summary,
-        instructions: order.instructions,
-        priority: order.priority,
-        active: order.active,
-        requiresAcknowledgement: order.requiresAcknowledgement,
-        requiresPhotoProof: order.requiresPhotoProof,
-      })),
-    };
-  },
-});
+  const triggeredPostOrders = await postOrdersTriggeredByScan(
+    ctx,
+    checkpointId,
+    siteId,
+    args.officerId,
+  );
+  const requiredPostOrders = triggeredPostOrders.filter(
+    (order) => order.requiresAcknowledgement,
+  );
+  if (requiredPostOrders.length > 0) {
+    await ctx.db.patch(scanId, {
+      postOrdersRequired: true,
+      workflowStatus: "pending_post_order_ack",
+    });
+  }
+
+  // No officerPositions row is written here. The scan itself already stores
+  // gpsLatitude/gpsLongitude/scannedAt, and the on-duty tracker records the
+  // guard's position independently — inserting a third copy of the same fix
+  // only inflated the largest table in the system.
+
+  const recentScans = await ctx.db
+    .query("scans")
+    .withIndex("by_officerId_scannedAt", (q) =>
+      q.eq("officerId", args.officerId).gte("scannedAt", scannedAt - 300000),
+    )
+    .collect();
+  if (recentScans.length > 10) {
+    await ctx.runMutation(internal.audit.record, {
+      action: "scan.suspicious",
+      actorId: args.officerId,
+      actorRole: officer?.role ?? "guard",
+      targetType: "scan",
+      targetId: scanId,
+      details: `Officer submitted ${recentScans.length} scans in the last 5 minutes`,
+      clientId,
+      siteId,
+      success: true,
+    });
+  }
+
+  await ctx.runMutation(internal.activity.record, {
+    clientId,
+    siteId,
+    checkpointId,
+    officerId: args.officerId,
+    activityType: "patrol_scan",
+    sourceTable: "scans",
+    sourceId: scanId,
+    locationLabel: checkpoint.name,
+    activityLabel: `Patrol scan: ${checkpoint.name}`,
+    gpsLatitude: args.gpsLatitude,
+    gpsLongitude: args.gpsLongitude,
+    gpsValid,
+    distanceMeters: computedDistance,
+    occurredAt: scannedAt,
+  });
+
+  await ctx.runMutation(internal.audit.record, {
+    action: "scan.submitted",
+    actorId: args.officerId,
+    actorRole: officer?.role ?? "guard",
+    targetType: "scan",
+    targetId: scanId,
+    details: requiredPostOrders.length
+      ? `Scan submitted; ${requiredPostOrders.length} checkpoint post order(s) require acknowledgement`
+      : "Scan submitted",
+    clientId,
+    siteId,
+    success: true,
+  });
+
+  const openAlert = await ctx.db
+    .query("missedPatrolAlerts")
+    .withIndex("by_checkpointId_status", (q) =>
+      q.eq("checkpointId", checkpointId).eq("status", "open"),
+    )
+    .first();
+  if (openAlert) {
+    await ctx.db.patch(openAlert._id, {
+      status: "resolved",
+      // The scan time, not now: this is the moment the gap actually closed.
+      resolvedAt: scannedAt,
+      notificationStatus: openAlert.notificationStatus || "resolved_by_scan",
+    });
+  }
+
+  return {
+    id: scanId,
+    officerId: officer?.legacyId ?? officer?._id ?? "",
+    officerName: officer?.name ?? "",
+    checkpointId: checkpoint.legacyId ?? checkpoint._id,
+    checkpointName: checkpoint.name,
+    checkpointCode: checkpoint.code,
+    scannedAt: new Date(scannedAt).toISOString(),
+    receivedAt: new Date(scannedAt).toISOString(),
+    gpsLatitude: args.gpsLatitude ?? 0,
+    gpsLongitude: args.gpsLongitude ?? 0,
+    gpsValid,
+    distanceMeters: computedDistance ?? 0,
+    notes: args.notes ?? "",
+    postOrdersRequired: requiredPostOrders.length > 0,
+    workflowStatus:
+      requiredPostOrders.length > 0 ? "pending_post_order_ack" : "completed",
+    // The duties triggered by THIS scan (sub-location + whole-location
+    // orders) so the app can pop them up immediately after a successful
+    // scan without re-deriving the match client-side.
+    postOrders: triggeredPostOrders.map((order) => ({
+      id: order.legacyId ?? order._id,
+      title: order.title,
+      summary: order.summary,
+      instructions: order.instructions,
+      priority: order.priority,
+      active: order.active,
+      requiresAcknowledgement: order.requiresAcknowledgement,
+      requiresPhotoProof: order.requiresPhotoProof,
+    })),
+  };
+}
 
 // Every active post order a scan at this point puts in front of THIS guard:
 // orders pinned to the exact sub-location plus orders covering the whole

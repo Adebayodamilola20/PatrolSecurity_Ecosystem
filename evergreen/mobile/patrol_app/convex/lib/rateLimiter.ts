@@ -82,6 +82,30 @@ const limits: Record<string, RateLimitConfig> = {
    * spending their whole per-IP budget. Successful logins never touch it.
    */
   loginFail: { windowMs: 15 * 60 * 1000, maxRequests: 1000 },
+  /**
+   * Password changes, per signed-in user.
+   *
+   * Every attempt runs a bcrypt comparison of the current password, and the
+   * route only needs a bearer token. A stolen or leaked token was therefore an
+   * unlimited, server-paid guessing oracle for the account's password — the
+   * one thing the token alone does not give its holder, and often the same
+   * password as the owner's email. Five tries in fifteen minutes is the login
+   * allowance; nobody honestly mistypes their own password more often.
+   */
+  changePassword: { windowMs: 15 * 60 * 1000, maxRequests: 5 },
+  /**
+   * Every authenticated write that has no bucket of its own: clock-in/out,
+   * pass-on logs, handovers, visitors, trucks, post orders, and the admin
+   * edits to people, clients, locations and QR points.
+   *
+   * Each of these used to be unlimited, so one stuck retry loop or one stolen
+   * token could write as fast as the network allowed. Forty a minute is far
+   * above any person working a screen — an admin setting up a site makes a
+   * handful of edits a minute — while still cutting a runaway client off.
+   * Always applied with `skipGlobal`: these are the actions guards and the
+   * control room need most during exactly the overload that global shedding
+   * is for, so only the per-person cap applies to them.
+   */
   write: { windowMs: 60 * 1000, maxRequests: 40 },
 };
 

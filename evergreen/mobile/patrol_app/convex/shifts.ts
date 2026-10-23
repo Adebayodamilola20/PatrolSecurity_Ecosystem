@@ -1,11 +1,13 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { distanceMeters } from "./lib/geo";
-import { deletedNamesByType } from "./lib/tombstones";
-import { markedPayload } from "./scans";
+import { deletedNamesByType, findDeletedCheckpoint } from "./lib/tombstones";
+import { markedPayload, recordAcceptedScan, scanFence } from "./scans";
+import { resolveCheckpointRef } from "./checkpoints";
+import { readRequireQrCheckIn } from "./settings";
 
 /**
  * Was this clock-in taken inside the geofence of a location the guard is
@@ -255,6 +257,7 @@ export const getStatusForUser = internalQuery({
           : null,
         siteLabel: shift.siteLabel,
         status: shift.status,
+        checkInMethod: shift.checkInMethod,
       },
     };
   },
@@ -279,6 +282,7 @@ export const listForExport = internalQuery({
       clockOut: shift.clockOut ? new Date(shift.clockOut).toISOString() : null,
       status: shift.status,
       siteLabel: shift.siteLabel,
+      checkInMethod: shift.checkInMethod,
       createdAt: new Date(shift.createdAt).toISOString(),
     }));
   },
@@ -334,6 +338,10 @@ export const listAll = internalQuery({
         clockInLongitude: s.clockInLongitude ?? null,
         clockInGpsValid: s.clockInGpsValid ?? null,
         clockInDistanceMeters: s.clockInDistanceMeters ?? null,
+        // "qr" when the guard scanned the entrance QR, "gps" for a GPS-only
+        // clock-in, undefined for shifts from before the QR check-in existed —
+        // which the dashboard must show as unknown, not as either method.
+        checkInMethod: s.checkInMethod,
         clockOutLatitude: s.clockOutLatitude ?? null,
         clockOutLongitude: s.clockOutLongitude ?? null,
         clockOutGpsValid: s.clockOutGpsValid ?? null,
@@ -367,6 +375,154 @@ export const missingClockins = internalQuery({
   },
 });
 
+/**
+ * The text a guard's phone decoded from a QR, reduced to the id it carries.
+ *
+ * The dashboard prints QRs as `<site>/checkpoints/<id>` links, and the app has
+ * always cut the id off the end before sending it to POST /scans. The clock-in
+ * contract takes the decoded text exactly as read, so the same cut happens
+ * here — a URL is accepted, and so is a bare id from an app that already
+ * stripped it.
+ */
+function qrIdFromDecodedText(raw: string): string {
+  const text = raw.trim();
+  if (/^https?:\/\//i.test(text)) {
+    try {
+      const segments = new URL(text).pathname.split("/").filter(Boolean);
+      return segments[segments.length - 1] ?? "";
+    } catch {
+      return text.split("/").filter(Boolean).pop() ?? "";
+    }
+  }
+  return text;
+}
+
+const SCAN_THE_ENTRANCE_QR =
+  "Scan the QR code at the main entrance of your location.";
+
+/**
+ * The location a scanned clock-in code proves the guard is standing at, or a
+ * refusal saying exactly why it does not.
+ *
+ * Resolved here, inside the mutation, rather than in the route: the internal
+ * mutation is a second door into a shift, and a check that only the route
+ * performs is one refactor from gone. The resolver is the one POST /scans uses
+ * (see resolveCheckpointRef), so a code means the same thing at clock-in as it
+ * does on patrol.
+ *
+ * Every refusal is a `clockInRefusal`, never a bare Error: on a deployed
+ * backend the route sees "Uncaught Error: ..." plus a stack line, and only the
+ * marker survives that intact.
+ */
+async function resolveClockInLocation(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  locationCode: string,
+): Promise<{ checkpoint: Doc<"checkpoints">; site: Doc<"sites"> }> {
+  const ref = qrIdFromDecodedText(locationCode);
+  const checkpointId = ref ? await resolveCheckpointRef(ctx, ref) : null;
+  const checkpoint = checkpointId ? await ctx.db.get(checkpointId) : null;
+
+  // A location the company has withdrawn is told to ring the office, not to
+  // keep rescanning — the same distinction POST /scans draws with its 410.
+  // Nothing is named: by now the posting that would entitle this guard to the
+  // name has been deleted along with the location.
+  const withdrawn = clockInRefusal(
+    "Clock-in QR belongs to a withdrawn location",
+    "This location is no longer serviced by the company, so you cannot clock in here. Please contact the office.",
+  );
+
+  if (!checkpoint) {
+    if (ref && (await findDeletedCheckpoint(ctx, ref))) throw withdrawn;
+    throw clockInRefusal(
+      "Clock-in QR not recognised",
+      `This QR code is not recognised. ${SCAN_THE_ENTRANCE_QR}`,
+    );
+  }
+
+  const site = checkpoint.siteId ? await ctx.db.get(checkpoint.siteId) : null;
+  // The checkpoint row outlived its location's cascade: withdrawn in every way
+  // that matters to the guard at the gate.
+  if (checkpoint.siteId && !site) throw withdrawn;
+
+  // Only the location's own QR opens a shift. A sub-location proves the guard
+  // reached that point, not that they arrived at the property — and accepting
+  // one would let a shift start at the back fence, which is the hole the
+  // "location QR first" rule in scans.create exists to close.
+  if (!checkpoint.isPrimary) {
+    throw clockInRefusal(
+      "Clock-in attempted with a patrol point QR, not the location QR",
+      `That is a patrol point, not the clock-in code. ${SCAN_THE_ENTRANCE_QR}`,
+    );
+  }
+  if (!site) {
+    // A primary point with no location is a data fault, not something the
+    // guard can fix by scanning again.
+    throw clockInRefusal(
+      "Clock-in QR is marked as a location QR but belongs to no location",
+      "This QR code is not attached to a location, so you cannot clock in with it. Please contact the office.",
+    );
+  }
+
+  // Every role, unlike the distance rule below. The location scan recorded with
+  // this shift has to be one scans.create would accept, and scans.create
+  // accepts nobody at a site they are not posted to. A roaming supervisor who
+  // is not posted here still has the GPS clock-in.
+  const posted = await ctx.db
+    .query("userSiteAssignments")
+    .withIndex("by_userId_siteId", (q) => q.eq("userId", userId).eq("siteId", site._id))
+    .first();
+  if (!posted) {
+    throw clockInRefusal(
+      `Clock-in QR scanned at ${site.name}, where the guard is not posted`,
+      `You are not posted to ${site.name}. Ask your supervisor to assign you.`,
+    );
+  }
+
+  // Switched off rather than deleted: still the company's call, so still the
+  // office's number to ring. Checked after the posting so that only someone
+  // posted here learns the state of the place.
+  if (!site.active) {
+    throw clockInRefusal(
+      `Clock-in QR scanned at inactive location ${site.name}`,
+      `${site.name} is not an active location, so you cannot clock in here. Please contact the office.`,
+    );
+  }
+  if (!checkpoint.active) {
+    throw clockInRefusal(
+      `Clock-in QR at ${site.name} has been switched off`,
+      `The entrance QR code at ${site.name} has been switched off by the company, so you cannot clock in with it. Please contact the office.`,
+    );
+  }
+
+  return { checkpoint, site };
+}
+
+/**
+ * Whether this guard, with the QR requirement on, could have clocked in by QR.
+ *
+ * Only a posting with a working entrance QR counts: an active location whose
+ * own QR point exists and is switched on. Demanding a scan of a code that is
+ * not on the wall — a location created before entrance QRs, or one whose QR
+ * the office has switched off — would leave the guard no way to start work at
+ * all, which is a lock-out, not a control.
+ */
+async function hasScannableEntranceQr(
+  ctx: MutationCtx,
+  siteIds: Array<Id<"sites">>,
+): Promise<boolean> {
+  for (const siteId of siteIds) {
+    const site = await ctx.db.get(siteId);
+    if (!site?.active) continue;
+    const checkpoints = await ctx.db
+      .query("checkpoints")
+      .withIndex("by_siteId", (q) => q.eq("siteId", siteId))
+      .collect();
+    if (checkpoints.some((cp) => cp.isPrimary && cp.active)) return true;
+  }
+  return false;
+}
+
 export const clockIn = internalMutation({
   args: {
     userId: v.id("users"),
@@ -375,6 +531,12 @@ export const clockIn = internalMutation({
     gpsMocked: v.optional(v.boolean()),
     siteLabel: v.optional(v.string()),
     clockInPhoto: v.optional(v.string()),
+    /**
+     * The text decoded from the location's main-entrance QR. Present: a QR
+     * check-in, verified against that one location. Absent: the GPS clock-in
+     * every older build uses, and the "Can't scan?" fallback.
+     */
+    locationCode: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -385,6 +547,35 @@ export const clockIn = internalMutation({
       .first();
     if (existing) {
       throw new Error("Already clocked in — end current shift first");
+    }
+
+    const user = await ctx.db.get(args.userId);
+    const isGuard = user?.role?.trim().toLowerCase() === "guard";
+    // Blank is absent: an app that sends an empty field has not scanned
+    // anything, and is held to the same rule as one that sent nothing.
+    const locationCode = args.locationCode?.trim() ? args.locationCode : undefined;
+    const assignments = await ctx.db
+      .query("userSiteAssignments")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .collect();
+
+    // The QR requirement, when the company has switched it on.
+    //
+    // Checked first, before anything about the fix: the answer to an app that
+    // did not scan is "scan", and telling an old build to turn its location on
+    // only to refuse it again afterwards wastes the guard's first two tries.
+    // Guards only — supervisors roam between sites and are not posted to an
+    // entrance. And only where the guard has an entrance QR they could scan.
+    if (
+      !locationCode &&
+      isGuard &&
+      (await readRequireQrCheckIn(ctx)) &&
+      (await hasScannableEntranceQr(ctx, assignments.map((a) => a.siteId)))
+    ) {
+      throw clockInRefusal(
+        "Clock-in without the location QR while QR check-in is required",
+        "Scan the location QR code at the main entrance to clock in.",
+      );
     }
 
     // No fix, no shift.
@@ -436,11 +627,20 @@ export const clockIn = internalMutation({
     }
 
     const now = Date.now();
-    const user = await ctx.db.get(args.userId);
-    const assignments = await ctx.db
-      .query("userSiteAssignments")
-      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
-      .collect();
+
+    if (locationCode) {
+      return await clockInByLocationQr(ctx, {
+        userId: args.userId,
+        user,
+        locationCode,
+        latitude: args.latitude!,
+        longitude: args.longitude!,
+        gpsMocked: args.gpsMocked,
+        clockInPhoto: args.clockInPhoto,
+        now,
+      });
+    }
+
     const geofence = await validateSiteGeofence(
       ctx,
       assignments.map((a) => a.siteId),
@@ -469,6 +669,7 @@ export const clockIn = internalMutation({
       clockInLongitude: args.longitude,
       clockInGpsValid: geofence.gpsValid,
       clockInDistanceMeters: geofence.distanceMeters,
+      checkInMethod: "gps",
       siteLabel: args.siteLabel ?? "",
       createdAt: now,
     });
@@ -489,6 +690,15 @@ export const clockIn = internalMutation({
       occurredAt: now,
     });
 
+    // Named only when the guard's position was actually measured against that
+    // site. With nothing to measure, the shift still falls back to the first
+    // posting, but telling the guard "clocked in at X" on that basis would be
+    // a guess presented as a fact.
+    const matchedSite =
+      geofence.siteId && geofence.distanceMeters != null
+        ? await ctx.db.get(geofence.siteId)
+        : null;
+
     return {
       active: true,
       shift: {
@@ -498,10 +708,141 @@ export const clockIn = internalMutation({
         scheduledEnd: null,
         siteLabel: args.siteLabel ?? "",
         status: "active",
+        checkInMethod: "gps" as const,
+      },
+      checkIn: {
+        method: "gps" as const,
+        verified: geofence.gpsValid,
+        ...(matchedSite ? { siteName: matchedSite.name } : {}),
       },
     };
   },
 });
+
+/**
+ * A clock-in proven by scanning the location's main-entrance QR.
+ *
+ * One transaction opens the shift AND records the scan of that QR, so the two
+ * cannot come apart: no shift without its proof, no orphan scan from a
+ * clock-in that failed. The scan goes through the same recorder as POST /scans
+ * (recordAcceptedScan), which is what lets a patrol guard walk straight on to
+ * the sub-locations — the "location QR first" rule finds this scan — and makes
+ * reports, analytics and missed-patrol tracking count it like any other.
+ *
+ * The admission rule is the clock-in one, not the scan one. A guard at the
+ * gate with drifting GPS is let in within the clock-in grace (see
+ * CLOCK_IN_GPS_GRACE_METERS) even where a patrol scan would refuse them; the
+ * scan row then honestly records gpsValid=false and the distance, rather than
+ * the scan's stricter fence costing the guard their whole shift.
+ */
+async function clockInByLocationQr(
+  ctx: MutationCtx,
+  args: {
+    userId: Id<"users">;
+    user: Doc<"users"> | null;
+    locationCode: string;
+    latitude: number;
+    longitude: number;
+    gpsMocked?: boolean;
+    clockInPhoto?: string;
+    now: number;
+  },
+) {
+  const { user, now } = args;
+  const { checkpoint, site } = await resolveClockInLocation(
+    ctx,
+    args.userId,
+    args.locationCode,
+  );
+
+  // Measured against the fence of the location the QR belongs to — the guard
+  // has said where they are, so their other postings are irrelevant here.
+  const geofence: ResolvedGeofence = {
+    ...(await geofenceForSite(ctx, site._id, args.latitude, args.longitude)),
+    siteId: site._id,
+  };
+  const refusal = clockInGeofenceRefusal(user?.role, geofence);
+  if (refusal) throw refusal;
+
+  const shiftId = await ctx.db.insert("shifts", {
+    clientId: user?.clientId,
+    siteId: site._id,
+    userId: args.userId,
+    status: "active",
+    clockIn: now,
+    clockInPhoto: args.clockInPhoto ?? "",
+    clockInLatitude: args.latitude,
+    clockInLongitude: args.longitude,
+    clockInGpsValid: geofence.gpsValid,
+    clockInDistanceMeters: geofence.distanceMeters,
+    checkInMethod: "qr",
+    // The verified location, not whatever label the phone sent: the QR has
+    // already settled where this shift is.
+    siteLabel: site.name,
+    createdAt: now,
+  });
+
+  await ctx.runMutation(internal.activity.record, {
+    clientId: user?.clientId,
+    siteId: site._id,
+    officerId: args.userId,
+    activityType: "clock_in",
+    sourceTable: "shifts",
+    sourceId: shiftId,
+    siteName: site.name,
+    activityLabel: "Clock-in",
+    gpsLatitude: args.latitude,
+    gpsLongitude: args.longitude,
+    gpsValid: geofence.gpsValid,
+    distanceMeters: geofence.distanceMeters,
+    occurredAt: now,
+  });
+
+  // The location scan, measured exactly as POST /scans would measure it.
+  const fence = scanFence(checkpoint, site);
+  const scanDistance = fence
+    ? distanceMeters(fence.lat, fence.lng, args.latitude, args.longitude)
+    : undefined;
+  const locationScan = await recordAcceptedScan(ctx, {
+    officerId: args.userId,
+    officer: user,
+    checkpoint,
+    shiftId,
+    // Clock-in time, so the scan sits inside the shift it opened and the
+    // "location QR first" rule (scannedAt >= clockIn) finds it.
+    scannedAt: now,
+    receivedAt: now,
+    gpsLatitude: args.latitude,
+    gpsLongitude: args.longitude,
+    gpsMocked: args.gpsMocked,
+    gpsValid: fence != null && scanDistance! <= fence.radius,
+    distanceMeters: scanDistance,
+    unverifiable: fence == null,
+  });
+  await ctx.db.patch(shiftId, { checkInScanId: locationScan.id });
+
+  return {
+    active: true,
+    shift: {
+      id: shiftId,
+      clockIn: new Date(now).toISOString(),
+      clockOut: null,
+      scheduledEnd: null,
+      siteLabel: site.name,
+      status: "active",
+      checkInMethod: "qr" as const,
+    },
+    checkIn: {
+      method: "qr" as const,
+      verified: true,
+      siteName: site.name,
+    },
+    // The scan exactly as POST /scans would have answered it, including any
+    // post orders the location QR triggers, so the app can show them the same
+    // way it does after any other scan.
+    locationScan,
+  };
+}
 
 export const clockOut = internalMutation({
   args: {
@@ -564,6 +905,7 @@ export const clockOut = internalMutation({
               : null,
             siteLabel: updated.siteLabel,
             status: updated.status,
+            checkInMethod: updated.checkInMethod,
           }
         : null,
     };

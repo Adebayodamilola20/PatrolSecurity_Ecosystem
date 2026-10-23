@@ -87,6 +87,34 @@ function scrubUrl(raw: string) {
   );
 }
 
+/** How much of a rejection body is worth a log line. */
+const REJECTION_BODY_LIMIT = 300;
+
+/**
+ * The start of Sentry's explanation for refusing an event, safe to log.
+ *
+ * Never throws and never returns more than REJECTION_BODY_LIMIT characters: a
+ * body that cannot be read becomes a note saying so, not a second failure.
+ * The DSN and its key are cut out before anything is logged — Sentry is not
+ * known to echo them back, but a log line is the wrong place to find out — and
+ * whitespace is collapsed so the explanation stays on the one log line.
+ */
+async function rejectionDetail(
+  response: Response,
+  secrets: string[],
+): Promise<string> {
+  let text: string;
+  try {
+    text = await response.text();
+  } catch {
+    return "(response body could not be read)";
+  }
+  for (const secret of secrets) {
+    if (secret) text = text.split(secret).join("[redacted]");
+  }
+  return text.replace(/\s+/g, " ").trim().slice(0, REJECTION_BODY_LIMIT);
+}
+
 export type ReportContext = {
   route?: string;
   method?: string;
@@ -193,12 +221,16 @@ export async function reportException(
       body: envelope,
       ...(signal ? { signal } : {}),
     });
-    // Sentry rejects a bad key or a malformed envelope with a 4xx and an
-    // empty body. Without this the events simply never appear and there is
-    // nothing anywhere saying why.
+    // Sentry rejects a bad key, a disabled project, a filtered origin or a
+    // malformed envelope with a 4xx — and says which in the response body,
+    // usually a short JSON `detail`. Without this line the events simply never
+    // appear and nothing anywhere says why; without the body, a 403 in the
+    // logs says only that *something* is wrong, which is where production sat.
     if (!response.ok) {
+      const detail = await rejectionDetail(response, [dsn, parsed.publicKey]);
       console.error(
-        `Sentry rejected an event: ${response.status} ${response.statusText}`,
+        `Sentry rejected an event: ${response.status} ${response.statusText}` +
+          (detail ? ` - ${detail}` : ""),
       );
       return "failed";
     }

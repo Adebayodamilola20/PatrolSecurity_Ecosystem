@@ -234,6 +234,14 @@ export default defineSchema({
     clockInLongitude: v.optional(v.number()),
     clockInGpsValid: v.optional(v.boolean()),
     clockInDistanceMeters: v.optional(v.number()),
+    // How the guard proved they were on site when the shift opened: by
+    // scanning the location's main-entrance QR ("qr"), or by GPS alone
+    // ("gps": the "Can't scan?" fallback and every older app build). Absent on
+    // shifts that predate the QR check-in.
+    checkInMethod: v.optional(v.union(v.literal("qr"), v.literal("gps"))),
+    // The location-QR scan written in the same transaction as a "qr" clock-in,
+    // so the shift and its proof can be joined without guessing by timestamp.
+    checkInScanId: v.optional(v.id("scans")),
     clockOutLatitude: v.optional(v.number()),
     clockOutLongitude: v.optional(v.number()),
     clockOutGpsValid: v.optional(v.boolean()),

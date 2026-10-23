@@ -2978,3 +2978,753 @@ describe("refusals survive the error shape a deployed Convex produces", () => {
     expect(parseClockInRefusal(new Error("Uncaught Error: boom"))).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// QR-verified clock-in (client request, 2026-10).
+//
+// The guard proves they are at the property by scanning the location's own QR
+// at the main entrance, and that one scan both opens the shift and counts as
+// the patrol's first scan. Everything here goes through the real HTTP stack
+// unless it is the internal mutation itself under test.
+// ---------------------------------------------------------------------------
+describe("QR clock-in at the main entrance", () => {
+  // Alpha's site, mapped with the default 150m fence.
+  const AT_SITE = { gpsLatitude: 6.6018, gpsLongitude: 3.3515 };
+  // ~9km away: the guard is at home.
+  const HOME = { gpsLatitude: 6.5244, gpsLongitude: 3.3792 };
+  // ~200m out: past the 150m fence, inside the 75m clock-in grace.
+  const AT_THE_GATE = { gpsLatitude: 6.6036, gpsLongitude: 3.3515 };
+  const ORIGIN = "https://patrol-security-ecosystem.vercel.app";
+
+  let alphaEntrance: Id<"checkpoints">;
+  let bravoEntrance: Id<"checkpoints">;
+
+  const makeEntrance = (
+    siteId: Id<"sites">,
+    clientId: Id<"clients">,
+    name: string,
+    code: string,
+  ) =>
+    t.run((ctx) =>
+      ctx.db.insert("checkpoints", {
+        clientId,
+        siteId,
+        name,
+        code,
+        isPrimary: true,
+        expectedIntervalMinutes: 60,
+        scheduledTimeIn: "18:00",
+        scheduledTimeOut: "06:00",
+        active: true,
+        createdAt: Date.now(),
+      }),
+    );
+
+  beforeEach(async () => {
+    await t.run((ctx) =>
+      ctx.db.patch(w.alphaSite, { latitude: 6.6018, longitude: 3.3515, radiusMeters: 150 }),
+    );
+    alphaEntrance = await makeEntrance(w.alphaSite, w.alphaClient, "Alpha Main Entrance", "ALPHA-ENTRANCE");
+    bravoEntrance = await makeEntrance(w.bravoSite, w.bravoClient, "Bravo Main Entrance", "BRAVO-ENTRANCE");
+  });
+
+  const clockIn = (token: string, body: Record<string, unknown>) =>
+    t.fetch("/shifts/clock-in", {
+      method: "POST",
+      headers: auth(token),
+      body: JSON.stringify(body),
+    });
+
+  const shifts = () => t.run((ctx) => ctx.db.query("shifts").collect());
+  const scans = () => t.run((ctx) => ctx.db.query("scans").collect());
+  const audits = (action: string) =>
+    t.run((ctx) =>
+      ctx.db.query("auditLogs").filter((q) => q.eq(q.field("action"), action)).collect(),
+    );
+
+  /** A refusal: 403, the exact guard-facing reason, and nothing written. */
+  const expectRefused = async (res: Response, message: string | RegExp) => {
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    if (typeof message === "string") expect(body.message).toBe(message);
+    else expect(body.message).toMatch(message);
+    expect(await shifts()).toHaveLength(0);
+    expect(await scans()).toHaveLength(0);
+    // The attempt itself survives the aborted transaction.
+    expect((await audits("clock_in.refused")).length).toBeGreaterThan(0);
+  };
+
+  test("scanning the entrance QR opens the shift there and records the location scan", async () => {
+    const res = await clockIn(w.tokens.alphaGuard, { ...AT_SITE, locationCode: alphaEntrance });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.checkIn).toEqual({
+      method: "qr",
+      verified: true,
+      siteName: "Alpha Ikeja Warehouse",
+    });
+    expect(body.active).toBe(true);
+    expect(body.shift.checkInMethod).toBe("qr");
+
+    const [shift] = await shifts();
+    expect(String(shift.siteId)).toBe(String(w.alphaSite));
+    expect(shift.checkInMethod).toBe("qr");
+    expect(shift.clockInGpsValid).toBe(true);
+    expect(shift.siteLabel).toBe("Alpha Ikeja Warehouse");
+
+    // The location scan, exactly as POST /scans would have stored it.
+    const [scan] = await scans();
+    expect(String(scan.checkpointId)).toBe(String(alphaEntrance));
+    expect(String(scan.shiftId)).toBe(String(shift._id));
+    expect(String(scan.siteId)).toBe(String(w.alphaSite));
+    expect(String(scan.clientId)).toBe(String(w.alphaClient));
+    expect(String(scan.officerId)).toBe(String(w.alphaGuard));
+    expect(scan.gpsValid).toBe(true);
+    expect(scan.distanceMeters).toBeLessThan(1);
+    expect(scan.scannedAt).toBe(shift.clockIn);
+    expect(scan.workflowStatus).toBe("completed");
+    expect(String(shift.checkInScanId)).toBe(String(scan._id));
+    expect(String(body.locationScan.id)).toBe(String(scan._id));
+
+    // Counted like any other scan: the activity feed reports and analytics
+    // read, and the audit trail a normal scan leaves.
+    const activity = await t.run((ctx) => ctx.db.query("siteActivityEvents").collect());
+    expect(activity.map((a) => a.activityType).sort()).toEqual(["clock_in", "patrol_scan"]);
+    expect(await audits("scan.submitted")).toHaveLength(1);
+    const created = await audits("clock_in.created");
+    expect(created).toHaveLength(1);
+    expect(created[0].details).toContain("by location QR");
+  });
+
+  test("the decoded QR link is accepted as printed, as well as the bare id", async () => {
+    // The dashboard prints `<origin>/checkpoints/<id>`; the clock-in screen
+    // sends that text untouched. Trailing slash, query string, fragment and
+    // stray whitespace must not stop a guard at the gate.
+    const variants = [
+      `${ORIGIN}/checkpoints/${alphaEntrance}`,
+      `${ORIGIN}/checkpoints/${alphaEntrance}/`,
+      `${ORIGIN}/checkpoints/${alphaEntrance}?utm=print#top`,
+      `  http://localhost:5173/checkpoints/${alphaEntrance}  `,
+      `  ${alphaEntrance}\n`,
+    ];
+    for (const locationCode of variants) {
+      const res = await clockIn(w.tokens.alphaGuard, { ...AT_SITE, locationCode });
+      expect(res.status, locationCode).toBe(201);
+      expect((await res.json()).checkIn.method).toBe("qr");
+      // Close it so the next variant can clock in again.
+      await t.run(async (ctx) => {
+        for (const s of await ctx.db.query("shifts").collect()) {
+          await ctx.db.patch(s._id, { status: "completed", clockOut: Date.now() });
+        }
+      });
+    }
+    expect(await shifts()).toHaveLength(variants.length);
+  });
+
+  test("a patrol guard's next sub-location scan is accepted without rescanning the entrance", async () => {
+    expect((await clockIn(w.tokens.alphaGuard, { ...AT_SITE, locationCode: alphaEntrance })).status).toBe(201);
+    const res = await t.fetch("/scans", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({ checkpointId: w.alphaCheckpoint, ...AT_SITE }),
+    });
+    expect(res.status).toBe(201);
+    expect(await scans()).toHaveLength(2);
+  });
+
+  test("whereas after a GPS-only clock-in the entrance still has to be scanned first", async () => {
+    // The control for the test above: it is the location scan recorded at
+    // clock-in that unlocks the sub-locations, not the clock-in as such.
+    expect((await clockIn(w.tokens.alphaGuard, { ...AT_SITE })).status).toBe(201);
+    const res = await t.fetch("/scans", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({ checkpointId: w.alphaCheckpoint, ...AT_SITE }),
+    });
+    expect(res.status).toBe(403);
+    expect((await res.json()).message).toMatch(/main entrance/);
+  });
+
+  test("an unknown code is refused as not recognised", async () => {
+    await expectRefused(
+      await clockIn(w.tokens.alphaGuard, { ...AT_SITE, locationCode: "NOT-A-REAL-CODE" }),
+      "This QR code is not recognised. Scan the QR code at the main entrance of your location.",
+    );
+  });
+
+  test("a link that does not end in a QR point's id is not recognised either", async () => {
+    // A real id, but of a location row rather than a QR point; an empty link;
+    // a scheme the dashboard never prints.
+    for (const locationCode of [
+      `${ORIGIN}/checkpoints/${w.alphaSite}`,
+      `${ORIGIN}/`,
+      `ftp://example.test/checkpoints/${alphaEntrance}`,
+    ]) {
+      const res = await clockIn(w.tokens.alphaGuard, { ...AT_SITE, locationCode });
+      expect(res.status, locationCode).toBe(403);
+      expect((await res.json()).message).toBe(
+        "This QR code is not recognised. Scan the QR code at the main entrance of your location.",
+      );
+    }
+    expect(await shifts()).toHaveLength(0);
+  });
+
+  test("a patrol point's QR is not the clock-in code", async () => {
+    await expectRefused(
+      await clockIn(w.tokens.alphaGuard, { ...AT_SITE, locationCode: w.alphaCheckpoint }),
+      "That is a patrol point, not the clock-in code. Scan the QR code at the main entrance of your location.",
+    );
+  });
+
+  test("a withdrawn location's QR tells the guard to call the office", async () => {
+    await t.mutation(internal.checkpoints.remove, { checkpointId: alphaEntrance });
+    await expectRefused(
+      await clockIn(w.tokens.alphaGuard, {
+        ...AT_SITE,
+        locationCode: `${ORIGIN}/checkpoints/${alphaEntrance}`,
+      }),
+      /no longer serviced by the company.*contact the office/,
+    );
+  });
+
+  test("an entrance QR whose location row is gone is withdrawn too", async () => {
+    await t.run((ctx) => ctx.db.delete(w.alphaSite));
+    await expectRefused(
+      await clockIn(w.tokens.alphaGuard, { ...AT_SITE, locationCode: alphaEntrance }),
+      /no longer serviced by the company/,
+    );
+  });
+
+  test("a switched-off location or entrance QR is refused with who to call", async () => {
+    await t.run((ctx) => ctx.db.patch(w.alphaSite, { active: false }));
+    await expectRefused(
+      await clockIn(w.tokens.alphaGuard, { ...AT_SITE, locationCode: alphaEntrance }),
+      "Alpha Ikeja Warehouse is not an active location, so you cannot clock in here. Please contact the office.",
+    );
+    await t.run(async (ctx) => {
+      await ctx.db.patch(w.alphaSite, { active: true });
+      await ctx.db.patch(alphaEntrance, { active: false });
+    });
+    const res = await clockIn(w.tokens.alphaGuard, { ...AT_SITE, locationCode: alphaEntrance });
+    expect(res.status).toBe(403);
+    expect((await res.json()).message).toMatch(/switched off by the company.*contact the office/);
+  });
+
+  test("a guard is refused at a location they are not posted to", async () => {
+    await expectRefused(
+      await clockIn(w.tokens.alphaGuard, { ...AT_SITE, locationCode: bravoEntrance }),
+      "You are not posted to Bravo Apapa Depot. Ask your supervisor to assign you.",
+    );
+  });
+
+  test("the QR does not excuse being away from the site", async () => {
+    // A photographed entrance QR scanned from home.
+    await expectRefused(
+      await clockIn(w.tokens.alphaGuard, { ...HOME, locationCode: alphaEntrance }),
+      /You are \d+m from Alpha Ikeja Warehouse/,
+    );
+  });
+
+  test("a spoofed fix is refused even with the right QR", async () => {
+    await expectRefused(
+      await clockIn(w.tokens.alphaGuard, { ...AT_SITE, gpsMocked: true, locationCode: alphaEntrance }),
+      /simulated location/,
+    );
+  });
+
+  test("an unusable fix is still told to turn location on", async () => {
+    const res = await clockIn(w.tokens.alphaGuard, { locationCode: alphaEntrance });
+    expect(res.status).toBe(400);
+    expect((await res.json()).message).toMatch(/Location is off/);
+    expect(await shifts()).toHaveLength(0);
+  });
+
+  test("a locationCode that is not text is a bad request, not a silent GPS clock-in", async () => {
+    const res = await clockIn(w.tokens.alphaGuard, { ...AT_SITE, locationCode: 12345 });
+    expect(res.status).toBe(400);
+    expect(await shifts()).toHaveLength(0);
+  });
+
+  test("standing at the gate with drifting GPS still opens the shift, with the scan honestly flagged", async () => {
+    // Inside the clock-in grace, outside the 150m scan fence. The shift opens
+    // (refusing here would cost the guard the night), and the location scan
+    // records gpsValid=false with the distance instead of claiming a match.
+    const res = await clockIn(w.tokens.alphaGuard, { ...AT_THE_GATE, locationCode: alphaEntrance });
+    expect(res.status).toBe(201);
+    const [scan] = await scans();
+    expect(scan.gpsValid).toBe(false);
+    expect(scan.distanceMeters).toBeGreaterThan(150);
+  });
+
+  test("the internal mutation refuses on its own, without the route in front of it", async () => {
+    await expect(
+      t.mutation(internal.shifts.clockIn, {
+        userId: w.alphaGuard,
+        latitude: 6.6018,
+        longitude: 3.3515,
+        locationCode: String(w.alphaCheckpoint),
+      }),
+    ).rejects.toThrow(/CLOCK_IN_REFUSED.*patrol point/);
+    await expect(
+      t.mutation(internal.shifts.clockIn, {
+        userId: w.alphaGuard,
+        latitude: 6.6018,
+        longitude: 3.3515,
+        locationCode: String(bravoEntrance),
+      }),
+    ).rejects.toThrow(/CLOCK_IN_REFUSED.*not posted to Bravo Apapa Depot/);
+    expect(await shifts()).toHaveLength(0);
+  });
+
+  test("a QR refusal survives the error shape a deployed Convex produces", async () => {
+    // Take the real error the mutation throws and wrap it the way a deployed
+    // backend hands it to the HTTP action. The guard must still get the reason.
+    let thrown: unknown;
+    try {
+      await t.mutation(internal.shifts.clockIn, {
+        userId: w.alphaGuard,
+        latitude: 6.6018,
+        longitude: 3.3515,
+        locationCode: "NOT-A-REAL-CODE",
+      });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    const deployed = new Error(
+      `Uncaught Error: ${(thrown as Error).message}\n    at resolveClockInLocation (../convex/shifts.ts:250:11)\n    at handler (../convex/shifts.ts:420:6)\n`,
+    );
+    expect(parseClockInRefusal(deployed)).toEqual({
+      details: "Clock-in QR not recognised",
+      message: "This QR code is not recognised. Scan the QR code at the main entrance of your location.",
+    });
+  });
+
+  test("a supervisor posted to the location can clock in by its QR", async () => {
+    await t.run((ctx) =>
+      ctx.db.insert("userSiteAssignments", {
+        userId: w.supervisor, siteId: w.alphaSite, clientId: w.alphaClient, createdAt: Date.now(),
+      }),
+    );
+    const res = await clockIn(w.tokens.supervisor, { ...AT_SITE, locationCode: alphaEntrance });
+    expect(res.status).toBe(201);
+    expect((await res.json()).checkIn.method).toBe("qr");
+  });
+
+  test("a supervisor not posted there is refused by QR, because the scan it records would be", async () => {
+    // scans.create accepts nobody at a site they are not posted to, and the
+    // location scan written here has to be one it would accept. The GPS
+    // clock-in is still open to a roaming supervisor.
+    const res = await clockIn(w.tokens.supervisor, { ...AT_SITE, locationCode: alphaEntrance });
+    expect(res.status).toBe(403);
+    expect((await clockIn(w.tokens.supervisor, { ...AT_SITE })).status).toBe(201);
+  });
+
+  test("admins see how each shift was clocked in, and old shifts read as unknown", async () => {
+    await t.run((ctx) =>
+      ctx.db.insert("shifts", {
+        userId: w.alphaRelief, status: "completed", clockIn: Date.now() - 86400000,
+        clockOut: Date.now() - 80000000, clockInPhoto: "", siteLabel: "Alpha Ikeja Warehouse",
+        createdAt: Date.now() - 86400000,
+      }),
+    );
+    expect((await clockIn(w.tokens.alphaGuard, { ...AT_SITE, locationCode: alphaEntrance })).status).toBe(201);
+
+    const list = await (await t.fetch("/shifts", { headers: auth(w.tokens.admin) })).json();
+    const byUser = new Map(list.map((s: any) => [String(s.userId), s]));
+    expect((byUser.get(String(w.alphaGuard)) as any).checkInMethod).toBe("qr");
+    expect((byUser.get(String(w.alphaRelief)) as any).checkInMethod).toBeUndefined();
+
+    const sheets = await (await t.fetch("/timesheets", { headers: auth(w.tokens.admin) })).json();
+    const sheet = sheets.find((s: any) => String(s.userId) === String(w.alphaGuard));
+    expect(sheet.checkInMethod).toBe("qr");
+    // The location scan is counted on the timesheet like any other scan.
+    expect(sheet.scanCount).toBe(1);
+
+    const detail = await (
+      await t.fetch(`/users/${w.alphaGuard}`, { headers: auth(w.tokens.admin) })
+    ).json();
+    expect(detail.shifts[0].checkInMethod).toBe("qr");
+  });
+});
+
+describe("the QR check-in requirement", () => {
+  const AT_SITE = { gpsLatitude: 6.6018, gpsLongitude: 3.3515 };
+  const REQUIRED = "Scan the location QR code at the main entrance to clock in.";
+
+  const mapAlphaSite = () =>
+    t.run((ctx) =>
+      ctx.db.patch(w.alphaSite, { latitude: 6.6018, longitude: 3.3515, radiusMeters: 150 }),
+    );
+  const addAlphaEntrance = (active = true) =>
+    t.run((ctx) =>
+      ctx.db.insert("checkpoints", {
+        clientId: w.alphaClient, siteId: w.alphaSite, name: "Alpha Main Entrance",
+        code: "ALPHA-ENTRANCE", isPrimary: true, expectedIntervalMinutes: 60,
+        scheduledTimeIn: "18:00", scheduledTimeOut: "06:00", active, createdAt: Date.now(),
+      }),
+    );
+  const setRequired = async (requireQrCheckIn: boolean) => {
+    const res = await t.fetch("/settings/check-in", {
+      method: "PUT",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({ requireQrCheckIn }),
+    });
+    expect(res.status).toBe(200);
+  };
+  const gpsClockIn = (token: string) =>
+    t.fetch("/shifts/clock-in", {
+      method: "POST",
+      headers: auth(token),
+      body: JSON.stringify({ ...AT_SITE, siteLabel: "Alpha Ikeja Warehouse" }),
+    });
+
+  beforeEach(mapAlphaSite);
+
+  test("off by default: a GPS clock-in behaves exactly as before", async () => {
+    await addAlphaEntrance();
+    const res = await gpsClockIn(w.tokens.alphaGuard);
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.checkIn).toEqual({ method: "gps", verified: true, siteName: "Alpha Ikeja Warehouse" });
+    expect(body.shift.siteLabel).toBe("Alpha Ikeja Warehouse");
+    const [shift] = await t.run((ctx) => ctx.db.query("shifts").collect());
+    expect(shift.checkInMethod).toBe("gps");
+    // No location scan is invented for a GPS clock-in.
+    expect(await t.run((ctx) => ctx.db.query("scans").collect())).toHaveLength(0);
+  });
+
+  test("an unmeasurable GPS clock-in is unverified and names no site", async () => {
+    await t.run((ctx) =>
+      ctx.db.patch(w.alphaSite, { latitude: undefined, longitude: undefined }),
+    );
+    const res = await gpsClockIn(w.tokens.alphaGuard);
+    expect(res.status).toBe(201);
+    expect((await res.json()).checkIn).toEqual({ method: "gps", verified: false });
+  });
+
+  test("on: a guard whose location has an entrance QR must scan it", async () => {
+    await addAlphaEntrance();
+    await setRequired(true);
+    const res = await gpsClockIn(w.tokens.alphaGuard);
+    expect(res.status).toBe(403);
+    expect((await res.json()).message).toBe(REQUIRED);
+    expect(await t.run((ctx) => ctx.db.query("shifts").collect())).toHaveLength(0);
+    const refused = await t.run((ctx) =>
+      ctx.db.query("auditLogs").filter((q) => q.eq(q.field("action"), "clock_in.refused")).collect(),
+    );
+    expect(refused).toHaveLength(1);
+  });
+
+  test("on: the internal mutation enforces it too", async () => {
+    await addAlphaEntrance();
+    await setRequired(true);
+    await expect(
+      t.mutation(internal.shifts.clockIn, { userId: w.alphaGuard, latitude: 6.6018, longitude: 3.3515 }),
+    ).rejects.toThrow(/CLOCK_IN_REFUSED.*main entrance/);
+  });
+
+  test("on: scanning the entrance QR still works", async () => {
+    const entrance = await addAlphaEntrance();
+    await setRequired(true);
+    const res = await t.fetch("/shifts/clock-in", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({ ...AT_SITE, locationCode: entrance }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  test("on: a location with no entrance QR still allows GPS-only", async () => {
+    // alphaSite has only its sub-location: there is nothing at the gate to
+    // scan, so demanding a scan would lock the guard out of work.
+    await setRequired(true);
+    expect((await gpsClockIn(w.tokens.alphaGuard)).status).toBe(201);
+  });
+
+  test("on: an entrance QR the office has switched off does not count", async () => {
+    await addAlphaEntrance(false);
+    await setRequired(true);
+    expect((await gpsClockIn(w.tokens.alphaGuard)).status).toBe(201);
+  });
+
+  test("on: supervisors are unaffected, because they roam", async () => {
+    await addAlphaEntrance();
+    await t.run((ctx) =>
+      ctx.db.insert("userSiteAssignments", {
+        userId: w.supervisor, siteId: w.alphaSite, clientId: w.alphaClient, createdAt: Date.now(),
+      }),
+    );
+    await setRequired(true);
+    expect((await gpsClockIn(w.tokens.supervisor)).status).toBe(201);
+  });
+
+  test("turning it off again restores GPS clock-in", async () => {
+    await addAlphaEntrance();
+    await setRequired(true);
+    await setRequired(false);
+    expect((await gpsClockIn(w.tokens.alphaGuard)).status).toBe(201);
+  });
+});
+
+describe("the QR check-in setting is admin-controlled", () => {
+  const path = "/settings/check-in";
+  const put = (token: string, body: unknown) =>
+    t.fetch(path, { method: "PUT", headers: auth(token), body: JSON.stringify(body) });
+
+  test("a guard can neither read nor change it", async () => {
+    expect((await t.fetch(path, { headers: auth(w.tokens.alphaGuard) })).status).toBe(403);
+    expect((await put(w.tokens.alphaGuard, { requireQrCheckIn: true })).status).toBe(403);
+  });
+
+  test("an anonymous caller is rejected", async () => {
+    expect((await t.fetch(path)).status).toBe(401);
+  });
+
+  test("admins and supervisors read it, off until set", async () => {
+    for (const token of [w.tokens.admin, w.tokens.supervisor]) {
+      const res = await t.fetch(path, { headers: auth(token) });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ requireQrCheckIn: false });
+    }
+  });
+
+  test("a supervisor cannot change it", async () => {
+    expect((await put(w.tokens.supervisor, { requireQrCheckIn: true })).status).toBe(403);
+    const res = await t.fetch(path, { headers: auth(w.tokens.admin) });
+    expect(await res.json()).toEqual({ requireQrCheckIn: false });
+  });
+
+  test("an admin changes it, and the change is audited", async () => {
+    const res = await put(w.tokens.admin, { requireQrCheckIn: true });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ requireQrCheckIn: true });
+    expect(await (await t.fetch(path, { headers: auth(w.tokens.supervisor) })).json()).toEqual({
+      requireQrCheckIn: true,
+    });
+    const rows = await t.run((ctx) =>
+      ctx.db.query("auditLogs").filter((q) => q.eq(q.field("action"), "settings.changed")).collect(),
+    );
+    expect(rows).toHaveLength(1);
+    expect(String(rows[0].actorId)).toBe(String(w.admin));
+    expect(rows[0].targetId).toBe("check_in.require_qr");
+    expect(rows[0].details).toContain("turned on");
+  });
+
+  test("anything but a boolean is refused, so \"false\" cannot switch it on", async () => {
+    for (const body of [{ requireQrCheckIn: "false" }, { requireQrCheckIn: 1 }, {}]) {
+      expect((await put(w.tokens.admin, body)).status).toBe(400);
+    }
+    expect(await (await t.fetch(path, { headers: auth(w.tokens.admin) })).json()).toEqual({
+      requireQrCheckIn: false,
+    });
+  });
+});
+
+describe("every authenticated write is rate limited", () => {
+  /** Fills an actor's bucket for the current window, as a burst would. */
+  const exhaust = (action: string, actorId: Id<"users">) => {
+    const { maxRequests, windowMs } = getRateLimit(action);
+    const windowStart = Math.floor(Date.now() / windowMs) * windowMs;
+    const bucketKey = `${action}:${actorId}:${windowStart}`;
+    return t.run(async (ctx) => {
+      // Topped up in place if a request already opened this window's row:
+      // the limiter reads it with unique(), so a second row would be a fault.
+      const existing = await ctx.db
+        .query("rateLimits")
+        .filter((q) => q.eq(q.field("bucketKey"), bucketKey))
+        .first();
+      if (existing) return await ctx.db.patch(existing._id, { count: maxRequests });
+      await ctx.db.insert("rateLimits", {
+        bucketKey,
+        count: maxRequests,
+        windowStart,
+        expiresAt: windowStart + windowMs + 5000,
+      });
+    });
+  };
+
+  test("change-password allows five attempts in fifteen minutes, then 429", async () => {
+    const password = "Correct-Horse-1";
+    const userId = await t.run((ctx) =>
+      ctx.db.insert("users", {
+        name: "Password Target", email: "pw.target@example.test",
+        passwordHash: bcrypt.hashSync(password, 4), role: "admin",
+        phone: "+2348000000000", active: true, liveTracking: false, createdAt: Date.now(),
+      }),
+    );
+    const token = await signPatrolToken({ userId, email: "pw.target@example.test", role: "admin" });
+    const attempt = (currentPassword: string) =>
+      t.fetch("/auth/change-password", {
+        method: "POST",
+        headers: auth(token),
+        body: JSON.stringify({ currentPassword, newPassword: "Brand-New-Pass-9" }),
+      });
+    for (let i = 0; i < 5; i++) {
+      expect((await attempt("wrong-guess")).status).toBe(401);
+    }
+    expect((await attempt("wrong-guess")).status).toBe(429);
+    // Capped means capped: the right password does not get through either.
+    expect((await attempt(password)).status).toBe(429);
+    expect(getRateLimit("changePassword")).toEqual({ windowMs: 15 * 60 * 1000, maxRequests: 5 });
+  });
+
+  test("a guard past the write limit cannot clock in, and nothing is written", async () => {
+    await exhaust("write", w.alphaGuard);
+    const res = await t.fetch("/shifts/clock-in", {
+      method: "POST",
+      headers: auth(w.tokens.alphaGuard),
+      body: JSON.stringify({ gpsLatitude: 6.6018, gpsLongitude: 3.3515 }),
+    });
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).not.toBeNull();
+    expect(await t.run((ctx) => ctx.db.query("shifts").collect())).toHaveLength(0);
+  });
+
+  test("an admin past the write limit cannot edit locations or settings", async () => {
+    await exhaust("write", w.admin);
+    const site = await t.fetch("/sites", {
+      method: "POST",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({ name: "New Site", clientId: w.alphaClient, location: "Ikeja" }),
+    });
+    expect(site.status).toBe(429);
+    const setting = await t.fetch("/settings/check-in", {
+      method: "PUT",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({ requireQrCheckIn: true }),
+    });
+    expect(setting.status).toBe(429);
+  });
+
+  test("the limit is per person: another guard is unaffected", async () => {
+    await exhaust("write", w.alphaGuard);
+    const res = await t.fetch("/shifts/clock-in", {
+      method: "POST",
+      headers: auth(w.tokens.alphaRelief),
+      body: JSON.stringify({ gpsLatitude: 6.6018, gpsLongitude: 3.3515 }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  test("the daily export is charged to the export bucket, not the write bucket", async () => {
+    const exportDaily = () =>
+      t.fetch("/scans/export/daily", {
+        method: "POST",
+        headers: auth(w.tokens.admin),
+        body: JSON.stringify({ date: "2026-10-01" }),
+      });
+    // A full write bucket does not stop it...
+    await exhaust("write", w.admin);
+    expect((await exportDaily()).status).toBe(200);
+    // ...a full export bucket does.
+    await exhaust("export", w.admin);
+    expect((await exportDaily()).status).toBe(429);
+  });
+
+  test("report generation is charged to the report bucket", async () => {
+    await exhaust("report", w.admin);
+    const res = await t.fetch("/reports/generate", {
+      method: "POST",
+      headers: auth(w.tokens.admin),
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(429);
+  });
+
+  test("every authenticated write route is limited exactly once", async () => {
+    // A structural check, so the next route added without a limit fails here
+    // rather than in production. Exempt: /auth/* (own buckets, pre-auth),
+    // /dev/seed (secret-protected, no user), and the two AI chat routes, which
+    // run their own per-user minute and day caps (ai.checkAndIncrementRateLimit).
+    const source = (await import("./http.ts?raw")).default as string;
+    const exempt = new Set(["POST /dev/seed", "POST /ai/chat", "POST /api/v1/ai/chat"]);
+    const offenders: string[] = [];
+    let checked = 0;
+    for (const block of source.split(/\nhttp\.route\(\{/).slice(1)) {
+      const head = block.slice(0, 300);
+      const method = head.match(/\bmethod:\s*"([^"]+)"/)?.[1] ?? "";
+      if (!["POST", "PUT", "PATCH", "DELETE"].includes(method)) continue;
+      const route = head.match(/\bpath:\s*"([^"]+)"/)?.[1] ?? `${head.match(/\bpathPrefix:\s*"([^"]+)"/)?.[1]}*`;
+      const key = `${method} ${route}`;
+      if (exempt.has(key) || route.startsWith("/auth/")) continue;
+      checked++;
+      const limits = block.match(/enforceLimit\(/g)?.length ?? 0;
+      if (limits !== 1) offenders.push(`${key} (${limits})`);
+    }
+    expect(checked).toBeGreaterThan(50);
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("GET /scans honours ?limit=", () => {
+  beforeEach(async () => {
+    await t.run(async (ctx) => {
+      const base = Date.now() - 60 * 60 * 1000;
+      for (let i = 0; i < 3; i++) {
+        await ctx.db.insert("scans", {
+          clientId: w.alphaClient, siteId: w.alphaSite, officerId: w.alphaGuard,
+          checkpointId: w.alphaCheckpoint, scannedAt: base + i * 60000,
+          receivedAt: base + i * 60000, gpsValid: true, notes: "",
+        });
+      }
+    });
+  });
+  const count = async (query: string) => {
+    const res = await t.fetch(`/scans${query}`, { headers: auth(w.tokens.admin) });
+    expect(res.status).toBe(200);
+    return (await res.json()).length;
+  };
+
+  test("a smaller limit returns fewer rows, newest first", async () => {
+    expect(await count("?limit=2")).toBe(2);
+    expect(await count("?limit=1")).toBe(1);
+  });
+
+  test("absent or unusable values keep the old default", async () => {
+    expect(await count("")).toBe(3);
+    expect(await count("?limit=abc")).toBe(3);
+    expect(await count("?limit=")).toBe(3);
+  });
+
+  test("values are clamped to 1..1000 rather than refused", async () => {
+    expect(await count("?limit=0")).toBe(1);
+    expect(await count("?limit=-5")).toBe(1);
+    expect(await count("?limit=2.9")).toBe(2);
+    expect(await count("?limit=999999")).toBe(3);
+  });
+});
+
+describe("Sentry rejections say why", () => {
+  test("the response body is logged, without the DSN or key", async () => {
+    const { reportException } = await import("./lib/sentry");
+    const key = "abcdef0123456789abcdef0123456789";
+    const savedDsn = process.env.SENTRY_DSN;
+    const savedFetch = globalThis.fetch;
+    const logged: string[] = [];
+    const savedError = console.error;
+    process.env.SENTRY_DSN = `https://${key}@o1.ingest.sentry.io/42`;
+    globalThis.fetch = (async () =>
+      new Response(
+        `{"detail":"event submission rejected with_reason: ProjectId",\n"key":"${key}"}`,
+        { status: 403, statusText: "Forbidden" },
+      )) as typeof fetch;
+    console.error = (...args: unknown[]) => {
+      logged.push(args.map(String).join(" "));
+    };
+    try {
+      expect(await reportException(new Error("boom"))).toBe("failed");
+    } finally {
+      console.error = savedError;
+      globalThis.fetch = savedFetch;
+      if (savedDsn === undefined) delete process.env.SENTRY_DSN;
+      else process.env.SENTRY_DSN = savedDsn;
+    }
+    const line = logged.find((l) => l.includes("Sentry rejected an event"));
+    expect(line).toBeDefined();
+    expect(line).toContain("403");
+    expect(line).toContain("event submission rejected with_reason: ProjectId");
+    expect(line).not.toContain(key);
+    expect(line).not.toContain("\n");
+  });
+});
