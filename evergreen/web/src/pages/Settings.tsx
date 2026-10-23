@@ -9,6 +9,7 @@ import {
   MessageSquareText,
   Moon,
   Phone,
+  QrCode,
   RefreshCw,
   ShieldAlert,
   Sun,
@@ -78,6 +79,7 @@ const SECTIONS = [
   { id: 'alerts', label: 'Alerts & dispatch', icon: ShieldAlert },
   { id: 'reports', label: 'Automated reports', icon: Mail },
   { id: 'tracking', label: 'Live tracking', icon: RefreshCw },
+  { id: 'checkin', label: 'Clock-in', icon: QrCode },
   { id: 'appearance', label: 'Appearance', icon: Sun },
   { id: 'account', label: 'Your account', icon: KeyRound },
 ] as const
@@ -391,6 +393,8 @@ export default function Settings() {
                 </Panel>
               )}
 
+              {section === 'checkin' && <CheckInPanel />}
+
               {section === 'appearance' && (
                 <Panel
                   icon={theme === 'dark' ? <Moon className="h-5 w-5 text-primary" /> : <Sun className="h-5 w-5 text-primary" />}
@@ -414,10 +418,11 @@ export default function Settings() {
 
       {/* Sticky save bar. It only appears when something has changed, and it
           says how many things — a Save button that is always live gives no
-          signal about whether you have edited anything. Appearance and the
-          account section save themselves, so it stays out of their way. */}
+          signal about whether you have edited anything. Appearance, clock-in
+          and the account section save themselves, so it stays out of their
+          way. */}
       {!loading && (dirtyKeys.length > 0 || message || error) &&
-        section !== 'appearance' && section !== 'account' && (
+        section !== 'appearance' && section !== 'account' && section !== 'checkin' && (
         <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/95 px-4 py-3 backdrop-blur md:left-64">
           <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3">
             <div className="text-sm">
@@ -522,19 +527,22 @@ function Toggle({
   onChange,
   title,
   detail,
+  disabled = false,
 }: {
   checked: boolean
   onChange: (on: boolean) => void
   title: string
   detail: string
+  disabled?: boolean
 }) {
   return (
-    <label className="flex cursor-pointer items-center gap-3">
+    <label className={`flex items-center gap-3 ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
       <span className="relative inline-flex shrink-0 items-center">
         <input
           type="checkbox"
           className="peer sr-only"
           checked={checked}
+          disabled={disabled}
           onChange={(e) => onChange(e.target.checked)}
         />
         <span className="h-6 w-11 rounded-full border border-border bg-background after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-muted-foreground after:transition-all peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:bg-white" />
@@ -544,6 +552,117 @@ function Toggle({
         <span className="block text-xs text-muted-foreground">{detail}</span>
       </span>
     </label>
+  )
+}
+
+/**
+ * Whether guards must scan the location's entrance QR to clock in.
+ *
+ * Saves on its own the moment it is flipped, like the account section, because
+ * it is a separate setting with its own route and audit entry. This page can be
+ * live before the backend that serves it, so any failure to read the setting
+ * leaves the switch disabled with a plain note — never an error. Reading it
+ * back rather than assuming "off" matters: showing off when it is on would
+ * invite an admin to "turn it on" and believe nothing was enforced before.
+ */
+function CheckInPanel() {
+  const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading')
+  const [requireQr, setRequireQr] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState('')
+  const [problem, setProblem] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    api.checkInSettings
+      .get()
+      .then((res) => {
+        if (cancelled) return
+        // Anything without a real boolean is not the route this page expects
+        // (an older backend, or the SPA's own index.html) — treat as missing.
+        if (typeof res?.requireQrCheckIn !== 'boolean') {
+          setStatus('unavailable')
+          return
+        }
+        setRequireQr(res.requireQrCheckIn)
+        setStatus('ready')
+      })
+      .catch(() => {
+        if (!cancelled) setStatus('unavailable')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const change = async (on: boolean) => {
+    // Turning it on is the step that can stop a guard clocking in, so it asks
+    // first. Turning it off never locks anyone out.
+    if (
+      on &&
+      !window.confirm(
+        'Require a QR scan to clock in?\n\nGuards on an older version of the app will not be able to clock in until they update.',
+      )
+    ) {
+      return
+    }
+    setBusy(true)
+    setDone('')
+    setProblem('')
+    try {
+      const res = await api.checkInSettings.update(on)
+      const now = typeof res?.requireQrCheckIn === 'boolean' ? res.requireQrCheckIn : on
+      setRequireQr(now)
+      setDone(now ? 'Saved. Guards now scan the entrance QR to clock in.' : 'Saved. QR scan is no longer required to clock in.')
+    } catch (err) {
+      setProblem(err instanceof Error ? err.message : 'Could not save this setting. Please try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Panel
+      icon={<QrCode className="h-5 w-5 text-primary" />}
+      title="QR-verified clock-in"
+      blurb="Guards must scan the location's main QR code at the entrance to clock in."
+    >
+      {status === 'loading' ? (
+        <div className="space-y-2">
+          <Skeleton className="h-6 w-64" />
+          <Skeleton className="h-3 w-80" />
+        </div>
+      ) : (
+        <Toggle
+          checked={status === 'ready' && requireQr}
+          onChange={(on) => void change(on)}
+          disabled={status !== 'ready' || busy}
+          title="Require QR scan to clock in"
+          detail={
+            status !== 'ready'
+              ? 'Available after the backend update.'
+              : requireQr
+                ? 'On — a guard clocks in by scanning the entrance QR of their location.'
+                : 'Off — guards can clock in by GPS location alone.'
+          }
+        />
+      )}
+      <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        Turn this on only after every guard's phone has the new app version. Otherwise they cannot
+        clock in.
+      </div>
+      {problem && (
+        <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {problem}
+        </div>
+      )}
+      {done && (
+        <div className="rounded-lg border border-success/20 bg-success/10 px-3 py-2 text-sm text-success">
+          {done}
+        </div>
+      )}
+    </Panel>
   )
 }
 

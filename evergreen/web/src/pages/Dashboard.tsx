@@ -67,7 +67,10 @@ export default function Dashboard() {
   useEffect(() => {
     fetchScans()
     fetchStats()
-    const interval = setInterval(fetchStats, 5000)
+    // Once a minute: the cards are totals, and new scans already reach the
+    // list through the realtime poll. Every 5s was 720 stats calls an hour
+    // per open dashboard for numbers that move a few times an hour.
+    const interval = setInterval(fetchStats, 60_000)
     return () => clearInterval(interval)
   }, [])
 

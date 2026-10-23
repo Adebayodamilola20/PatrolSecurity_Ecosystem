@@ -121,15 +121,25 @@ function retryDelayMs(retryAfterHeader: string | null, attempt: number): number 
   return Math.min(base + jitter, 10000)
 }
 
+// `quiet` keeps a failure out of the app-wide error banner. For calls whose
+// failure the page already handles in place — such as a route that may not be
+// deployed yet — where a red "Not Found" across the top would only alarm.
+// Auth handling (refresh, session expiry) is unchanged.
+type RequestOptions = RequestInit & { quiet?: boolean }
+
 async function request<T>(
   path: string,
-  options?: RequestInit,
+  requestOptions?: RequestOptions,
   allowRefresh = true,
   retryCount = 0,
 ): Promise<T> {
+  const { quiet = false, ...options } = requestOptions ?? {}
+  const reportError = (detail: Record<string, unknown>) => {
+    if (!quiet) emitAppEvent('app:request-error', detail)
+  }
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     const error = new Error('You have a poor network connection or you are offline. Please try again.')
-    emitAppEvent('app:request-error', { message: error.message, kind: 'network' })
+    reportError({ message: error.message, kind: 'network' })
     throw error
   }
   const token = localStorage.getItem(ACCESS_TOKEN_KEY)
@@ -146,7 +156,7 @@ async function request<T>(
   let res: Response
   try {
     res = await fetch(`${API_BASE}${path}`, {
-      headers: { ...headers, ...options?.headers as Record<string, string> },
+      headers: { ...headers, ...options.headers as Record<string, string> },
       signal: controller.signal,
       ...options,
     })
@@ -155,7 +165,7 @@ async function request<T>(
     const isTimeout = cause instanceof DOMException && cause.name === 'AbortError'
     const details = isTimeout ? ' (request timed out)' : cause instanceof Error ? ` (${cause.message})` : ''
     const error = new Error(`The request could not reach the API server${details}. Please try again.`)
-    emitAppEvent('app:request-error', { message: error.message, kind: 'network' })
+    reportError({ message: error.message, kind: 'network' })
     throw error
   }
 
@@ -171,7 +181,7 @@ async function request<T>(
   ) {
     const newToken = await refreshAccessToken()
     if (newToken) {
-      return request<T>(path, options, false)
+      return request<T>(path, requestOptions, false)
     }
     forceSessionExpiry()
   }
@@ -184,13 +194,13 @@ async function request<T>(
   const lockedOut = res.status === 429 && path.startsWith('/auth/login')
   if ((res.status === 429 || res.status === 503) && !lockedOut && retryCount < MAX_RATE_LIMIT_RETRIES) {
     await sleep(retryDelayMs(res.headers.get('Retry-After'), retryCount))
-    return request<T>(path, options, allowRefresh, retryCount + 1)
+    return request<T>(path, requestOptions, allowRefresh, retryCount + 1)
   }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }))
     const message = err.message || err.error || 'Request failed'
-    emitAppEvent('app:request-error', {
+    reportError({
       message,
       kind: res.status >= 500 ? 'server' : 'request',
       status: res.status,
@@ -477,6 +487,19 @@ export const api = {
     list: () => request<any[]>('/pass-on-logs'),
     create: (data: any) =>
       request<any>('/pass-on-logs', { method: 'POST', body: JSON.stringify(data) }),
+  },
+  // Whether guards must scan the location's entrance QR to clock in. Read by
+  // admins and supervisors, changed by admins only.
+  checkInSettings: {
+    // Quiet: this ships before the backend route may exist, and the Settings
+    // page shows "available after the backend update" for any failure.
+    get: () =>
+      request<{ requireQrCheckIn: boolean }>('/settings/check-in', { quiet: true }),
+    update: (requireQrCheckIn: boolean) =>
+      request<{ requireQrCheckIn: boolean }>('/settings/check-in', {
+        method: 'PUT',
+        body: JSON.stringify({ requireQrCheckIn }),
+      }),
   },
   emergency: {
     settings: () => request<any[]>('/emergency/settings'),

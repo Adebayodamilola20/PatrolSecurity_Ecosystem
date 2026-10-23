@@ -9,9 +9,9 @@ export interface User {
   lastClockIn?: string | null
   lastClockOut?: string | null
   clientId?: string | null
-  siteIds?: string[]
-  sites?: Site[]
-  /** Locations this person is posted to, for the roster card. */
+  // GET /users sends posting names only — no site ids or site objects. The
+  // map once read `sites` and labelled every guard "Unassigned area".
+  /** Locations this person is posted to, for the roster card and live map. */
   assignedSiteNames?: string[]
   /**
    * Where they actually are while on shift: the latest live fix, or the
