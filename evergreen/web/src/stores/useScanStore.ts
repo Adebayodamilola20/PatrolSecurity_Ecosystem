@@ -3,6 +3,7 @@ import type { Scan, DashboardStats } from '../types'
 import { api } from '../services/api'
 import { subscribeToScans, subscribeToShiftUpdates } from '../services/websocket'
 import { useEffect } from 'react'
+import { useAuthStore } from './useAuthStore'
 
 interface ScanStore {
   scans: Scan[]
@@ -67,7 +68,13 @@ export const useScanStore = create<ScanStore>((set) => ({
     try {
       const [scans, users, checkpoints] = await Promise.all([
         api.scans.list(),
-        api.users.list().catch(() => []),
+        // GET /users is admin-only. A supervisor's request was refused every
+        // refresh, and although the .catch kept the stats working, the refusal
+        // had already raised the red banner across the top of the dashboard.
+        // Supervisors simply don't get the on-duty count from here.
+        useAuthStore.getState().user?.role === 'admin'
+          ? api.users.list().catch(() => [])
+          : Promise.resolve([]),
         api.checkpoints.list().catch(() => []),
       ])
 
