@@ -9,6 +9,7 @@ import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/duties_screen.dart';
 import 'screens/scanner_screen.dart';
+import 'screens/clock_in_scanner_screen.dart';
 import 'screens/scan_result_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/scan_detail_screen.dart';
@@ -229,6 +230,8 @@ class _PatrolAppState extends State<PatrolApp> with WidgetsBindingObserver {
             return _route(const HomeScreen(), settings);
           case AppRoutes.scanner:
             return _route(const ScannerScreen(), settings);
+          case AppRoutes.clockIn:
+            return _route(const ClockInScannerScreen(), settings);
           case AppRoutes.scanResult:
             return _route(
               ScanResultScreen(

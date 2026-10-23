@@ -211,7 +211,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                           border: Border.all(color: Colors.white, width: 2),
                           borderRadius: BorderRadius.circular(16),
                         ),
-                        child: CustomPaint(painter: _CornerPainter()),
+                        child: CustomPaint(painter: ScanCornerPainter()),
                       );
                     },
                   ),
@@ -284,7 +284,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
   }
 }
 
-class _CornerPainter extends CustomPainter {
+/// The green corner brackets drawn inside the scan frame. Shared with the
+/// clock-in scanner so both cameras look the same to a guard.
+class ScanCornerPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()

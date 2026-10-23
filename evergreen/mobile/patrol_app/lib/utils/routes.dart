@@ -4,6 +4,7 @@ class AppRoutes {
   static const String login = '/login';
   static const String home = '/home';
   static const String scanner = '/scanner';
+  static const String clockIn = '/clock-in';
   static const String scanResult = '/scan-result';
   static const String duties = '/duties';
   static const String history = '/history';

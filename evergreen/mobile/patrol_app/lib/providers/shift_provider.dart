@@ -1,10 +1,37 @@
 import 'dart:async';
+import 'dart:io' show IOException;
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import '../models/clock_in_check.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
 import '../utils/constants.dart';
 
+/// What a shift needs from the phone's location hardware.
+///
+/// Production always uses this default, which is a straight pass-through to
+/// [LocationService]. It exists as a class so tests can stand in for the GPS
+/// chip; without it nothing about clocking in can be exercised off a device.
+class ShiftLocationSource {
+  const ShiftLocationSource();
+
+  Future<SafeLocationResult> current({bool allowCached = true}) =>
+      LocationService.getCurrentLocation(allowCached: allowCached);
+
+  Future<bool> ensureBackgroundPermission() =>
+      LocationService.ensureBackgroundPermission();
+
+  void startWarmTracking() => LocationService.startWarmTracking();
+
+  void stopWarmTracking() => LocationService.stopWarmTracking();
+}
+
 class ShiftProvider extends ChangeNotifier {
+  ShiftProvider({ShiftLocationSource location = const ShiftLocationSource()})
+    : _location = location;
+
+  final ShiftLocationSource _location;
+
   bool _onDuty = false;
   bool _loading = false;
   String? _error;
@@ -38,6 +65,12 @@ class ShiftProvider extends ChangeNotifier {
   double? get clockOutDistanceMeters => _clockOutDistanceMeters;
   bool get positionTracking => _positionTracking;
 
+  /// How the server confirmed the most recent successful clock-in, or null
+  /// when the server sent no details (older backend) or the last attempt
+  /// failed.
+  ClockInCheck? _lastCheckIn;
+  ClockInCheck? get lastCheckIn => _lastCheckIn;
+
   void clearData() {
     _stopPositionTracking();
     _onDuty = false;
@@ -51,6 +84,7 @@ class ShiftProvider extends ChangeNotifier {
     _clockOutGpsValid = null;
     _clockOutDistanceMeters = null;
     _statusLoadedAt = null;
+    _lastCheckIn = null;
     notifyListeners();
   }
 
@@ -134,7 +168,7 @@ class ShiftProvider extends ChangeNotifier {
     // from a cold chip, reads a ~1400m cell-tower estimate, fails the accuracy
     // check and drops the update — which is what kept it cold in the first
     // place. Guards could not break out of that loop by retrying.
-    LocationService.startWarmTracking();
+    _location.startWarmTracking();
     _positionTimer?.cancel();
     _positionTimer = Timer.periodic(
       const Duration(seconds: continuousGpsUpdateSeconds),
@@ -147,7 +181,7 @@ class ShiftProvider extends ChangeNotifier {
 
   void _stopPositionTracking() {
     _positionTracking = false;
-    LocationService.stopWarmTracking();
+    _location.stopWarmTracking();
     _positionTimer?.cancel();
     _positionTimer = null;
   }
@@ -156,7 +190,7 @@ class ShiftProvider extends ChangeNotifier {
     if (!_onDuty) return;
     if (_sendingPosition) return;
     _sendingPosition = true;
-    final location = await LocationService.getCurrentLocation();
+    final location = await _location.current();
     try {
       if (!location.isSuccess) return;
       await ApiService.updatePosition(
@@ -172,27 +206,28 @@ class ShiftProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> clockIn() async {
+  /// Clocks in. [locationCode] is the exact text of the location QR the guard
+  /// scanned at the main entrance; without it the server judges the clock-in
+  /// on GPS alone, and decides whether that is allowed.
+  Future<bool> clockIn({String? locationCode}) async {
     _loading = true;
     _error = null;
+    _lastCheckIn = null;
     notifyListeners();
 
     try {
-      final location = await LocationService.getCurrentLocation(
-        allowCached: false,
-      );
+      final location = await _location.current(allowCached: false);
       // Stop here rather than sending a clock-in the server will refuse. The
       // location service has already asked for permission and turned the
       // system prompt on by this point, so the guard has seen the dialog —
       // what they need now is a plain sentence about what to do next.
       if (!location.isSuccess) {
-        _error = location.error?.isNotEmpty == true
-            ? location.error!
-            : 'Turn on location for this app, allow it while using the app, '
-                  'then clock in again.';
-        _loading = false;
-        notifyListeners();
-        return false;
+        return _clockInFailed(
+          location.error?.isNotEmpty == true
+              ? location.error!
+              : 'Turn on location for this app, allow it while using the app, '
+                    'then clock in again.',
+        );
       }
       // Ask for "all the time" here, at the start of the shift, because this
       // is the only moment the request makes sense to a guard: they are
@@ -200,25 +235,47 @@ class ShiftProvider extends ChangeNotifier {
       // not block the shift — it just means the position stops updating once
       // the app is closed.
       _backgroundTrackingGranted =
-          await LocationService.ensureBackgroundPermission();
+          await _location.ensureBackgroundPermission();
 
       final data = await ApiService.clockIn(
         latitude: location.latitude,
         longitude: location.longitude,
         mocked: location.isMocked,
+        locationCode: locationCode,
       );
       _applyShiftPayload(data);
+      _lastCheckIn = ClockInCheck.fromResponse(data);
       await loadStatus(force: true);
       _startPositionTracking();
       _loading = false;
       notifyListeners();
       return true;
     } catch (e) {
-      _error = e.toString().replaceFirst('Exception: ', '');
-      _loading = false;
-      notifyListeners();
-      return false;
+      return _clockInFailed(_clockInErrorMessage(e));
     }
+  }
+
+  /// Ends a failed clock-in with the app matching the server.
+  ///
+  /// Whatever went wrong, the server may still hold an open shift for this
+  /// guard: a 409 "Already clocked in" means it certainly does, and a timeout
+  /// can land after the shift was written. Without this resync the app went on
+  /// showing "Off duty" while every clock-in was refused as a duplicate, and
+  /// the guard had no way forward. The resync can itself fail (it is usually
+  /// the same dead connection) and it also clears [error] on success, so the
+  /// reason is put back afterwards — the guard must see why the clock-in
+  /// failed, not what happened to the status check.
+  Future<bool> _clockInFailed(String message) async {
+    try {
+      await loadStatus(force: true);
+    } catch (_) {
+      // loadStatus already catches its own errors; this is belt and braces so
+      // nothing here can replace the original reason.
+    }
+    _error = message;
+    _loading = false;
+    notifyListeners();
+    return false;
   }
 
   Future<bool> clockOut() async {
@@ -227,9 +284,7 @@ class ShiftProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final location = await LocationService.getCurrentLocation(
-        allowCached: false,
-      );
+      final location = await _location.current(allowCached: false);
       final data = await ApiService.clockOut(
         latitude: location.isSuccess ? location.latitude : null,
         longitude: location.isSuccess ? location.longitude : null,
@@ -246,6 +301,24 @@ class ShiftProvider extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  /// The sentence a guard sees when a clock-in request fails.
+  ///
+  /// Server refusals carry their own guard-facing message, which is passed
+  /// through untouched. Transport failures are replaced: their text is a stack
+  /// of URLs and socket codes, and the only useful thing to say is that there
+  /// is no connection.
+  static String _clockInErrorMessage(Object e) {
+    if (e is IOException ||
+        e is TimeoutException ||
+        e is http.ClientException) {
+      return 'No connection. Check your internet and try again.';
+    }
+    final text = e.toString();
+    return text.startsWith('Exception: ')
+        ? text.substring('Exception: '.length)
+        : text;
   }
 
   @override

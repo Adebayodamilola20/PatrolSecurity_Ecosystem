@@ -39,11 +39,16 @@ enum _RefreshOutcome { success, transientFailure, sessionDead }
 
 class ApiService {
   static final _storage = FlutterSecureStorage();
-  static final _client = http.Client();
+  static http.Client _client = http.Client();
   static final Duration _timeout = const Duration(seconds: 30);
   static bool _baseUrlVerified = false;
 
   static void Function()? onUnauthorized;
+
+  /// Lets tests stand a fake server behind every request. Production never
+  /// calls this; the default client above is the real network.
+  @visibleForTesting
+  static set httpClientForTesting(http.Client client) => _client = client;
 
   static Future<T> _decodeBody<T>(String body) async {
     final decoded = body.length > 50 * 1024
@@ -439,10 +444,15 @@ class ApiService {
     await _storage.delete(key: 'patrol_refresh');
   }
 
+  /// [locationCode] is the exact text decoded from the location's clock-in QR
+  /// at the main entrance. It is left out entirely when the guard did not scan
+  /// one, so a GPS-only clock-in looks the same as it always has; an older
+  /// server ignores the field either way.
   static Future<Map<String, dynamic>> clockIn({
     double? latitude,
     double? longitude,
     bool mocked = false,
+    String? locationCode,
   }) async {
     _ensureHttps();
     final body = <String, dynamic>{};
@@ -452,6 +462,7 @@ class ApiService {
     // fabricated fix. The app is the thing being spoofed, so it is in no
     // position to make that call itself.
     body['gpsMocked'] = mocked;
+    if (locationCode != null) body['locationCode'] = locationCode;
     final res = await _client
         .post(
           Uri.parse('$baseUrl/shifts/clock-in'),
