@@ -1,13 +1,21 @@
 import { internalMutation, internalQuery } from "../_generated/server";
-import type { MutationCtx } from "../_generated/server";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
-import { endOfPeriod, invoiceTotals, isDay, isPeriod } from "../lib/finance";
+import { VAT_BPS, endOfPeriod, invoiceTotals, isDay, isPeriod } from "../lib/finance";
+import { getSettings } from "./payouts";
 import { audit, clean, fail, nextNumber, todayWat } from "./shared";
 
 const lineValidator = v.object({ description: v.string(), quantity: v.number(), unitKobo: v.number() });
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/** 7.5% unless Head Office has switched VAT off for new invoices. */
+async function vatRate(ctx: QueryCtx) {
+  const settings = await getSettings(ctx);
+  return settings?.vatOnInvoices === false ? 0 : VAT_BPS;
+}
+
 export function periodLabel(period: string) {
   const [y, m] = period.split("-").map(Number);
   return `${MONTHS[m - 1]} ${y}`;
@@ -100,7 +108,7 @@ async function insertInvoice(
   dueDate: string,
   notes?: string,
 ) {
-  const totals = invoiceTotals(lines);
+  const totals = invoiceTotals(lines, await vatRate(ctx));
   const year = period.slice(0, 4);
   const seq = await nextNumber(ctx, `invoice-${year}`);
   const number = `TSL-${year}-${String(seq).padStart(4, "0")}`;
@@ -188,7 +196,8 @@ export const update = internalMutation({
     if (inv.status === "paid") fail("A paid invoice cannot be changed");
     if (!isDay(args.dueDate)) fail("Due date is not a real date");
     const lines = checkLines(args.lines);
-    const totals = invoiceTotals(lines);
+    // Keep the VAT the invoice was made with: a sent invoice must not change rate.
+    const totals = invoiceTotals(lines, inv.vatKobo > 0 ? VAT_BPS : 0);
     if (totals.total < inv.paidKobo) fail("The new total is less than what the client has already paid");
     await ctx.db.patch(inv._id, {
       lines,

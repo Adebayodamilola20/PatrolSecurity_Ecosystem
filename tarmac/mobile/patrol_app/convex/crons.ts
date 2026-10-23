@@ -67,4 +67,11 @@ crons.daily(
   {},
 );
 
+// Tarmac finance (Nigerian time is UTC+1). Held money whose release date has
+// come is shared at 6am; the daily money check runs at 7am; ready payouts are
+// sent (when automatic sending is on) and pending ones re-checked every 15 min.
+crons.cron("finance: release held money on its date", "0 5 * * *", internal.finance.daily.releaseDue, {});
+crons.cron("finance: daily money check", "0 6 * * *", internal.finance.daily.moneyCheck, {});
+crons.interval("finance: send and re-check payouts", { minutes: 15 }, internal.finance.payouts.tick, {});
+
 export default crons;

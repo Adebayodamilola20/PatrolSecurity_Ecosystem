@@ -17,9 +17,9 @@ import {
   Bot,
   Activity,
   BarChart3,
-  Landmark,
   Receipt,
-  Wallet,
+  ArrowDownLeft,
+  ArrowUpRight,
   UserPlus,
   IdCard,
   CalendarDays,
@@ -33,10 +33,11 @@ import { useAlertStore } from '../../stores/useAlertStore'
 
 // Ordered by how often Head Office uses them. Partners live inside Branches.
 const FINANCE_NAV = [
-  { to: '/finance/payments', label: 'Payments', icon: Wallet },
+  { to: '/finance/payments', label: 'Money in', icon: ArrowDownLeft },
+  { to: '/finance/money-out', label: 'Money out', icon: ArrowUpRight },
+  { to: '/finance/history', label: 'History', icon: Clock },
   { to: '/finance/invoices', label: 'Invoices', icon: Receipt },
   { to: '/finance/clients', label: 'Clients', icon: Building2 },
-  { to: '/finance/branches', label: 'Branches', icon: Landmark },
   { to: '/finance/staff', label: 'Staff', icon: IdCard },
   { to: '/finance/recruitment', label: 'Applicants', icon: UserPlus },
   { to: '/finance/rosters', label: 'Rosters', icon: CalendarDays },

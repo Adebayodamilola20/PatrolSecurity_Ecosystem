@@ -33,7 +33,9 @@ async function setup(opts: { admins?: number } = {}) {
     }
     return ids;
   });
-  await t.mutation(f.branches.addTarmacBranches, { actorId: admins[0] });
+  for (const [i, name] of ["Jos", "Abuja", "Lagos", "Port Harcourt", "Owerri", "Yola", "Lafia"].entries()) {
+    await t.mutation(f.branches.create, { actorId: admins[0], name, isHq: i === 0 });
+  }
   const branches = await t.query(f.branches.list, {});
   const branch = (name: string) => branches.find((b) => b.name === name)!.id;
   return { t, admin: admins[0], admin2: admins[1], branch };
@@ -53,14 +55,25 @@ const audits = (t: ReturnType<typeof convexTest>) =>
   t.run(async (ctx) => (await ctx.db.query("auditLogs").collect()).filter((a) => a.action.startsWith("finance.")));
 
 describe("branches", () => {
-  test("one click adds Tarmac's 7 branches with Jos as Head Office", async () => {
+  test("branches are added one at a time, any number, one Head Office", async () => {
     const { t, admin } = await setup();
     const branches = await t.query(f.branches.list, {});
     expect(branches.map((b) => b.name)).toEqual(["Jos", "Abuja", "Lafia", "Lagos", "Owerri", "Port Harcourt", "Yola"]);
     expect(branches[0].isHq).toBe(true);
     expect(branches[0].splitBps).toEqual({ hq: 800, vat: 750, partner: 3450, salary: 5000 });
-    await expect(t.mutation(f.branches.addTarmacBranches, { actorId: admin })).rejects.toThrow(/already exist/);
+    await t.mutation(f.branches.create, { actorId: admin, name: "Kaduna" });
+    expect(await t.query(f.branches.list, {})).toHaveLength(8);
+    await expect(t.mutation(f.branches.create, { actorId: admin, name: "Kano", isHq: true })).rejects.toThrow(/already the Head Office/);
     await expect(t.mutation(f.branches.create, { actorId: admin, name: "lagos" })).rejects.toThrow(/already a lagos/i);
+  });
+
+  test("an empty branch can be removed; one with clients cannot", async () => {
+    const s = await setup();
+    await s.t.mutation(f.branches.removeBranch, { actorId: s.admin, branchId: s.branch("Yola") });
+    expect((await s.t.query(f.branches.list, {})).map((b) => b.name)).not.toContain("Yola");
+    await s.t.mutation(f.branches.create, { actorId: s.admin, name: "Yola" }); // the name is free again
+    await addClient(s, "Rayfield Estate", 1_000_000, "Lagos");
+    await expect(s.t.mutation(f.branches.removeBranch, { actorId: s.admin, branchId: s.branch("Lagos") })).rejects.toThrow(/still has 1 client/);
   });
 
   test("sharing rule must add to 100%", async () => {
@@ -72,7 +85,8 @@ describe("branches", () => {
 });
 
 describe("partners", () => {
-  const partner = { name: "Ibrahim Danladi", phone: "08030000000", bankName: "Zenith Bank", accountNumber: "2081234541", accountName: "Ibrahim Danladi" };
+  const zenith = { bankCode: "057", bankName: "Zenith Bank", accountNumber: "2081234541", accountName: "IBRAHIM DANLADI" };
+  const partner = { name: "Ibrahim Danladi", phone: "08030000000", account: zenith };
 
   test("new partner waits for approval; a second admin approves", async () => {
     const s = await setup({ admins: 2 });
@@ -98,7 +112,7 @@ describe("partners", () => {
     const s = await setup();
     const id = await s.t.mutation(f.branches.createPartner, { actorId: s.admin, branchId: s.branch("Abuja"), ...partner });
     await s.t.mutation(f.branches.approvePartner, { actorId: s.admin, partnerId: id });
-    await s.t.mutation(f.branches.updatePartner, { actorId: s.admin, partnerId: id, ...partner, accountNumber: "0123456789" });
+    await s.t.mutation(f.branches.updatePartner, { actorId: s.admin, partnerId: id, ...partner, account: { ...zenith, accountNumber: "0123456789" } });
     expect((await s.t.query(f.branches.listPartners, {}))[0].status).toBe("pending");
     expect((await s.t.query(f.branches.list, {})).find((b) => b.name === "Abuja")!.partner).toBeNull();
   });
@@ -106,7 +120,7 @@ describe("partners", () => {
   test("bad account numbers are refused", async () => {
     const s = await setup();
     await expect(
-      s.t.mutation(f.branches.createPartner, { actorId: s.admin, branchId: s.branch("Abuja"), ...partner, accountNumber: "12345" }),
+      s.t.mutation(f.branches.createPartner, { actorId: s.admin, branchId: s.branch("Abuja"), ...partner, account: { ...zenith, accountNumber: "12345" } }),
     ).rejects.toThrow(/10 digits/);
   });
 });

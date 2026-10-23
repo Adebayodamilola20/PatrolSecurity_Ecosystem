@@ -5,6 +5,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import { addSplits, assertKobo, isPeriod, splitPayment, ZERO_SPLIT } from "../lib/finance";
 import { assertSecondPerson, audit, clean, fail, getBranch, nextNumber, periodOf, periodRange } from "./shared";
 import { statusAfterPayment } from "./invoices";
+import { createPayouts } from "./payouts";
 
 const naira = (kobo: number) => `₦${(kobo / 100).toLocaleString("en-NG", { maximumFractionDigits: 2 })}`;
 
@@ -87,6 +88,8 @@ export async function applyPayment(
     paymentId,
     `Recorded ${naira(args.amountKobo)} from ${client.name}${branch.onHold ? " (branch on hold — not shared yet)" : ""}`,
   );
+  const saved = await ctx.db.get(paymentId);
+  if (saved) await createPayouts(ctx, saved);
   return { paymentId, duplicate: false };
 }
 
@@ -135,6 +138,8 @@ export const release = internalMutation({
       releasedAt: Date.now(),
       partnerId: partner?.status === "active" ? partner._id : undefined,
     });
+    const updated = await ctx.db.get(payment._id);
+    if (updated) await createPayouts(ctx, updated);
     const client = await ctx.db.get(payment.clientId);
     await audit(ctx, args.actorId, "payment.released", "finPayment", payment._id, `Released ${naira(payment.amountKobo)} from ${client?.name ?? "client"} for sharing`);
   },
@@ -164,6 +169,7 @@ function view(
   clients: Doc<"finClients">[],
   branches: Doc<"finBranches">[],
   partners: Doc<"finPartners">[],
+  payouts: Doc<"finPayouts">[] = [],
 ) {
   return {
     id: p._id,
@@ -181,6 +187,9 @@ function view(
     split: p.split,
     partnerName: p.partnerId ? partners.find((x) => x._id === p.partnerId)?.name ?? null : null,
     unallocatedKobo: p.unallocatedKobo,
+    payouts: payouts
+      .filter((o) => o.paymentId === p._id)
+      .map((o) => ({ share: o.share, status: o.status, amountKobo: o.amountKobo, toName: o.toName ?? null, waitingFor: o.waitingFor ?? null })),
   };
 }
 
@@ -198,10 +207,14 @@ export const list = internalQuery({
     const clients = await ctx.db.query("finClients").collect();
     const branches = await ctx.db.query("finBranches").collect();
     const partners = await ctx.db.query("finPartners").collect();
+    const payouts: Doc<"finPayouts">[] = [];
+    for (const p of inMonth) {
+      payouts.push(...(await ctx.db.query("finPayouts").withIndex("by_paymentId", (q) => q.eq("paymentId", p._id)).collect()));
+    }
     const shared = inMonth.filter((p) => p.state === "shared");
     return {
       period,
-      payments: inMonth.sort((a, b) => b.receivedAt - a.receivedAt).map((p) => view(p, clients, branches, partners)),
+      payments: inMonth.sort((a, b) => b.receivedAt - a.receivedAt).map((p) => view(p, clients, branches, partners, payouts)),
       held: held.sort((a, b) => a.receivedAt - b.receivedAt).map((p) => view(p, clients, branches, partners)),
       receivedKobo: inMonth.reduce((s, p) => s + p.amountKobo, 0),
       sharedSplit: shared.reduce((s, p) => addSplits(s, p.split), ZERO_SPLIT),

@@ -2,12 +2,11 @@ import { internalMutation, internalQuery } from "../_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import { DEFAULT_SPLIT_BPS, cleanAccountNumber, validateSplit } from "../lib/finance";
-import { assertSecondPerson, audit, clean, fail, getBranch, periodOf, periodRange, required } from "./shared";
+import { assertSecondPerson, audit, clean, fail, getBranch, isDayString, periodOf, periodRange, required, todayWat } from "./shared";
+import { fillWaiting } from "./payouts";
+import { checkedAccount } from "./settings";
 
 const splitValidator = v.object({ hq: v.number(), vat: v.number(), partner: v.number(), salary: v.number() });
-
-/** Tarmac's branches, Head Office first. */
-export const TARMAC_BRANCHES = ["Jos", "Abuja", "Lagos", "Port Harcourt", "Owerri", "Yola", "Lafia"];
 
 export const list = internalQuery({
   args: {},
@@ -34,9 +33,12 @@ export const list = internalQuery({
           isHq: b.isHq,
           onHold: b.onHold,
           holdNote: b.holdNote ?? null,
+          holdReleaseOn: b.holdReleaseOn ?? null,
+          payDay: b.payDay ?? null,
           splitBps: b.splitBps,
           salaryBankName: b.salaryBankName ?? null,
           salaryAccountNumber: b.salaryAccountNumber ?? null,
+          salaryAccountName: b.salaryAccountName ?? null,
           partner: partner && partner.status === "active" ? { id: partner._id, name: partner.name } : null,
           partnerWaiting: waiting ? { id: waiting._id, name: waiting.name } : null,
           clients: clients.filter((c) => c.branchId === b._id && c.status === "active").length,
@@ -56,9 +58,19 @@ async function nameTaken(ctx: { db: any }, name: string, except?: Id<"finBranche
 }
 
 export const create = internalMutation({
-  args: { actorId: v.id("users"), name: v.string(), isHq: v.optional(v.boolean()) },
+  // The admin sets the branch's sharing percentages; the screen always sends them.
+  args: {
+    actorId: v.id("users"),
+    name: v.string(),
+    isHq: v.optional(v.boolean()),
+    splitBps: v.optional(splitValidator),
+    salaryAccount: v.optional(checkedAccount),
+    payDay: v.optional(v.union(v.number(), v.null())),
+  },
   handler: async (ctx, args) => {
     const name = required(args.name, "Branch name", 60);
+    if (args.splitBps) validateSplit(args.splitBps);
+    checkPayDay(args.payDay);
     if (await nameTaken(ctx, name)) fail(`There is already a ${name} branch`);
     if (args.isHq) {
       const hq = (await ctx.db.query("finBranches").collect()).find((b) => b.active && b.isHq);
@@ -67,7 +79,16 @@ export const create = internalMutation({
     const id = await ctx.db.insert("finBranches", {
       name,
       isHq: !!args.isHq,
-      splitBps: DEFAULT_SPLIT_BPS,
+      splitBps: args.splitBps ?? DEFAULT_SPLIT_BPS,
+      payDay: args.payDay ?? undefined,
+      ...(args.salaryAccount
+        ? {
+            salaryBankCode: args.salaryAccount.bankCode,
+            salaryBankName: args.salaryAccount.bankName,
+            salaryAccountNumber: cleanAccountNumber(args.salaryAccount.accountNumber),
+            salaryAccountName: args.salaryAccount.accountName,
+          }
+        : {}),
       onHold: false,
       active: true,
       createdAt: Date.now(),
@@ -77,34 +98,13 @@ export const create = internalMutation({
   },
 });
 
-/** One click on an empty system: Tarmac's 7 branches, Jos as Head Office. */
-export const addTarmacBranches = internalMutation({
-  args: { actorId: v.id("users") },
-  handler: async (ctx, args) => {
-    const existing = (await ctx.db.query("finBranches").collect()).filter((b) => b.active);
-    if (existing.length) fail("Branches already exist. Add any missing branch one at a time.");
-    for (const [i, name] of TARMAC_BRANCHES.entries()) {
-      await ctx.db.insert("finBranches", {
-        name,
-        isHq: i === 0,
-        splitBps: DEFAULT_SPLIT_BPS,
-        onHold: false,
-        active: true,
-        createdAt: Date.now(),
-      });
-    }
-    await audit(ctx, args.actorId, "branch.created", "finBranch", "all", `Added Tarmac's ${TARMAC_BRANCHES.length} branches`);
-    return TARMAC_BRANCHES.length;
-  },
-});
-
 export const update = internalMutation({
   args: {
     actorId: v.id("users"),
     branchId: v.id("finBranches"),
     name: v.optional(v.string()),
-    salaryBankName: v.optional(v.string()),
-    salaryAccountNumber: v.optional(v.string()),
+    // Set only through the bank check in routes.ts; null removes it.
+    salaryAccount: v.optional(v.union(checkedAccount, v.null())),
   },
   handler: async (ctx, args) => {
     const branch = await getBranch(ctx, args.branchId);
@@ -114,28 +114,72 @@ export const update = internalMutation({
       if (await nameTaken(ctx, name, branch._id)) fail(`There is already a ${name} branch`);
       patch.name = name;
     }
-    if (args.salaryBankName !== undefined) patch.salaryBankName = clean(args.salaryBankName, 80);
-    if (args.salaryAccountNumber !== undefined) {
-      patch.salaryAccountNumber = args.salaryAccountNumber.trim() ? cleanAccountNumber(args.salaryAccountNumber) : undefined;
+    const a = args.salaryAccount;
+    if (a !== undefined) {
+      patch.salaryBankCode = a?.bankCode;
+      patch.salaryBankName = a?.bankName;
+      patch.salaryAccountNumber = a ? cleanAccountNumber(a.accountNumber) : undefined;
+      patch.salaryAccountName = a?.accountName;
     }
     await ctx.db.patch(branch._id, patch);
-    await audit(ctx, args.actorId, "branch.updated", "finBranch", branch._id, `Updated branch ${patch.name ?? branch.name}`);
+    await audit(
+      ctx,
+      args.actorId,
+      "branch.updated",
+      "finBranch",
+      branch._id,
+      a ? `${branch.name} salary account set to ${a.bankName} ${a.accountNumber} (${a.accountName})` : `Updated branch ${patch.name ?? branch.name}`,
+    );
+    if (a) await fillWaiting(ctx);
+  },
+});
+
+function checkPayDay(day: number | null | undefined) {
+  if (day !== null && day !== undefined && (!Number.isInteger(day) || day < 1 || day > 28)) fail("Choose a day from 1 to 28");
+}
+
+/** When this branch is paid: as soon as money arrives (null) or once a month on a day. */
+export const setPayDay = internalMutation({
+  args: { actorId: v.id("users"), branchId: v.id("finBranches"), payDay: v.union(v.number(), v.null()) },
+  handler: async (ctx, args) => {
+    checkPayDay(args.payDay);
+    const branch = await getBranch(ctx, args.branchId);
+    await ctx.db.patch(branch._id, { payDay: args.payDay ?? undefined });
+    await audit(ctx, args.actorId, "branch.payday", "finBranch", branch._id, args.payDay ? `${branch.name} is paid on day ${args.payDay} of each month` : `${branch.name} is paid as soon as money arrives`);
   },
 });
 
 /** While a branch is on hold, its payments are recorded but not shared. */
 export const setHold = internalMutation({
-  args: { actorId: v.id("users"), branchId: v.id("finBranches"), onHold: v.boolean(), note: v.optional(v.string()) },
+  args: {
+    actorId: v.id("users"),
+    branchId: v.id("finBranches"),
+    onHold: v.boolean(),
+    note: v.optional(v.string()),
+    // Optional day the held money is released by itself.
+    releaseOn: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const branch = await getBranch(ctx, args.branchId);
-    await ctx.db.patch(branch._id, { onHold: args.onHold, holdNote: args.onHold ? clean(args.note, 200) : undefined });
+    const releaseOn = args.onHold ? clean(args.releaseOn, 10) : undefined;
+    if (releaseOn) {
+      if (!isDayString(releaseOn)) fail("The release date is not a real date");
+      if (releaseOn < todayWat()) fail("The release date cannot be in the past");
+    }
+    await ctx.db.patch(branch._id, {
+      onHold: args.onHold,
+      holdNote: args.onHold ? clean(args.note, 200) : undefined,
+      holdReleaseOn: releaseOn,
+    });
     await audit(
       ctx,
       args.actorId,
       args.onHold ? "branch.held" : "branch.unheld",
       "finBranch",
       branch._id,
-      args.onHold ? `Put ${branch.name} on hold${args.note ? `: ${args.note}` : ""}` : `Took ${branch.name} off hold`,
+      args.onHold
+        ? `Put ${branch.name} on hold${releaseOn ? ` until ${releaseOn}` : ""}${args.note ? `: ${args.note}` : ""}`
+        : `Took ${branch.name} off hold`,
     );
   },
 });
@@ -180,6 +224,7 @@ export const listPartners = internalQuery({
         branchId: p.branchId,
         branchName: branches.find((b) => b._id === p.branchId)?.name ?? "",
         bankName: p.bankName,
+        bankCode: p.bankCode ?? null,
         accountNumber: p.accountNumber,
         accountName: p.accountName,
         status: p.status,
@@ -195,9 +240,8 @@ const partnerFields = {
   name: v.string(),
   phone: v.string(),
   email: v.optional(v.string()),
-  bankName: v.string(),
-  accountNumber: v.string(),
-  accountName: v.string(),
+  // Filled by the bank check in routes.ts, never typed.
+  account: checkedAccount,
 };
 
 export const createPartner = internalMutation({
@@ -209,9 +253,10 @@ export const createPartner = internalMutation({
       phone: required(args.phone, "Phone number", 30),
       email: clean(args.email, 120),
       branchId: branch._id,
-      bankName: required(args.bankName, "Bank", 80),
-      accountNumber: cleanAccountNumber(args.accountNumber),
-      accountName: required(args.accountName, "Account name", 120),
+      bankName: args.account.bankName,
+      bankCode: args.account.bankCode,
+      accountNumber: cleanAccountNumber(args.account.accountNumber),
+      accountName: args.account.accountName,
       status: "pending",
       createdBy: args.actorId,
       createdAt: Date.now(),
@@ -237,6 +282,7 @@ export const approvePartner = internalMutation({
     await ctx.db.patch(partner._id, { status: "active", approvedBy: args.actorId, approvedAt: Date.now() });
     await ctx.db.patch(branch._id, { partnerId: partner._id });
     await audit(ctx, args.actorId, "partner.approved", "finPartner", partner._id, `Approved ${partner.name} as ${branch.name} partner`);
+    await fillWaiting(ctx);
   },
 });
 
@@ -245,15 +291,16 @@ export const updatePartner = internalMutation({
   handler: async (ctx, args) => {
     const partner = await ctx.db.get(args.partnerId);
     if (!partner || partner.status === "removed") fail("Partner not found");
-    const accountNumber = cleanAccountNumber(args.accountNumber);
-    const bankChanged = accountNumber !== partner.accountNumber || args.bankName.trim() !== partner.bankName;
+    const accountNumber = cleanAccountNumber(args.account.accountNumber);
+    const bankChanged = accountNumber !== partner.accountNumber || args.account.bankCode !== partner.bankCode;
     await ctx.db.patch(partner._id, {
       name: required(args.name, "Partner name", 80),
       phone: required(args.phone, "Phone number", 30),
       email: clean(args.email, 120),
-      bankName: required(args.bankName, "Bank", 80),
+      bankName: args.account.bankName,
+      bankCode: args.account.bankCode,
       accountNumber,
-      accountName: required(args.accountName, "Account name", 120),
+      accountName: args.account.accountName,
       // A new bank account must be approved again before money goes to it.
       ...(bankChanged ? { status: "pending" as const, createdBy: args.actorId, approvedBy: undefined, approvedAt: undefined } : {}),
     });
@@ -269,6 +316,34 @@ export const updatePartner = internalMutation({
       partner._id,
       bankChanged ? `Changed ${partner.name}'s bank account — needs approval again` : `Updated ${partner.name}`,
     );
+  },
+});
+
+/**
+ * Takes a branch off the list. Only an empty branch can go: one with working
+ * clients or staff, money on hold or money still to send must be emptied first.
+ * The record is kept (inactive) so past payments still show their branch.
+ */
+export const removeBranch = internalMutation({
+  args: { actorId: v.id("users"), branchId: v.id("finBranches") },
+  handler: async (ctx, args) => {
+    const branch = await getBranch(ctx, args.branchId);
+    if (!branch.active) fail("This branch was already removed");
+    const clients = (await ctx.db.query("finClients").withIndex("by_branchId", (q) => q.eq("branchId", branch._id)).collect()).filter((c) => c.status === "active");
+    if (clients.length) fail(`${branch.name} still has ${clients.length} client${clients.length === 1 ? "" : "s"}. Move or end them first.`);
+    const staff = (await ctx.db.query("finStaff").withIndex("by_branchId", (q) => q.eq("branchId", branch._id)).collect()).filter((s) => s.status !== "left");
+    if (staff.length) fail(`${branch.name} still has ${staff.length} staff. Move them or mark them as left first.`);
+    const held = (await ctx.db.query("finPayments").withIndex("by_state", (q) => q.eq("state", "held")).collect()).filter((p) => p.branchId === branch._id);
+    if (held.length) fail(`${branch.name} has money on hold. Release it first.`);
+    for (const status of ["waiting", "ready", "sending", "needs_code", "failed"] as const) {
+      const open = (await ctx.db.query("finPayouts").withIndex("by_status", (q) => q.eq("status", status)).collect()).filter((p) => p.branchId === branch._id);
+      if (open.length) fail(`${branch.name} has money still to send. Finish it on the Money out page first.`);
+    }
+    for (const p of await ctx.db.query("finPartners").withIndex("by_branchId", (q) => q.eq("branchId", branch._id)).collect()) {
+      if (p.status !== "removed") await ctx.db.patch(p._id, { status: "removed" });
+    }
+    await ctx.db.patch(branch._id, { active: false, partnerId: undefined, onHold: false, holdReleaseOn: undefined });
+    await audit(ctx, args.actorId, "branch.removed", "finBranch", branch._id, `Removed branch ${branch.name}`);
   },
 });
 

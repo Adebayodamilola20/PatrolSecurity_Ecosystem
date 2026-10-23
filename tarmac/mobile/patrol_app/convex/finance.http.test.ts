@@ -10,6 +10,7 @@ import { signPatrolToken } from "./lib/jwt";
 import type { Id } from "./_generated/dataModel";
 
 const modules = import.meta.glob("./**/*.*s");
+const SPLIT = { hq: 800, vat: 750, partner: 3450, salary: 5000 };
 let t: ReturnType<typeof convexTest>;
 let adminToken: string;
 let guardToken: string;
@@ -35,14 +36,15 @@ describe("finance API", () => {
   test("refuses anyone who is not an admin", async () => {
     expect((await t.fetch("/finance/overview", { method: "GET" })).status).toBe(401);
     expect((await get("overview", guardToken)).status).toBe(403);
-    expect((await post("branches/add-tarmac", {}, guardToken)).status).toBe(403);
+    expect((await post("branches/create", { name: "Jos", splitBps: SPLIT }, guardToken)).status).toBe(403);
     expect(await t.run(async (ctx) => (await ctx.db.query("finBranches").collect()).length)).toBe(0);
   });
 
   test("full flow: branches → client → invoice → payment, all saved", async () => {
-    expect((await post("branches/add-tarmac", {})).status).toBe(200);
+    expect((await post("branches/create", { name: "Jos", isHq: true, splitBps: SPLIT })).status).toBe(200);
+    expect((await post("branches/create", { name: "Kaduna", splitBps: SPLIT })).status).toBe(200);
     const branches = await (await get("branches")).json();
-    expect(branches).toHaveLength(7);
+    expect(branches).toHaveLength(2);
     const jos = branches[0];
 
     const clientRes = await post("clients/create", { name: "Rayfield Estate", branchId: jos.id, monthlyFeeKobo: 100_000_000, guards: 24 });
@@ -63,26 +65,35 @@ describe("finance API", () => {
   });
 
   test("mistakes come back as plain sentences", async () => {
-    await post("branches/add-tarmac", {});
+    await post("branches/create", { name: "Jos", isHq: true, splitBps: SPLIT });
     const [jos] = await (await get("branches")).json();
     const res = await post("partners/create", {
       branchId: jos.id,
       name: "Ibrahim",
       phone: "0803",
-      bankName: "Zenith",
-      accountNumber: "123",
-      accountName: "Ibrahim",
+      bankCode: "057",
+      accountNumber: "2081234541",
     });
     expect(res.status).toBe(400);
-    expect(JSON.stringify(await res.json())).toContain("Account number must be 10 digits");
+    // No Monnify in this test: an account cannot be added without the bank's confirmation.
+    expect(JSON.stringify(await res.json())).toContain("once Monnify is connected");
 
     const missing = await post("clients/create", { name: "No Branch" });
     expect(missing.status).toBe(400);
     expect(JSON.stringify(await missing.json())).toContain("missing or not in the right format");
   });
 
+  test("a branch cannot be added without its sharing percentages", async () => {
+    const res = await post("branches/create", { name: "Kano" });
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(await res.json())).toContain("how the branch's money is shared");
+    const bad = await post("branches/create", { name: "Kano", splitBps: { hq: 1000, vat: 0, partner: 0, salary: 8000 } });
+    expect(JSON.stringify(await bad.json())).toContain("100%");
+    expect((await post("branches/create", { name: "Kano", splitBps: { hq: 1000, vat: 0, partner: 0, salary: 9000 } })).status).toBe(200);
+  });
+
   test("stray fields never reach the database", async () => {
-    await post("branches/add-tarmac", {});
+    await post("branches/create", { name: "Jos", isHq: true, splitBps: SPLIT });
     const [jos] = await (await get("branches")).json();
     const res = await post("clients/create", { name: "X", branchId: jos.id, monthlyFeeKobo: 0, guards: 0, status: "ended", payAccountNumber: "9999999999" });
     expect(res.status).toBe(200);

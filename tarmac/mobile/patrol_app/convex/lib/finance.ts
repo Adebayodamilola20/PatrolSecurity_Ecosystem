@@ -56,7 +56,7 @@ export const ZERO_SPLIT: SplitKobo = { hq: 0, vat: 0, partner: 0, salary: 0 };
 /** VAT on an invoice: 7.5% of the subtotal, rounded to the nearest kobo. */
 export const VAT_BPS = 750;
 
-export function invoiceTotals(lines: { quantity: number; unitKobo: number }[]) {
+export function invoiceTotals(lines: { quantity: number; unitKobo: number }[], vatBps: number = VAT_BPS) {
   let subtotal = 0;
   for (const line of lines) {
     assertKobo(line.unitKobo, "Price");
@@ -64,7 +64,7 @@ export function invoiceTotals(lines: { quantity: number; unitKobo: number }[]) {
     subtotal += Math.round(line.quantity * line.unitKobo);
   }
   // ACCOUNTANT: assumes client prices exclude VAT and VAT is added on top.
-  const vat = Math.round((subtotal * VAT_BPS) / 10_000);
+  const vat = Math.round((subtotal * vatBps) / 10_000);
   return { subtotal, vat, total: subtotal + vat };
 }
 

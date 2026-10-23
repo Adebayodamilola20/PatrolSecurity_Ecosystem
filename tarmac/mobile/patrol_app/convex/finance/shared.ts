@@ -1,7 +1,9 @@
 import { ConvexError } from "convex/values";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
-import { watDate } from "../lib/finance";
+import { isDay, watDate } from "../lib/finance";
+
+export const isDayString = isDay;
 
 /** A readable error that reaches the screen as-is. */
 export function fail(message: string): never {

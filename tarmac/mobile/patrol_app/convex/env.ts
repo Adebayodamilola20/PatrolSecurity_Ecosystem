@@ -61,6 +61,16 @@ export function getMonnifyConfig() {
   };
 }
 
+/**
+ * Tarmac's Monnify wallet: the Head Office account every payment lands in and
+ * branches are paid from. It never changes, so it is set once here
+ * (MONNIFY_WALLET_ACCOUNT, from Monnify → Transfers → Wallet), not on a screen.
+ */
+export function getMonnifyWallet() {
+  const digits = optionalEnv("MONNIFY_WALLET_ACCOUNT").replace(/\D/g, "");
+  return digits.length === 10 ? digits : null;
+}
+
 export function isSmsConfigured() {
   return Boolean(optionalEnv("TERMII_API_KEY") && optionalEnv("TERMII_SENDER_ID"));
 }

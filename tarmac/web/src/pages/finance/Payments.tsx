@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from 'react'
 import { finance, type Client, type Payment } from '../../services/finance'
+import { useNavigate } from 'react-router-dom'
 import { dateTimeLabel, dayToMs, monthOptions, naira, thisPeriod, toKobo, todayWat } from './format'
 import {
-  Btn, Empty, Facts, Failed, Field, FormButtons, Loading, Modal, MoneyInput, Notice, Page, Panel, Row, Rows, SelectInput, Stats, Status, TextArea, TextInput,
+  Btn, Empty, Facts, Failed, Field, FormButtons, Hero, HeroFigure, Loading, Modal, MoneyInput, Notice, Page, Panel, Row, Rows, SelectInput, SplitBar, Status, TextArea, TextInput,
 } from './ui'
 import { useData, useFlash, useSave } from './hooks'
 
@@ -26,7 +27,7 @@ export default function FinancePayments() {
 
   return (
     <Page
-      title="Payments"
+      title="Money in"
       help="Every payment from a client, and exactly where it went."
       action={
         <>
@@ -66,27 +67,23 @@ export default function FinancePayments() {
             </Panel>
           )}
 
-          <Stats
-            items={[
-              { label: `Received in ${monthOptions().find((m) => m.value === period)?.label ?? period}`, value: naira(data.receivedKobo), note: `${data.payments.length} payment${data.payments.length === 1 ? '' : 's'}` },
-              { label: 'Shared out', value: s ? naira(s.hq + s.vat + s.partner + s.salary) : '₦0', note: 'To Head Office, VAT, partners and salaries' },
-            ]}
-          />
-
-          {s && s.hq + s.vat + s.partner + s.salary > 0 && (
-            <Panel title="Where the money went">
-              <div className="px-5 py-1">
-                <Facts
-                  items={[
-                    { label: 'Head Office (8%)', value: naira(s.hq) },
-                    { label: 'VAT set aside (7.5%)', value: naira(s.vat) },
-                    { label: 'Branch partners (34.5%)', value: naira(s.partner) },
-                    { label: 'Branch salaries (50%)', value: naira(s.salary) },
-                  ]}
-                />
-              </div>
-            </Panel>
-          )}
+          <Hero
+            label={`Received in ${monthOptions().find((m) => m.value === period)?.label ?? period}`}
+            value={naira(data.receivedKobo)}
+            sub={`${data.payments.length} payment${data.payments.length === 1 ? '' : 's'}${data.held.length ? ` · ${data.held.length} on hold` : ''}`}
+            side={<HeroFigure label="Shared out" value={s ? naira(s.hq + s.vat + s.partner + s.salary) : '₦0'} />}
+          >
+            {s && (
+              <SplitBar
+                parts={[
+                  { key: 'hq', label: 'Head Office keeps', amount: naira(s.hq), weight: s.hq },
+                  { key: 'vat', label: 'VAT', amount: naira(s.vat), weight: s.vat },
+                  { key: 'partner', label: 'Partners', amount: naira(s.partner), weight: s.partner },
+                  { key: 'salary', label: 'Branches', amount: naira(s.salary), weight: s.salary },
+                ]}
+              />
+            )}
+          </Hero>
 
           <Panel title="All payments this month">
             {data.payments.length === 0 ? (
@@ -99,7 +96,7 @@ export default function FinancePayments() {
                     title={p.clientName}
                     sub={`${dateTimeLabel(p.receivedAt)}${p.method ? ` · ${p.method}` : ''}`}
                     right={naira(p.amountKobo)}
-                    status={p.state === 'held' ? <Status tone="wait">On hold</Status> : <Status tone="good">Shared</Status>}
+                    status={paymentStatus(p)}
                     onClick={() => setOpenId(p.id)}
                   />
                 ))}
@@ -114,6 +111,18 @@ export default function FinancePayments() {
     </Page>
   )
 }
+
+/** One word for where a payment stands, including whether its shares reached the banks. */
+function paymentStatus(p: Payment) {
+  if (p.state === 'held') return <Status tone="wait">On hold</Status>
+  if (!p.payouts.length) return <Status tone="good">Shared</Status>
+  const sent = p.payouts.filter((x) => x.status === 'sent').length
+  if (sent === p.payouts.length) return <Status tone="good">All sent</Status>
+  if (p.payouts.some((x) => x.status === 'failed' || x.status === 'needs_code')) return <Status tone="bad">Needs you</Status>
+  return <Status tone="wait">{sent} of {p.payouts.length} sent</Status>
+}
+
+const PAYOUT_WORD = { waiting: 'Waiting for an account', ready: 'Ready to send', sending: 'Being sent', needs_code: 'Needs the email code', sent: 'Sent', failed: 'Did not go through' } as const
 
 function RecordPayment({ clients, onClose, onDone }: { clients: Client[]; onClose: () => void; onDone: (m: string) => void }) {
   const [f, setF] = useState({ clientId: '', amount: '', day: todayWat(), method: 'Bank transfer', reference: '', note: '' })
@@ -155,6 +164,7 @@ function RecordPayment({ clients, onClose, onDone }: { clients: Client[]; onClos
 
 function PaymentDialog({ payment: p, onClose, onDone }: { payment: Payment; onClose: () => void; onDone: (m: string) => void }) {
   const undo = useSave()
+  const navigate = useNavigate()
   return (
     <Modal title={`Payment from ${p.clientName}`} onClose={onClose}>
       <div className="space-y-5">
@@ -166,19 +176,39 @@ function PaymentDialog({ payment: p, onClose, onDone }: { payment: Payment; onCl
             { label: 'Branch', value: p.branchName },
             { label: 'How', value: p.source === 'monnify' ? 'Into their account (Monnify)' : p.method ?? 'Recorded by hand' },
             { label: 'Reference', value: p.reference },
-            { label: 'Status', value: p.state === 'held' ? <Status tone="wait">On hold</Status> : <Status tone="good">Shared</Status> },
+            { label: 'Status', value: paymentStatus(p) },
           ]}
         />
         <div>
           <h3 className="mb-1 text-lg font-semibold">{p.state === 'held' ? 'Will be shared as' : 'Shared as'}</h3>
           <Facts
-            items={[
-              { label: 'Head Office', value: naira(p.split.hq) },
-              { label: 'VAT set aside', value: naira(p.split.vat) },
-              { label: `Partner${p.partnerName ? ` (${p.partnerName})` : ''}`, value: naira(p.split.partner) },
-              { label: 'Branch salaries', value: naira(p.split.salary) },
-            ]}
+            items={(['hq', 'vat', 'partner', 'salary'] as const).map((share) => {
+              const out = p.payouts.find((x) => x.share === share)
+              const label = { hq: 'Head Office', vat: 'VAT', partner: 'Partner', salary: 'Branch salaries' }[share]
+              return {
+                label,
+                value: (
+                  <span className="flex flex-col items-end gap-1">
+                    <span className="tabular-nums">{naira(p.split[share])}</span>
+                    {!out && p.source === 'monnify' && p.state === 'shared' && (
+                      <span className="text-sm font-normal text-muted-foreground">Stays in Head Office's account</span>
+                    )}
+                    {out && (
+                      <span className="text-sm font-normal text-muted-foreground">
+                        {PAYOUT_WORD[out.status]}{out.toName && out.status !== 'waiting' ? ` · ${out.toName}` : out.waitingFor ? ` · ${out.waitingFor}` : ''}
+                      </span>
+                    )}
+                  </span>
+                ),
+              }
+            })}
           />
+          {p.payouts.length > 0 && p.payouts.some((x) => x.status !== 'sent') && (
+            <Btn variant="quiet" onClick={() => navigate('/finance/money-out')}>Open Money out</Btn>
+          )}
+          {p.source === 'manual' && p.state === 'shared' && (
+            <p className="mt-2 text-[15px] text-muted-foreground">This payment was recorded by hand, so Head Office shares it out itself. Only money that comes in through Monnify is sent automatically.</p>
+          )}
         </div>
         {p.unallocatedKobo > 0 && <Notice tone="info">{naira(p.unallocatedKobo)} of this was more than the client owed at the time, so it is not matched to any invoice.</Notice>}
         {p.note && <p className="text-base">Note: {p.note}</p>}
